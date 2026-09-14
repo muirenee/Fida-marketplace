@@ -74,7 +74,7 @@ model TenantMembership {
   tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   branch    Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  @@unique([tenantId, userId, branchId])
+  @@unique([tenantId, userId])
   @@index([tenantId, role])
   @@index([userId, tenantId])
 }
