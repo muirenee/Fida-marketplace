@@ -1,0 +1,17 @@
+name: Validate
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  repository-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify foundation files
+        run: |
+          test -f packages/database/prisma/schema.prisma
+          test -f docs/ARCHITECTURE.md
+          test -f infra/docker-compose.yml
+          test -f apps/api/src/main.ts
