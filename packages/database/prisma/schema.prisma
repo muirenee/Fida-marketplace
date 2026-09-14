@@ -1,0 +1,170 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TenantStatus { PENDING ACTIVE SUSPENDED CLOSED }
+enum MembershipRole { OWNER ADMIN MANAGER STAFF }
+enum MerchantType { RESTAURANT SUPERMARKET PHARMACY RETAIL OTHER }
+enum OrderStatus { PENDING ACCEPTED PREPARING READY_FOR_PICKUP PICKED_UP DELIVERING COMPLETED CANCELLED REJECTED }
+enum DeliveryStatus { UNASSIGNED OFFERED ASSIGNED AT_PICKUP PICKED_UP AT_DROPOFF DELIVERED CANCELLED }
+enum PaymentMethod { CASH MOBILE_MONEY CARD WALLET }
+enum PaymentStatus { PENDING AUTHORIZED PAID FAILED REFUNDED PARTIALLY_REFUNDED }
+
+model Tenant {
+  id           String       @id @default(cuid())
+  name         String
+  slug         String       @unique
+  status       TenantStatus @default(PENDING)
+  merchantType MerchantType
+  currency     String       @default("RWF")
+  timezone     String       @default("Africa/Kigali")
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  branches     Branch[]
+  memberships TenantMembership[]
+  categories   Category[]
+  products     Product[]
+  orders       Order[]
+}
+
+model User {
+  id             String             @id @default(cuid())
+  email          String?            @unique
+  phone          String?            @unique
+  firstName      String?
+  lastName       String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  memberships    TenantMembership[]
+  customerOrders Order[]            @relation("CustomerOrders")
+  driver         Driver?
+}
+
+model TenantMembership {
+  id        String         @id @default(cuid())
+  tenantId  String
+  userId    String
+  branchId  String?
+  role      MembershipRole
+  createdAt DateTime       @default(now())
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch    Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  @@unique([tenantId, userId, branchId])
+  @@index([tenantId, role])
+}
+
+model Branch {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  code        String?
+  addressLine String?
+  city        String?
+  latitude    Decimal? @db.Decimal(10, 7)
+  longitude   Decimal? @db.Decimal(10, 7)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships TenantMembership[]
+  orders      Order[]
+  @@unique([tenantId, code])
+  @@index([tenantId, isActive])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  slug      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products  Product[]
+  @@unique([tenantId, slug])
+}
+
+model Product {
+  id          String    @id @default(cuid())
+  tenantId    String
+  categoryId  String?
+  name        String
+  description String?
+  sku         String?
+  price       Decimal   @db.Decimal(12, 2)
+  isActive    Boolean   @default(true)
+  isAvailable Boolean   @default(true)
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  items       OrderItem[]
+  @@unique([tenantId, sku])
+  @@index([tenantId, categoryId, isActive, isAvailable])
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  orderNumber     String        @unique
+  tenantId        String
+  branchId        String
+  customerId      String
+  status          OrderStatus   @default(PENDING)
+  paymentMethod   PaymentMethod
+  paymentStatus   PaymentStatus @default(PENDING)
+  subtotal        Decimal       @db.Decimal(12, 2)
+  deliveryFee     Decimal       @default(0) @db.Decimal(12, 2)
+  serviceFee      Decimal       @default(0) @db.Decimal(12, 2)
+  discount        Decimal       @default(0) @db.Decimal(12, 2)
+  total           Decimal       @db.Decimal(12, 2)
+  deliveryAddress String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  branch          Branch        @relation(fields: [branchId], references: [id])
+  customer        User          @relation("CustomerOrders", fields: [customerId], references: [id])
+  items           OrderItem[]
+  delivery        Delivery?
+  @@index([tenantId, status, createdAt])
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  productId   String?
+  productName String
+  quantity    Int
+  unitPrice   Decimal  @db.Decimal(12, 2)
+  totalPrice  Decimal  @db.Decimal(12, 2)
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+}
+
+model Driver {
+  id          String     @id @default(cuid())
+  userId      String     @unique
+  isOnline    Boolean    @default(false)
+  isAvailable Boolean    @default(false)
+  latitude    Decimal?   @db.Decimal(10, 7)
+  longitude   Decimal?   @db.Decimal(10, 7)
+  lastSeenAt  DateTime?
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries Delivery[]
+}
+
+model Delivery {
+  id          String         @id @default(cuid())
+  orderId     String         @unique
+  driverId    String?
+  status      DeliveryStatus @default(UNASSIGNED)
+  assignedAt  DateTime?
+  pickedUpAt  DateTime?
+  deliveredAt DateTime?
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  driver      Driver?        @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  @@index([driverId, status])
+}
