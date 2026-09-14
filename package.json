@@ -1,15 +1,20 @@
 {
   "name": "fida-marketplace",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "packageManager": "pnpm@10.15.0",
   "scripts": {
     "dev:infra": "docker compose -f infra/docker-compose.yml up -d",
     "stop:infra": "docker compose -f infra/docker-compose.yml down",
-    "db:generate": "prisma generate --schema packages/database/prisma/schema.prisma",
-    "db:migrate": "prisma migrate dev --schema packages/database/prisma/schema.prisma"
+    "db:generate": "prisma generate --config prisma.config.ts",
+    "db:migrate": "prisma migrate dev --config prisma.config.ts",
+    "db:seed": "tsx packages/database/prisma/seed.ts",
+    "typecheck:api": "tsc -p apps/api/tsconfig.json --noEmit"
   },
   "devDependencies": {
-    "prisma": "^7.0.0"
+    "@types/node": "^24.3.0",
+    "prisma": "^7.10.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
   }
 }
