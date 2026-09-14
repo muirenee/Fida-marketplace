@@ -1,0 +1,8 @@
+{
+  "name": "@fida/database",
+  "private": true,
+  "version": "0.1.0",
+  "dependencies": {
+    "@prisma/client": "^7.0.0"
+  }
+}
