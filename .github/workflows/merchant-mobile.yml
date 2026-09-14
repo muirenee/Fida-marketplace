@@ -1,0 +1,56 @@
+name: Merchant Mobile
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/merchant-mobile/**'
+      - '.github/workflows/merchant-mobile.yml'
+  pull_request:
+    paths:
+      - 'apps/merchant-mobile/**'
+      - '.github/workflows/merchant-mobile.yml'
+
+jobs:
+  android-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Android platform scaffold
+        working-directory: apps/merchant-mobile
+        run: flutter create --platforms=android --project-name merchant_mobile --org com.fidalix.marketplace .
+
+      - name: Prepare generated Android project
+        working-directory: apps/merchant-mobile
+        run: |
+          rm -f test/widget_test.dart
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle.kts
+          elif [ -f android/app/build.gradle ]; then
+            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
+          fi
+
+      - name: Resolve dependencies
+        working-directory: apps/merchant-mobile
+        run: flutter pub get
+
+      - name: Analyze merchant app
+        working-directory: apps/merchant-mobile
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Build debug APK
+        working-directory: apps/merchant-mobile
+        run: flutter build apk --debug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fida-marketplace-merchant-debug
+          path: apps/merchant-mobile/build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 7
