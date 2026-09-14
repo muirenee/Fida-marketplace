@@ -7,13 +7,66 @@ datasource db {
   provider = "postgresql"
 }
 
-enum TenantStatus { PENDING ACTIVE SUSPENDED CLOSED }
-enum MembershipRole { OWNER ADMIN MANAGER STAFF }
-enum MerchantType { RESTAURANT SUPERMARKET PHARMACY RETAIL OTHER }
-enum OrderStatus { PENDING ACCEPTED PREPARING READY_FOR_PICKUP PICKED_UP DELIVERING COMPLETED CANCELLED REJECTED }
-enum DeliveryStatus { UNASSIGNED OFFERED ASSIGNED AT_PICKUP PICKED_UP AT_DROPOFF DELIVERED CANCELLED }
-enum PaymentMethod { CASH MOBILE_MONEY CARD WALLET }
-enum PaymentStatus { PENDING AUTHORIZED PAID FAILED REFUNDED PARTIALLY_REFUNDED }
+enum TenantStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MANAGER
+  STAFF
+}
+
+enum MerchantType {
+  RESTAURANT
+  SUPERMARKET
+  PHARMACY
+  RETAIL
+  OTHER
+}
+
+enum OrderStatus {
+  PENDING
+  ACCEPTED
+  PREPARING
+  READY_FOR_PICKUP
+  PICKED_UP
+  DELIVERING
+  COMPLETED
+  CANCELLED
+  REJECTED
+}
+
+enum DeliveryStatus {
+  UNASSIGNED
+  OFFERED
+  ASSIGNED
+  AT_PICKUP
+  PICKED_UP
+  AT_DROPOFF
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  MOBILE_MONEY
+  CARD
+  WALLET
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  PAID
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
 
 model Tenant {
   id           String       @id @default(cuid())
@@ -61,6 +114,7 @@ model Session {
   revokedAt DateTime?
   createdAt DateTime  @default(now())
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId, expiresAt])
 }
 
@@ -74,6 +128,7 @@ model TenantMembership {
   tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   branch    Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
   @@unique([tenantId, userId])
   @@index([tenantId, role])
   @@index([userId, tenantId])
@@ -94,6 +149,7 @@ model Branch {
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   memberships TenantMembership[]
   orders      Order[]
+
   @@unique([tenantId, code])
   @@index([tenantId, isActive])
 }
@@ -109,6 +165,7 @@ model Category {
   updatedAt DateTime @updatedAt
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   products  Product[]
+
   @@unique([tenantId, slug])
 }
 
@@ -127,6 +184,7 @@ model Product {
   tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   items       OrderItem[]
+
   @@unique([tenantId, sku])
   @@index([tenantId, categoryId, isActive, isAvailable])
 }
@@ -153,6 +211,7 @@ model Order {
   customer        User          @relation("CustomerOrders", fields: [customerId], references: [id])
   items           OrderItem[]
   delivery        Delivery?
+
   @@index([tenantId, status, createdAt])
   @@index([customerId, createdAt])
 }
@@ -191,5 +250,6 @@ model Delivery {
   deliveredAt DateTime?
   order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   driver      Driver?        @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
   @@index([driverId, status])
 }
