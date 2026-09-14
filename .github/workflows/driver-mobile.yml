@@ -1,0 +1,57 @@
+name: Driver Mobile
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/driver-mobile/**'
+      - '.github/workflows/driver-mobile.yml'
+  pull_request:
+    paths:
+      - 'apps/driver-mobile/**'
+      - '.github/workflows/driver-mobile.yml'
+
+jobs:
+  android-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Android platform scaffold
+        working-directory: apps/driver-mobile
+        run: flutter create --platforms=android --project-name driver_mobile --org com.fidalix.marketplace .
+
+      - name: Prepare generated Android project
+        working-directory: apps/driver-mobile
+        run: |
+          rm -f test/widget_test.dart
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle.kts
+          elif [ -f android/app/build.gradle ]; then
+            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
+          fi
+          sed -i '/<manifest/a\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' android/app/src/main/AndroidManifest.xml
+
+      - name: Resolve dependencies
+        working-directory: apps/driver-mobile
+        run: flutter pub get
+
+      - name: Analyze driver app
+        working-directory: apps/driver-mobile
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Build debug APK
+        working-directory: apps/driver-mobile
+        run: flutter build apk --debug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fida-marketplace-driver-debug
+          path: apps/driver-mobile/build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 7
