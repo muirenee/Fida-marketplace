@@ -1,6 +1,19 @@
 import type { FastifyInstance } from 'fastify';
-import { prisma } from '@fida/database/client';
+import {
+  DeliveryStatus,
+  MembershipRole,
+  OrderStatus,
+  prisma,
+} from '@fida/database/client';
 import { merchantWriteRoles, requireTenant } from '../lib/tenant.js';
+
+const merchantAdminRoles = [MembershipRole.OWNER, MembershipRole.ADMIN];
+
+const orderTransitions: Partial<Record<OrderStatus, OrderStatus[]>> = {
+  [OrderStatus.PENDING]: [OrderStatus.ACCEPTED, OrderStatus.REJECTED],
+  [OrderStatus.ACCEPTED]: [OrderStatus.PREPARING],
+  [OrderStatus.PREPARING]: [OrderStatus.READY_FOR_PICKUP],
+};
 
 function cleanSlug(value: string) {
   return value
@@ -14,7 +27,22 @@ function cleanSlug(value: string) {
 export async function merchantRoutes(app: FastifyInstance) {
   app.get('/v1/merchant/context', { preHandler: requireTenant() }, async (request) => {
     const tenantId = request.tenantContext!.tenantId;
-    const [branches, categories, products, orders] = await Promise.all([
+    const [tenant, branches, categories, products, orders] = await Promise.all([
+      prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          status: true,
+          merchantType: true,
+          currency: true,
+          isAcceptingOrders: true,
+          minimumOrder: true,
+          defaultDeliveryFee: true,
+          serviceFeePercent: true,
+        },
+      }),
       prisma.branch.count({ where: { tenantId, isActive: true } }),
       prisma.category.count({ where: { tenantId, isActive: true } }),
       prisma.product.count({ where: { tenantId, isActive: true } }),
@@ -23,9 +51,59 @@ export async function merchantRoutes(app: FastifyInstance) {
 
     return {
       context: request.tenantContext,
+      tenant,
       counts: { branches, categories, products, orders },
     };
   });
+
+  app.patch(
+    '/v1/merchant/settings',
+    { preHandler: requireTenant(merchantAdminRoles) },
+    async (request, reply) => {
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      const data: {
+        isAcceptingOrders?: boolean;
+        minimumOrder?: string;
+        defaultDeliveryFee?: string;
+        serviceFeePercent?: string;
+      } = {};
+
+      if (typeof body.isAcceptingOrders === 'boolean') {
+        data.isAcceptingOrders = body.isAcceptingOrders;
+      }
+
+      const numberFields = [
+        ['minimumOrder', 0, 100000000],
+        ['defaultDeliveryFee', 0, 100000000],
+        ['serviceFeePercent', 0, 100],
+      ] as const;
+
+      for (const [field, min, max] of numberFields) {
+        if (body[field] === undefined) continue;
+        const value = Number(body[field]);
+        if (!Number.isFinite(value) || value < min || value > max) {
+          return reply.code(400).send({ error: 'invalid_setting', field, min, max });
+        }
+        data[field] = value.toFixed(2);
+      }
+
+      if (Object.keys(data).length === 0) {
+        return reply.code(400).send({ error: 'no_settings_provided' });
+      }
+
+      return prisma.tenant.update({
+        where: { id: request.tenantContext!.tenantId },
+        data,
+        select: {
+          id: true,
+          isAcceptingOrders: true,
+          minimumOrder: true,
+          defaultDeliveryFee: true,
+          serviceFeePercent: true,
+        },
+      });
+    },
+  );
 
   app.get('/v1/merchant/categories', { preHandler: requireTenant() }, async (request) => {
     return prisma.category.findMany({
@@ -103,6 +181,80 @@ export async function merchantRoutes(app: FastifyInstance) {
       });
 
       return reply.code(201).send(product);
+    },
+  );
+
+  app.get('/v1/merchant/orders', { preHandler: requireTenant() }, async (request, reply) => {
+    const query = (request.query ?? {}) as Record<string, unknown>;
+    const requestedStatus = typeof query.status === 'string' ? query.status.toUpperCase() : null;
+
+    if (requestedStatus && !Object.values(OrderStatus).includes(requestedStatus as OrderStatus)) {
+      return reply.code(400).send({ error: 'invalid_order_status', allowed: Object.values(OrderStatus) });
+    }
+
+    return prisma.order.findMany({
+      where: {
+        tenantId: request.tenantContext!.tenantId,
+        ...(requestedStatus ? { status: requestedStatus as OrderStatus } : {}),
+      },
+      include: {
+        branch: { select: { id: true, name: true, city: true } },
+        customer: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
+        items: true,
+        delivery: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+  });
+
+  app.patch(
+    '/v1/merchant/orders/:orderId/status',
+    { preHandler: requireTenant(merchantWriteRoles) },
+    async (request, reply) => {
+      const { orderId } = request.params as { orderId: string };
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      const requestedStatus = typeof body.status === 'string' ? body.status.toUpperCase() : '';
+
+      if (!Object.values(OrderStatus).includes(requestedStatus as OrderStatus)) {
+        return reply.code(400).send({ error: 'invalid_order_status', allowed: Object.values(OrderStatus) });
+      }
+
+      const order = await prisma.order.findFirst({
+        where: { id: orderId, tenantId: request.tenantContext!.tenantId },
+        select: { id: true, status: true },
+      });
+
+      if (!order) return reply.code(404).send({ error: 'order_not_found' });
+
+      const nextStatus = requestedStatus as OrderStatus;
+      const allowed = orderTransitions[order.status] ?? [];
+      if (!allowed.includes(nextStatus)) {
+        return reply.code(409).send({
+          error: 'invalid_order_transition',
+          currentStatus: order.status,
+          allowed,
+        });
+      }
+
+      const updated = await prisma.$transaction(async (tx) => {
+        const changed = await tx.order.update({
+          where: { id: order.id },
+          data: { status: nextStatus },
+          include: { items: true, delivery: true },
+        });
+
+        if (nextStatus === OrderStatus.REJECTED) {
+          await tx.delivery.updateMany({
+            where: { orderId: order.id },
+            data: { status: DeliveryStatus.CANCELLED },
+          });
+        }
+
+        return changed;
+      });
+
+      return updated;
     },
   );
 }
