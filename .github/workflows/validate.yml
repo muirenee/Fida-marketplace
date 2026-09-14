@@ -1,17 +1,43 @@
 name: Validate
+
 on:
   push:
     branches: [main, develop]
   pull_request:
 
 jobs:
-  repository-checks:
+  api-and-schema:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://fida:fida@localhost:5432/fida_marketplace?schema=public
     steps:
       - uses: actions/checkout@v4
-      - name: Verify foundation files
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Validate Prisma schema
+        run: pnpm exec prisma validate --config prisma.config.ts
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Typecheck API
+        run: pnpm typecheck:api
+
+      - name: Verify architecture files
         run: |
-          test -f packages/database/prisma/schema.prisma
           test -f docs/ARCHITECTURE.md
           test -f infra/docker-compose.yml
-          test -f apps/api/src/main.ts
+          test -f apps/customer-mobile/lib/main.dart
+          test -f apps/merchant-mobile/lib/main.dart
+          test -f apps/driver-mobile/lib/main.dart
