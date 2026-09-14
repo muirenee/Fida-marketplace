@@ -1,0 +1,55 @@
+name: Customer Mobile
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/customer-mobile/**'
+      - '.github/workflows/customer-mobile.yml'
+  pull_request:
+    paths:
+      - 'apps/customer-mobile/**'
+      - '.github/workflows/customer-mobile.yml'
+
+jobs:
+  android-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Android platform scaffold
+        working-directory: apps/customer-mobile
+        run: flutter create --platforms=android --project-name customer_mobile --org com.fidalix.marketplace .
+
+      - name: Require Android API 23 for secure storage
+        working-directory: apps/customer-mobile
+        run: |
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle.kts
+          elif [ -f android/app/build.gradle ]; then
+            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
+          fi
+
+      - name: Resolve dependencies
+        working-directory: apps/customer-mobile
+        run: flutter pub get
+
+      - name: Analyze customer app
+        working-directory: apps/customer-mobile
+        run: flutter analyze
+
+      - name: Build debug APK
+        working-directory: apps/customer-mobile
+        run: flutter build apk --debug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fida-marketplace-customer-debug
+          path: apps/customer-mobile/build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 7
