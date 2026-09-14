@@ -5,6 +5,7 @@ import jwt from '@fastify/jwt';
 import { addressRoutes } from './routes/addresses.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
+import { driverRoutes } from './routes/driver.js';
 import { marketplaceRoutes } from './routes/marketplace.js';
 import { merchantRoutes } from './routes/merchant.js';
 import { orderRoutes } from './routes/orders.js';
@@ -27,6 +28,7 @@ await app.register(authRoutes);
 await app.register(marketplaceRoutes);
 await app.register(addressRoutes);
 await app.register(orderRoutes);
+await app.register(driverRoutes);
 await app.register(tenantRoutes);
 await app.register(merchantRoutes);
 await app.register(adminRoutes);
@@ -34,12 +36,12 @@ await app.register(adminRoutes);
 app.get('/health', async () => ({
   service: 'fida-marketplace-api',
   status: 'ok',
-  version: '0.3.0',
+  version: '0.4.0',
 }));
 
 app.get('/v1', async () => ({
   name: 'Fida Marketplace API',
-  milestone: 'marketplace-ordering',
+  milestone: 'customer-merchant-driver-flow',
 }));
 
 const port = Number(process.env.PORT ?? 3001);
