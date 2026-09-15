@@ -77,9 +77,11 @@ class DriverApiClient {
   }) async {
     final request = http.Request(method, _uri(path));
     request.headers['accept'] = 'application/json';
-    request.headers['content-type'] = 'application/json';
     if (authenticated && _access != null) request.headers['authorization'] = 'Bearer $_access';
-    if (body != null) request.body = jsonEncode(body);
+    if (body != null) {
+      request.headers['content-type'] = 'application/json';
+      request.body = jsonEncode(body);
+    }
 
     final response = await http.Response.fromStream(await _client.send(request));
     if (response.statusCode == 401 && authenticated && retry && await refresh()) {
