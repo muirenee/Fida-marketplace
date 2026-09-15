@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 class MerchantApiException implements Exception {
   MerchantApiException(this.message);
   final String message;
+
   @override
   String toString() => message;
 }
@@ -35,7 +36,9 @@ class MerchantApiClient {
   MerchantApiException _error(http.Response response) {
     try {
       final data = _json(response);
-      if (data is Map) return MerchantApiException((data['message'] ?? data['error'] ?? 'Request failed').toString());
+      if (data is Map) {
+        return MerchantApiException((data['message'] ?? data['error'] ?? 'Request failed').toString());
+      }
     } catch (_) {}
     return MerchantApiException('Request failed (${response.statusCode})');
   }
@@ -82,13 +85,26 @@ class MerchantApiClient {
     if (body != null) request.body = jsonEncode(body);
     final response = await http.Response.fromStream(await _client.send(request));
     if (response.statusCode == 401 && authenticated && retry && await refresh()) {
-      return _send(method, path, body: body, tenantId: tenantId, query: query, authenticated: authenticated, retry: false);
+      return _send(
+        method,
+        path,
+        body: body,
+        tenantId: tenantId,
+        query: query,
+        authenticated: authenticated,
+        retry: false,
+      );
     }
     return response;
   }
 
   Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await _send('POST', '/v1/auth/login', authenticated: false, body: {'email': email, 'password': password});
+    final response = await _send(
+      'POST',
+      '/v1/auth/login',
+      authenticated: false,
+      body: {'email': email, 'password': password},
+    );
     if (response.statusCode != 200) throw _error(response);
     final data = (_json(response) as Map).cast<String, dynamic>();
     await _save(data);
@@ -97,7 +113,13 @@ class MerchantApiClient {
 
   Future<bool> refresh() async {
     if (_refresh == null) return false;
-    final response = await _send('POST', '/v1/auth/refresh', authenticated: false, retry: false, body: {'refreshToken': _refresh});
+    final response = await _send(
+      'POST',
+      '/v1/auth/refresh',
+      authenticated: false,
+      retry: false,
+      body: {'refreshToken': _refresh},
+    );
     if (response.statusCode != 200) {
       await clear();
       return false;
@@ -116,7 +138,36 @@ class MerchantApiClient {
   Future<List<Map<String, dynamic>>> tenants() async {
     final response = await _send('GET', '/v1/tenants');
     if (response.statusCode != 200) throw _error(response);
-    return (_json(response) as List).map((row) => (row as Map).cast<String, dynamic>()).toList();
+    return (_json(response) as List)
+        .map((row) => (row as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> createTenant({
+    required String name,
+    required String merchantType,
+    required String branchName,
+    String? city,
+    String? addressLine,
+    String currency = 'RWF',
+    String timezone = 'Africa/Kigali',
+  }) async {
+    final response = await _send(
+      'POST',
+      '/v1/tenants',
+      body: {
+        'name': name,
+        'merchantType': merchantType,
+        'branchName': branchName,
+        if (city != null && city.trim().isNotEmpty) 'city': city.trim(),
+        if (addressLine != null && addressLine.trim().isNotEmpty) 'addressLine': addressLine.trim(),
+        'currency': currency,
+        'timezone': timezone,
+      },
+    );
+    if (response.statusCode != 201) throw _error(response);
+    final data = (_json(response) as Map).cast<String, dynamic>();
+    return (data['tenant'] as Map).cast<String, dynamic>();
   }
 
   Future<Map<String, dynamic>> context(String tenantId) async {
@@ -133,10 +184,16 @@ class MerchantApiClient {
       query: {if (status != null) 'status': status},
     );
     if (response.statusCode != 200) throw _error(response);
-    return (_json(response) as List).map((row) => (row as Map).cast<String, dynamic>()).toList();
+    return (_json(response) as List)
+        .map((row) => (row as Map).cast<String, dynamic>())
+        .toList();
   }
 
-  Future<Map<String, dynamic>> updateOrderStatus(String tenantId, String orderId, String status) async {
+  Future<Map<String, dynamic>> updateOrderStatus(
+    String tenantId,
+    String orderId,
+    String status,
+  ) async {
     final response = await _send(
       'PATCH',
       '/v1/merchant/orders/$orderId/status',
@@ -150,17 +207,26 @@ class MerchantApiClient {
   Future<List<Map<String, dynamic>>> categories(String tenantId) async {
     final response = await _send('GET', '/v1/merchant/categories', tenantId: tenantId);
     if (response.statusCode != 200) throw _error(response);
-    return (_json(response) as List).map((row) => (row as Map).cast<String, dynamic>()).toList();
+    return (_json(response) as List)
+        .map((row) => (row as Map).cast<String, dynamic>())
+        .toList();
   }
 
   Future<List<Map<String, dynamic>>> products(String tenantId) async {
     final response = await _send('GET', '/v1/merchant/products', tenantId: tenantId);
     if (response.statusCode != 200) throw _error(response);
-    return (_json(response) as List).map((row) => (row as Map).cast<String, dynamic>()).toList();
+    return (_json(response) as List)
+        .map((row) => (row as Map).cast<String, dynamic>())
+        .toList();
   }
 
   Future<Map<String, dynamic>> createCategory(String tenantId, String name) async {
-    final response = await _send('POST', '/v1/merchant/categories', tenantId: tenantId, body: {'name': name});
+    final response = await _send(
+      'POST',
+      '/v1/merchant/categories',
+      tenantId: tenantId,
+      body: {'name': name},
+    );
     if (response.statusCode != 201) throw _error(response);
     return (_json(response) as Map).cast<String, dynamic>();
   }
@@ -188,10 +254,15 @@ class MerchantApiClient {
   }
 
   Future<void> logout() async {
-    final refresh = _refresh;
-    if (refresh != null) {
+    final refreshToken = _refresh;
+    if (refreshToken != null) {
       try {
-        await _send('POST', '/v1/auth/logout', authenticated: false, body: {'refreshToken': refresh});
+        await _send(
+          'POST',
+          '/v1/auth/logout',
+          authenticated: false,
+          body: {'refreshToken': refreshToken},
+        );
       } catch (_) {}
     }
     await clear();
