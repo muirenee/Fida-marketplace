@@ -41,7 +41,8 @@ class _FidaMerchantAppState extends State<FidaMerchantApp> {
   Future<void> _loadTenants() async {
     try {
       memberships = await api.tenants();
-      membership ??= memberships.isEmpty ? null : memberships.first;
+      membership = memberships.isEmpty ? null : memberships.first;
+      error = null;
     } on MerchantApiException catch (e) {
       error = e.message;
     }
@@ -67,6 +68,35 @@ class _FidaMerchantAppState extends State<FidaMerchantApp> {
     }
   }
 
+  Future<bool> _createMerchant({
+    required String name,
+    required String merchantType,
+    required String branchName,
+    required String city,
+    required String addressLine,
+  }) async {
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      await api.createTenant(
+        name: name,
+        merchantType: merchantType,
+        branchName: branchName,
+        city: city,
+        addressLine: addressLine,
+      );
+      await _loadTenants();
+      return true;
+    } on MerchantApiException catch (e) {
+      error = e.message;
+      return false;
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
   Future<void> _logout() async {
     await api.logout();
     if (!mounted) return;
@@ -74,6 +104,7 @@ class _FidaMerchantAppState extends State<FidaMerchantApp> {
       user = null;
       memberships = [];
       membership = null;
+      error = null;
     });
   }
 
@@ -98,7 +129,12 @@ class _FidaMerchantAppState extends State<FidaMerchantApp> {
           : user == null
               ? _LoginScreen(onLogin: _login, error: error, loading: loading)
               : membership == null
-                  ? _NoMerchantScreen(onLogout: _logout)
+                  ? _MerchantOnboardingScreen(
+                      onCreate: _createMerchant,
+                      onLogout: _logout,
+                      error: error,
+                      loading: loading,
+                    )
                   : _MerchantShell(
                       api: api,
                       memberships: memberships,
@@ -195,27 +231,109 @@ class _LoginScreenState extends State<_LoginScreen> {
   }
 }
 
-class _NoMerchantScreen extends StatelessWidget {
-  const _NoMerchantScreen({required this.onLogout});
+class _MerchantOnboardingScreen extends StatefulWidget {
+  const _MerchantOnboardingScreen({
+    required this.onCreate,
+    required this.onLogout,
+    required this.error,
+    required this.loading,
+  });
+
+  final Future<bool> Function({
+    required String name,
+    required String merchantType,
+    required String branchName,
+    required String city,
+    required String addressLine,
+  }) onCreate;
   final Future<void> Function() onLogout;
+  final String? error;
+  final bool loading;
+
+  @override
+  State<_MerchantOnboardingScreen> createState() => _MerchantOnboardingScreenState();
+}
+
+class _MerchantOnboardingScreenState extends State<_MerchantOnboardingScreen> {
+  final name = TextEditingController();
+  final branch = TextEditingController(text: 'Main Branch');
+  final city = TextEditingController(text: 'Kigali');
+  final address = TextEditingController();
+  String merchantType = 'RESTAURANT';
+
+  @override
+  void dispose() {
+    name.dispose();
+    branch.dispose();
+    city.dispose();
+    address.dispose();
+    super.dispose();
+  }
+
+  Future<void> submit() async {
+    if (name.text.trim().length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter the business name.')));
+      return;
+    }
+    await widget.onCreate(
+      name: name.text.trim(),
+      merchantType: merchantType,
+      branchName: branch.text.trim().isEmpty ? 'Main Branch' : branch.text.trim(),
+      city: city.text.trim(),
+      addressLine: address.text.trim(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(actions: [IconButton(onPressed: onLogout, icon: const Icon(Icons.logout_rounded))]),
-      body: const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.store_mall_directory_outlined, size: 60),
-              SizedBox(height: 14),
-              Text('No merchant account', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-              SizedBox(height: 8),
-              Text('This user is not yet a member of a Fida Marketplace merchant.', textAlign: TextAlign.center),
+      appBar: AppBar(
+        title: const Text('Create merchant'),
+        actions: [IconButton(onPressed: widget.onLogout, icon: const Icon(Icons.logout_rounded))],
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            const Icon(Icons.storefront_rounded, size: 60),
+            const SizedBox(height: 12),
+            Text('Start selling on Fida Marketplace', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            const Text('Create your merchant profile. A platform administrator will activate it before customers can order.'),
+            const SizedBox(height: 24),
+            TextField(controller: name, decoration: const InputDecoration(labelText: 'Business name', border: OutlineInputBorder())),
+            const SizedBox(height: 14),
+            DropdownButtonFormField<String>(
+              initialValue: merchantType,
+              decoration: const InputDecoration(labelText: 'Business type', border: OutlineInputBorder()),
+              items: const [
+                DropdownMenuItem(value: 'RESTAURANT', child: Text('Restaurant')),
+                DropdownMenuItem(value: 'SUPERMARKET', child: Text('Supermarket')),
+                DropdownMenuItem(value: 'PHARMACY', child: Text('Pharmacy')),
+                DropdownMenuItem(value: 'RETAIL', child: Text('Retail')),
+                DropdownMenuItem(value: 'OTHER', child: Text('Other')),
+              ],
+              onChanged: (value) => setState(() => merchantType = value ?? 'OTHER'),
+            ),
+            const SizedBox(height: 14),
+            TextField(controller: branch, decoration: const InputDecoration(labelText: 'Branch name', border: OutlineInputBorder())),
+            const SizedBox(height: 14),
+            TextField(controller: city, decoration: const InputDecoration(labelText: 'City', border: OutlineInputBorder())),
+            const SizedBox(height: 14),
+            TextField(controller: address, decoration: const InputDecoration(labelText: 'Address', border: OutlineInputBorder())),
+            if (widget.error != null) ...[
+              const SizedBox(height: 12),
+              Text(widget.error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
             ],
-          ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: widget.loading ? null : submit,
+              icon: widget.loading
+                  ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.add_business_rounded),
+              label: const Padding(padding: EdgeInsets.symmetric(vertical: 14), child: Text('Create merchant')),
+            ),
+          ],
         ),
       ),
     );
@@ -390,16 +508,11 @@ class _OrdersPageState extends State<_OrdersPage> {
                         children: [
                           Row(
                             children: [
-                              Expanded(
-                                child: Text(order['orderNumber'].toString(), style: const TextStyle(fontWeight: FontWeight.w900)),
-                              ),
+                              Expanded(child: Text(order['orderNumber'].toString(), style: const TextStyle(fontWeight: FontWeight.w900))),
                               Chip(label: Text(order['status'].toString().replaceAll('_', ' ').toLowerCase())),
                             ],
                           ),
-                          Text([
-                            customer['firstName'],
-                            customer['lastName'],
-                          ].where((v) => v != null && '$v'.isNotEmpty).join(' ')),
+                          Text([customer['firstName'], customer['lastName']].where((v) => v != null && '$v'.isNotEmpty).join(' ')),
                           const SizedBox(height: 8),
                           ...items.take(4).map((raw) {
                             final item = raw as Map;
@@ -414,10 +527,10 @@ class _OrdersPageState extends State<_OrdersPage> {
                             Wrap(
                               spacing: 8,
                               children: next.map((status) {
-                                final destructive = status == 'REJECTED';
-                                return destructive
-                                    ? OutlinedButton(onPressed: () => move(order, status), child: const Text('Reject'))
-                                    : FilledButton(onPressed: () => move(order, status), child: Text(status.replaceAll('_', ' ').toLowerCase()));
+                                if (status == 'REJECTED') {
+                                  return OutlinedButton(onPressed: () => move(order, status), child: const Text('Reject'));
+                                }
+                                return FilledButton(onPressed: () => move(order, status), child: Text(status.replaceAll('_', ' ').toLowerCase()));
                               }).toList(),
                             ),
                           ],
@@ -447,6 +560,7 @@ class _CatalogPageState extends State<_CatalogPage> {
   List<Map<String, dynamic>> products = [];
   List<Map<String, dynamic>> categories = [];
   bool loading = true;
+  String? error;
 
   @override
   void initState() {
@@ -455,7 +569,10 @@ class _CatalogPageState extends State<_CatalogPage> {
   }
 
   Future<void> load() async {
-    setState(() => loading = true);
+    setState(() {
+      loading = true;
+      error = null;
+    });
     try {
       final values = await Future.wait([
         widget.api.products(widget.tenantId),
@@ -466,114 +583,172 @@ class _CatalogPageState extends State<_CatalogPage> {
         products = values[0];
         categories = values[1];
       });
+    } on MerchantApiException catch (e) {
+      if (mounted) setState(() => error = e.message);
     } finally {
       if (mounted) setState(() => loading = false);
     }
   }
 
   Future<void> addCategory() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
+    String categoryName = '';
+    final result = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('New category'),
-        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Name')),
+        content: TextField(
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Category name', border: OutlineInputBorder()),
+          onChanged: (value) => categoryName = value.trim(),
+          onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Create')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, categoryName), child: const Text('Create')),
         ],
       ),
     );
-    controller.dispose();
-    if (name == null || name.isEmpty) return;
-    await widget.api.createCategory(widget.tenantId, name);
-    await load();
+    if (result == null || result.trim().isEmpty) return;
+    try {
+      await widget.api.createCategory(widget.tenantId, result.trim());
+      await load();
+    } on MerchantApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   Future<void> addProduct() async {
-    final name = TextEditingController();
-    final price = TextEditingController();
+    String productName = '';
+    String priceText = '';
     String? categoryId = categories.isEmpty ? null : categories.first['id'].toString();
+
     final create = await showDialog<bool>(
       context: context,
-      builder: (context) => StatefulBuilder(
+      builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('New product'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: name, decoration: const InputDecoration(labelText: 'Product name')),
-              const SizedBox(height: 10),
-              TextField(controller: price, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Price')),
-              if (categories.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: categoryId,
-                  decoration: const InputDecoration(labelText: 'Category'),
-                  items: categories
-                      .map((category) => DropdownMenuItem(value: category['id'].toString(), child: Text(category['name'].toString())))
-                      .toList(),
-                  onChanged: (value) => setDialogState(() => categoryId = value),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(labelText: 'Product name', border: OutlineInputBorder()),
+                  onChanged: (value) => productName = value.trim(),
                 ),
+                const SizedBox(height: 12),
+                TextField(
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Price (RWF)', border: OutlineInputBorder()),
+                  onChanged: (value) => priceText = value.trim(),
+                ),
+                if (categories.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: categoryId,
+                    decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder()),
+                    items: categories
+                        .map((category) => DropdownMenuItem<String>(
+                              value: category['id'].toString(),
+                              child: Text(category['name'].toString()),
+                            ))
+                        .toList(),
+                    onChanged: (value) => setDialogState(() => categoryId = value),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Create')),
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Create')),
           ],
         ),
       ),
     );
-    final value = double.tryParse(price.text.trim());
-    if (create == true && name.text.trim().isNotEmpty && value != null) {
-      await widget.api.createProduct(widget.tenantId, name: name.text.trim(), price: value, categoryId: categoryId);
-      await load();
+
+    if (create != true) return;
+    final price = double.tryParse(priceText);
+    if (productName.isEmpty || price == null || price < 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a product name and a valid price.')));
+      }
+      return;
     }
-    name.dispose();
-    price.dispose();
+
+    try {
+      await widget.api.createProduct(
+        widget.tenantId,
+        name: productName,
+        price: price,
+        categoryId: categoryId,
+      );
+      await load();
+    } on MerchantApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (loading) return const Center(child: CircularProgressIndicator());
+
     return RefreshIndicator(
       onRefresh: load,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
         children: [
-          Row(
+          Text('${products.length} products · ${categories.length} categories'),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
             children: [
-              Expanded(child: Text('${products.length} products · ${categories.length} categories')),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.add_circle_outline_rounded),
-                onSelected: (value) => value == 'category' ? addCategory() : addProduct(),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'product', child: Text('Add product')),
-                  PopupMenuItem(value: 'category', child: Text('Add category')),
-                ],
+              OutlinedButton.icon(
+                onPressed: addCategory,
+                icon: const Icon(Icons.create_new_folder_outlined),
+                label: const Text('Add category'),
+              ),
+              FilledButton.icon(
+                onPressed: addProduct,
+                icon: const Icon(Icons.add_box_outlined),
+                label: const Text('Add product'),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          for (final product in products)
-            Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.inventory_2_outlined)),
-                title: Text(product['name'].toString()),
-                subtitle: Text((product['category'] as Map?)?['name']?.toString() ?? 'Uncategorised'),
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(product['price'].toString(), style: const TextStyle(fontWeight: FontWeight.w800)),
-                    Text(product['isAvailable'] == true ? 'available' : 'unavailable'),
-                  ],
+          if (error != null) ...[
+            const SizedBox(height: 16),
+            Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+          if (products.isEmpty) ...[
+            const SizedBox(height: 100),
+            const Icon(Icons.inventory_2_outlined, size: 54),
+            const SizedBox(height: 12),
+            const Text('No products yet.', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('Create a category, then add your first product.', textAlign: TextAlign.center),
+          ] else ...[
+            const SizedBox(height: 18),
+            for (final product in products)
+              Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: const CircleAvatar(child: Icon(Icons.inventory_2_outlined)),
+                  title: Text(product['name'].toString()),
+                  subtitle: Text((product['category'] as Map?)?['name']?.toString() ?? 'Uncategorised'),
+                  trailing: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('${product['price']} RWF', style: const TextStyle(fontWeight: FontWeight.w800)),
+                      Text(product['isAvailable'] == true ? 'available' : 'unavailable'),
+                    ],
+                  ),
                 ),
               ),
-            ),
+          ],
         ],
       ),
     );
@@ -581,7 +756,12 @@ class _CatalogPageState extends State<_CatalogPage> {
 }
 
 class _MerchantAccount extends StatelessWidget {
-  const _MerchantAccount({required this.membership, required this.memberships, required this.onSelect, required this.onLogout});
+  const _MerchantAccount({
+    required this.membership,
+    required this.memberships,
+    required this.onSelect,
+    required this.onLogout,
+  });
 
   final Map<String, dynamic> membership;
   final List<Map<String, dynamic>> memberships;
@@ -596,13 +776,17 @@ class _MerchantAccount extends StatelessWidget {
       children: [
         const CircleAvatar(radius: 38, child: Icon(Icons.store_rounded, size: 38)),
         const SizedBox(height: 12),
-        Text(tenant['name'].toString(), textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+        Text(
+          tenant['name'].toString(),
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+        ),
         Text('${tenant['status']} · ${membership['role']}', textAlign: TextAlign.center),
         const SizedBox(height: 22),
         if (memberships.length > 1)
           DropdownButtonFormField<String>(
             initialValue: tenant['id'].toString(),
-            decoration: const InputDecoration(labelText: 'Merchant'),
+            decoration: const InputDecoration(labelText: 'Merchant', border: OutlineInputBorder()),
             items: memberships.map((item) {
               final option = item['tenant'] as Map;
               return DropdownMenuItem(value: option['id'].toString(), child: Text(option['name'].toString()));
