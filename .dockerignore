@@ -1,0 +1,13 @@
+.git
+.gitignore
+.github
+**/node_modules
+**/.dart_tool
+**/build
+**/.next
+**/.turbo
+.env
+.env.*
+!.env.example
+coverage
+*.log
