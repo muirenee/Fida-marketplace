@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM node:24-bookworm-slim
 
 WORKDIR /app
@@ -8,11 +9,18 @@ RUN apt-get update \
 
 RUN corepack enable
 
-COPY package.json pnpm-workspace.yaml prisma.config.ts ./
-COPY apps ./apps
-COPY packages ./packages
+# Keep dependency installation in a stable layer. API source changes should not
+# invalidate pnpm install, and unrelated admin/mobile apps are not copied here.
+COPY package.json pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY packages/database/package.json ./packages/database/package.json
 
-RUN pnpm install
+RUN --mount=type=cache,id=fida-pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --no-frozen-lockfile
+
+COPY prisma.config.ts ./
+COPY apps/api ./apps/api
+COPY packages/database ./packages/database
 
 # Prisma loads prisma.config.ts during generation and requires DATABASE_URL.
 # This build-only URL is not used to connect to a database.
