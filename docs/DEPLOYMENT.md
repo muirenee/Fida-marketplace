@@ -1,12 +1,12 @@
 # Fida Marketplace deployment
 
-This deployment runs PostgreSQL, Redis, and the Fastify API with Docker Compose. Only the API is published on the host; PostgreSQL and Redis remain on the private Docker network.
+This deployment runs PostgreSQL, Redis, the Fastify API, and the Next.js Admin web with Docker Compose. PostgreSQL and Redis remain on the private Docker network. The API and Admin web are published only on the host addresses selected for the reverse proxy.
 
 ## Requirements
 
 - Docker Engine with the Compose plugin
 - A Linux host
-- An HTTPS reverse proxy that can reach the published API address
+- An HTTPS reverse proxy that can reach the published API and Admin addresses
 
 ## Environment
 
@@ -27,13 +27,15 @@ CORS_ORIGIN=https://marketplaceadmin.fidalix.com
 APP_ENV=production
 PORT=3001
 API_BIND_ADDRESS=<host-address-reachable-by-reverse-proxy>
+ADMIN_BIND_ADDRESS=<host-address-reachable-by-reverse-proxy>
 ```
 
 Do not commit `.env`.
 
-## Start
+## Start or update
 
 ```bash
+git pull
 docker compose --env-file .env -f infra/docker-compose.yml up -d --build
 ```
 
@@ -42,6 +44,8 @@ Check services:
 ```bash
 docker compose --env-file .env -f infra/docker-compose.yml ps
 ```
+
+Expected services are `postgres`, `redis`, `api`, and `admin`.
 
 ## Initialize or update the test database
 
@@ -64,21 +68,41 @@ docker compose --env-file .env -f infra/docker-compose.yml exec \
   api pnpm db:seed
 ```
 
-## Health check
+## Reverse proxy layout
 
-Local/reverse-proxy target:
+The same public hostname can serve both the Admin web and the mobile/API clients. Route the API paths to port 3001 and everything else to the Admin web on port 3000:
+
+```text
+https://marketplaceadmin.fidalix.com/v1/*    -> http://<host>:3001/v1/*
+https://marketplaceadmin.fidalix.com/health  -> http://<host>:3001/health
+https://marketplaceadmin.fidalix.com/*       -> http://<host>:3000/*
+```
+
+Keep the more specific `/v1` and `/health` routes ahead of the catch-all `/` route. The three mobile apps continue using `https://marketplaceadmin.fidalix.com` as their API base URL, while a browser opening the hostname receives the Admin web.
+
+The Admin web does not store platform refresh tokens in JavaScript-accessible storage. Its Next.js server routes use HTTP-only cookies and call the API over the private Docker network at `http://api:3001`.
+
+## Health checks
+
+API target:
 
 ```bash
 curl http://<API_BIND_ADDRESS>:3001/health
 ```
 
-Public HTTPS endpoint for the current test environment:
+Admin target:
+
+```bash
+curl -I http://<ADMIN_BIND_ADDRESS>:3000/
+```
+
+Public API health endpoint:
 
 ```bash
 curl https://marketplaceadmin.fidalix.com/health
 ```
 
-Expected response:
+Expected API response:
 
 ```json
 {"service":"fida-marketplace-api","status":"ok","version":"0.4.0"}
@@ -90,3 +114,4 @@ Expected response:
 - Keep `.env` outside Git.
 - Back up the PostgreSQL volume before destructive Compose operations.
 - `docker compose down -v` deletes persistent database and Redis volumes; do not use it on a system containing real data.
+- Keep API `/v1` routing intact when switching the domain root to the Admin web, otherwise the installed mobile builds will stop reaching the backend.
