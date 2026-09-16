@@ -18,4 +18,4 @@ RUN pnpm --filter @fida/admin-web build
 
 EXPOSE 3000
 
-CMD ["pnpm", "--filter", "@fida/admin-web", "start", "--", "-H", "0.0.0.0", "-p", "3000"]
+CMD ["pnpm", "--filter", "@fida/admin-web", "start"]
