@@ -21,6 +21,12 @@ const paymentMethods = Object.values(PaymentMethod);
 const paymentStatuses = Object.values(PaymentStatus);
 const deliveryStatuses = Object.values(DeliveryStatus);
 
+function numericSetting(value: unknown) {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value.trim()) return Number(value);
+  return Number.NaN;
+}
+
 export async function adminRoutes(app: FastifyInstance) {
   app.get('/v1/admin/overview', { preHandler: requirePlatformAdmin }, async () => {
     const [tenants, pendingTenants, users, drivers, onlineDrivers, orders] = await Promise.all([
@@ -275,6 +281,75 @@ export async function adminRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
     });
   });
+
+  app.patch(
+    '/v1/admin/tenants/:tenantId/settings',
+    { preHandler: requirePlatformAdmin },
+    async (request, reply) => {
+      const { tenantId } = request.params as { tenantId: string };
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      const data: {
+        isAcceptingOrders?: boolean;
+        minimumOrder?: number;
+        defaultDeliveryFee?: number;
+        serviceFeePercent?: number;
+      } = {};
+
+      if ('isAcceptingOrders' in body) {
+        if (typeof body.isAcceptingOrders !== 'boolean') {
+          return reply.code(400).send({ error: 'invalid_is_accepting_orders' });
+        }
+        data.isAcceptingOrders = body.isAcceptingOrders;
+      }
+
+      if ('minimumOrder' in body) {
+        const value = numericSetting(body.minimumOrder);
+        if (!Number.isFinite(value) || value < 0) {
+          return reply.code(400).send({ error: 'invalid_minimum_order' });
+        }
+        data.minimumOrder = value;
+      }
+
+      if ('defaultDeliveryFee' in body) {
+        const value = numericSetting(body.defaultDeliveryFee);
+        if (!Number.isFinite(value) || value < 0) {
+          return reply.code(400).send({ error: 'invalid_delivery_fee' });
+        }
+        data.defaultDeliveryFee = value;
+      }
+
+      if ('serviceFeePercent' in body) {
+        const value = numericSetting(body.serviceFeePercent);
+        if (!Number.isFinite(value) || value < 0 || value > 100) {
+          return reply.code(400).send({ error: 'invalid_service_fee_percent' });
+        }
+        data.serviceFeePercent = value;
+      }
+
+      if (Object.keys(data).length === 0) {
+        return reply.code(400).send({ error: 'settings_required' });
+      }
+
+      const existing = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
+      if (!existing) return reply.code(404).send({ error: 'tenant_not_found' });
+
+      return prisma.tenant.update({
+        where: { id: tenantId },
+        data,
+        select: {
+          id: true,
+          name: true,
+          currency: true,
+          status: true,
+          isAcceptingOrders: true,
+          minimumOrder: true,
+          defaultDeliveryFee: true,
+          serviceFeePercent: true,
+          updatedAt: true,
+        },
+      });
+    },
+  );
 
   app.patch(
     '/v1/admin/tenants/:tenantId/status',
