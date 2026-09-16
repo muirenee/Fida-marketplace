@@ -1,5 +1,12 @@
 import type { FastifyInstance } from 'fastify';
-import { TenantStatus, prisma } from '@fida/database/client';
+import {
+  DeliveryStatus,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  TenantStatus,
+  prisma,
+} from '@fida/database/client';
 import { requirePlatformAdmin } from '../lib/auth.js';
 
 const manageableStatuses = [
@@ -8,6 +15,11 @@ const manageableStatuses = [
   TenantStatus.SUSPENDED,
   TenantStatus.CLOSED,
 ];
+
+const orderStatuses = Object.values(OrderStatus);
+const paymentMethods = Object.values(PaymentMethod);
+const paymentStatuses = Object.values(PaymentStatus);
+const deliveryStatuses = Object.values(DeliveryStatus);
 
 export async function adminRoutes(app: FastifyInstance) {
   app.get('/v1/admin/overview', { preHandler: requirePlatformAdmin }, async () => {
@@ -21,6 +33,133 @@ export async function adminRoutes(app: FastifyInstance) {
     ]);
 
     return { tenants, pendingTenants, users, drivers, onlineDrivers, orders };
+  });
+
+  app.get('/v1/admin/orders', { preHandler: requirePlatformAdmin }, async (request) => {
+    const query = (request.query ?? {}) as Record<string, unknown>;
+    const search = typeof query.q === 'string' ? query.q.trim() : '';
+    const requestedStatus = typeof query.status === 'string' ? query.status.toUpperCase() : '';
+    const requestedPaymentMethod =
+      typeof query.paymentMethod === 'string' ? query.paymentMethod.toUpperCase() : '';
+    const requestedPaymentStatus =
+      typeof query.paymentStatus === 'string' ? query.paymentStatus.toUpperCase() : '';
+    const requestedDeliveryStatus =
+      typeof query.deliveryStatus === 'string' ? query.deliveryStatus.toUpperCase() : '';
+    const tenantId = typeof query.tenantId === 'string' ? query.tenantId.trim() : '';
+
+    const status = orderStatuses.includes(requestedStatus as OrderStatus)
+      ? (requestedStatus as OrderStatus)
+      : undefined;
+    const paymentMethod = paymentMethods.includes(requestedPaymentMethod as PaymentMethod)
+      ? (requestedPaymentMethod as PaymentMethod)
+      : undefined;
+    const paymentStatus = paymentStatuses.includes(requestedPaymentStatus as PaymentStatus)
+      ? (requestedPaymentStatus as PaymentStatus)
+      : undefined;
+    const deliveryStatus = deliveryStatuses.includes(requestedDeliveryStatus as DeliveryStatus)
+      ? (requestedDeliveryStatus as DeliveryStatus)
+      : undefined;
+
+    return prisma.order.findMany({
+      where: {
+        ...(status ? { status } : {}),
+        ...(paymentMethod ? { paymentMethod } : {}),
+        ...(paymentStatus ? { paymentStatus } : {}),
+        ...(tenantId ? { tenantId } : {}),
+        ...(deliveryStatus ? { delivery: { is: { status: deliveryStatus } } } : {}),
+        ...(search
+          ? {
+              OR: [
+                { orderNumber: { contains: search, mode: 'insensitive' as const } },
+                { tenant: { is: { name: { contains: search, mode: 'insensitive' as const } } } },
+                { customer: { is: { email: { contains: search, mode: 'insensitive' as const } } } },
+                { customer: { is: { phone: { contains: search } } } },
+                { customer: { is: { firstName: { contains: search, mode: 'insensitive' as const } } } },
+                { customer: { is: { lastName: { contains: search, mode: 'insensitive' as const } } } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        paymentMethod: true,
+        paymentStatus: true,
+        subtotal: true,
+        deliveryFee: true,
+        serviceFee: true,
+        discount: true,
+        total: true,
+        deliveryAddress: true,
+        createdAt: true,
+        updatedAt: true,
+        tenant: { select: { id: true, name: true, currency: true } },
+        branch: { select: { id: true, name: true, city: true } },
+        customer: {
+          select: { id: true, email: true, phone: true, firstName: true, lastName: true },
+        },
+        delivery: {
+          select: {
+            id: true,
+            status: true,
+            assignedAt: true,
+            pickedUpAt: true,
+            deliveredAt: true,
+            driver: {
+              select: {
+                id: true,
+                isOnline: true,
+                user: {
+                  select: { id: true, email: true, phone: true, firstName: true, lastName: true },
+                },
+              },
+            },
+          },
+        },
+        _count: { select: { items: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+  });
+
+  app.get('/v1/admin/orders/:orderId', { preHandler: requirePlatformAdmin }, async (request, reply) => {
+    const { orderId } = request.params as { orderId: string };
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        tenant: { select: { id: true, name: true, currency: true } },
+        branch: { select: { id: true, name: true, city: true, addressLine: true } },
+        customer: {
+          select: { id: true, email: true, phone: true, firstName: true, lastName: true },
+        },
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            productName: true,
+            quantity: true,
+            unitPrice: true,
+            totalPrice: true,
+          },
+        },
+        delivery: {
+          include: {
+            driver: {
+              include: {
+                user: {
+                  select: { id: true, email: true, phone: true, firstName: true, lastName: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!order) return reply.code(404).send({ error: 'order_not_found' });
+    return order;
   });
 
   app.get('/v1/admin/users', { preHandler: requirePlatformAdmin }, async (request) => {
