@@ -44,6 +44,20 @@ services:
     ports:
       - "${API_BIND_ADDRESS:-127.0.0.1}:3001:3001"
 
+  admin:
+    build:
+      context: ..
+      dockerfile: apps/admin-web/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      FIDA_API_BASE_URL: http://api:3001
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "${ADMIN_BIND_ADDRESS:-127.0.0.1}:3000:3000"
+
 volumes:
   fida_postgres:
   fida_redis:
