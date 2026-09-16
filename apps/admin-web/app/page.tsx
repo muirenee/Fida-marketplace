@@ -35,6 +35,54 @@ type Driver = {
   _count?: { deliveries: number };
 };
 
+type OrderDelivery = {
+  id: string;
+  status: string;
+  assignedAt?: string | null;
+  pickedUpAt?: string | null;
+  deliveredAt?: string | null;
+  driver?: {
+    id: string;
+    isOnline?: boolean;
+    user: Partial<AdminUser>;
+  } | null;
+} | null;
+
+type Order = {
+  id: string;
+  orderNumber: string;
+  status: string;
+  paymentMethod: string;
+  paymentStatus: string;
+  subtotal: string | number;
+  deliveryFee: string | number;
+  serviceFee: string | number;
+  discount: string | number;
+  total: string | number;
+  deliveryAddress?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  tenant: { id: string; name: string; currency: string };
+  branch: { id: string; name: string; city?: string | null; addressLine?: string | null };
+  customer: Partial<AdminUser>;
+  delivery: OrderDelivery;
+  _count?: { items: number };
+};
+
+type OrderDetail = Order & {
+  deliveryLatitude?: string | number | null;
+  deliveryLongitude?: string | number | null;
+  deliveryInstructions?: string | null;
+  items: Array<{
+    id: string;
+    productId?: string | null;
+    productName: string;
+    quantity: number;
+    unitPrice: string | number;
+    totalPrice: string | number;
+  }>;
+};
+
 type Overview = {
   tenants: number;
   pendingTenants: number;
@@ -44,7 +92,7 @@ type Overview = {
   orders: number;
 };
 
-type Tab = 'overview' | 'merchants' | 'users' | 'drivers';
+type Tab = 'overview' | 'merchants' | 'orders' | 'users' | 'drivers';
 
 const displayName = (user: Partial<AdminUser>) => {
   const name = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
@@ -52,6 +100,17 @@ const displayName = (user: Partial<AdminUser>) => {
 };
 
 const statusClass = (status: string) => `badge ${status.toLowerCase()}`;
+const humanizeStatus = (status: string) => status.replaceAll('_', ' ').toLowerCase();
+const formatDate = (value?: string | null) => value ? new Date(value).toLocaleString() : '—';
+const formatMoney = (value: string | number, currency = 'RWF') => {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount)) return `${currency} ${value}`;
+  return new Intl.NumberFormat('en-RW', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: currency === 'RWF' ? 0 : 2,
+  }).format(amount);
+};
 
 export default function Home() {
   const [checking, setChecking] = useState(true);
@@ -59,12 +118,19 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>('overview');
   const [overview, setOverview] = useState<Overview | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [busy, setBusy] = useState(false);
+  const [detailBusy, setDetailBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userQuery, setUserQuery] = useState('');
   const [tenantFilter, setTenantFilter] = useState('ALL');
+  const [orderQuery, setOrderQuery] = useState('');
+  const [orderStatus, setOrderStatus] = useState('ALL');
+  const [orderPaymentStatus, setOrderPaymentStatus] = useState('ALL');
+  const [orderDeliveryStatus, setOrderDeliveryStatus] = useState('ALL');
+  const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
 
   const adminFetch = useCallback(async (path: string, init?: RequestInit) => {
     const response = await fetch(`/api/admin/${path}`, {
@@ -92,14 +158,16 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
-      const [summary, tenantRows, userRows, driverRows] = await Promise.all([
+      const [summary, tenantRows, orderRows, userRows, driverRows] = await Promise.all([
         adminFetch('overview'),
         adminFetch('tenants'),
+        adminFetch('orders'),
         adminFetch('users'),
         adminFetch('drivers'),
       ]);
       setOverview(summary as Overview);
       setTenants(tenantRows as Tenant[]);
+      setOrders(orderRows as Order[]);
       setUsers(userRows as AdminUser[]);
       setDrivers(driverRows as Driver[]);
     } catch (e) {
@@ -150,6 +218,7 @@ export default function Home() {
     await fetch('/api/session/logout', { method: 'POST' });
     setUser(null);
     setOverview(null);
+    setSelectedOrder(null);
   }
 
   async function setTenantStatus(tenant: Tenant, status: string) {
@@ -211,6 +280,55 @@ export default function Home() {
     }
   }
 
+  async function searchOrders(event?: FormEvent) {
+    event?.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (orderQuery.trim()) params.set('q', orderQuery.trim());
+      if (orderStatus !== 'ALL') params.set('status', orderStatus);
+      if (orderPaymentStatus !== 'ALL') params.set('paymentStatus', orderPaymentStatus);
+      if (orderDeliveryStatus !== 'ALL') params.set('deliveryStatus', orderDeliveryStatus);
+      const rows = await adminFetch(`orders${params.size ? `?${params.toString()}` : ''}`);
+      setOrders(rows as Order[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to search orders.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearOrderFilters() {
+    setOrderQuery('');
+    setOrderStatus('ALL');
+    setOrderPaymentStatus('ALL');
+    setOrderDeliveryStatus('ALL');
+    setBusy(true);
+    setError(null);
+    try {
+      const rows = await adminFetch('orders');
+      setOrders(rows as Order[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to load orders.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openOrder(order: Order) {
+    setDetailBusy(true);
+    setError(null);
+    try {
+      const detail = await adminFetch(`orders/${order.id}`);
+      setSelectedOrder(detail as OrderDetail);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to load order details.');
+    } finally {
+      setDetailBusy(false);
+    }
+  }
+
   const filteredTenants = useMemo(
     () => tenantFilter === 'ALL' ? tenants : tenants.filter((tenant) => tenant.status === tenantFilter),
     [tenants, tenantFilter],
@@ -222,9 +340,12 @@ export default function Home() {
   const titles: Record<Tab, [string, string]> = {
     overview: ['Overview', 'Marketplace health and pending work.'],
     merchants: ['Merchants', 'Approve, suspend and review marketplace tenants.'],
+    orders: ['Orders', 'Search marketplace orders and review fulfillment details.'],
     users: ['Users', 'Customer accounts, access state and driver approval.'],
     drivers: ['Drivers', 'Approved delivery partners and live availability.'],
   };
+
+  const navItems = ['overview', 'merchants', 'orders', 'users', 'drivers'] as Tab[];
 
   return (
     <div className="admin-shell">
@@ -234,7 +355,7 @@ export default function Home() {
           <div><div className="brand-title">Fida Marketplace</div><div className="brand-sub">Control Center</div></div>
         </div>
         <nav className="nav">
-          {(['overview', 'merchants', 'users', 'drivers'] as Tab[]).map((value) => (
+          {navItems.map((value) => (
             <button key={value} className={tab === value ? 'active' : ''} onClick={() => setTab(value)}>
               {value === 'overview' ? 'Overview' : value[0].toUpperCase() + value.slice(1)}
             </button>
@@ -253,9 +374,26 @@ export default function Home() {
         </header>
         {error && <div className="error">{error}</div>}
 
-        {tab === 'overview' && <OverviewView overview={overview} tenants={tenants} onOpenMerchants={() => setTab('merchants')} />}
+        {tab === 'overview' && <OverviewView overview={overview} tenants={tenants} onOpenMerchants={() => setTab('merchants')} onOpenOrders={() => setTab('orders')} />}
         {tab === 'merchants' && (
           <MerchantsView tenants={filteredTenants} filter={tenantFilter} setFilter={setTenantFilter} busy={busy} setStatus={setTenantStatus} />
+        )}
+        {tab === 'orders' && (
+          <OrdersView
+            orders={orders}
+            query={orderQuery}
+            setQuery={setOrderQuery}
+            status={orderStatus}
+            setStatus={setOrderStatus}
+            paymentStatus={orderPaymentStatus}
+            setPaymentStatus={setOrderPaymentStatus}
+            deliveryStatus={orderDeliveryStatus}
+            setDeliveryStatus={setOrderDeliveryStatus}
+            busy={busy || detailBusy}
+            search={searchOrders}
+            clear={clearOrderFilters}
+            openOrder={openOrder}
+          />
         )}
         {tab === 'users' && (
           <UsersView users={users} query={userQuery} setQuery={setUserQuery} busy={busy} search={searchUsers} approveDriver={approveDriver} setActive={setUserActive} />
@@ -264,10 +402,12 @@ export default function Home() {
       </main>
 
       <nav className="mobile-nav">
-        {(['overview', 'merchants', 'users', 'drivers'] as Tab[]).map((value) => (
+        {navItems.map((value) => (
           <button key={value} className={tab === value ? 'active' : ''} onClick={() => setTab(value)}>{value === 'overview' ? 'Home' : value}</button>
         ))}
       </nav>
+
+      {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />}
     </div>
   );
 }
@@ -290,7 +430,7 @@ function Login({ busy, error, onLogin }: { busy: boolean; error: string | null; 
   );
 }
 
-function OverviewView({ overview, tenants, onOpenMerchants }: { overview: Overview | null; tenants: Tenant[]; onOpenMerchants: () => void }) {
+function OverviewView({ overview, tenants, onOpenMerchants, onOpenOrders }: { overview: Overview | null; tenants: Tenant[]; onOpenMerchants: () => void; onOpenOrders: () => void }) {
   const cards = [
     ['Merchants', overview?.tenants ?? '—', `${overview?.pendingTenants ?? 0} pending approval`],
     ['Orders', overview?.orders ?? '—', 'All marketplace orders'],
@@ -301,7 +441,7 @@ function OverviewView({ overview, tenants, onOpenMerchants }: { overview: Overvi
   ];
   const pending = tenants.filter((tenant) => tenant.status === 'PENDING');
   return <>
-    <section className="cards">{cards.map(([label, value, note]) => <article className="card stat" key={label}><div className="stat-label">{label}</div><div className="stat-value">{value}</div><div className="stat-note">{note}</div></article>)}</section>
+    <section className="cards">{cards.map(([label, value, note]) => <article className={`card stat ${label === 'Orders' ? 'clickable' : ''}`} key={label} onClick={label === 'Orders' ? onOpenOrders : undefined} role={label === 'Orders' ? 'button' : undefined} tabIndex={label === 'Orders' ? 0 : undefined}><div className="stat-label">{label}</div><div className="stat-value">{value}</div><div className="stat-note">{note}</div></article>)}</section>
     <section className="panel">
       <div className="panel-head"><div><h2>Pending merchant approvals</h2><p>New businesses stay hidden from customers until activated.</p></div><button className="btn small" onClick={onOpenMerchants}>Open merchants</button></div>
       {pending.length === 0 ? <div className="empty">No merchants are waiting for approval.</div> : <div className="table-wrap"><table><thead><tr><th>Merchant</th><th>Type</th><th>Branches</th><th>Products</th></tr></thead><tbody>{pending.slice(0, 6).map((tenant) => <tr key={tenant.id}><td><div className="cell-title">{tenant.name}</div><div className="cell-sub">{tenant.slug}</div></td><td>{tenant.merchantType}</td><td>{tenant.branches?.length ?? 0}</td><td>{tenant._count?.products ?? 0}</td></tr>)}</tbody></table></div>}
@@ -316,6 +456,27 @@ function MerchantsView({ tenants, filter, setFilter, busy, setStatus }: { tenant
   </section>;
 }
 
+function OrdersView({ orders, query, setQuery, status, setStatus, paymentStatus, setPaymentStatus, deliveryStatus, setDeliveryStatus, busy, search, clear, openOrder }: { orders: Order[]; query: string; setQuery: (v: string) => void; status: string; setStatus: (v: string) => void; paymentStatus: string; setPaymentStatus: (v: string) => void; deliveryStatus: string; setDeliveryStatus: (v: string) => void; busy: boolean; search: (e?: FormEvent) => Promise<void>; clear: () => Promise<void>; openOrder: (order: Order) => Promise<void> }) {
+  const orderStatuses = ['PENDING', 'ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP', 'PICKED_UP', 'DELIVERING', 'COMPLETED', 'CANCELLED', 'REJECTED'];
+  const paymentStatuses = ['PENDING', 'AUTHORIZED', 'PAID', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED'];
+  const deliveryStatuses = ['UNASSIGNED', 'OFFERED', 'ASSIGNED', 'AT_PICKUP', 'PICKED_UP', 'AT_DROPOFF', 'DELIVERED', 'CANCELLED'];
+
+  return <section className="panel">
+    <div className="panel-head orders-head">
+      <div><h2>Marketplace orders</h2><p>{orders.length} shown · newest first</p></div>
+      <form className="order-filters" onSubmit={(e) => void search(e)}>
+        <input className="input" placeholder="Order, merchant or customer" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <select className="select" value={status} onChange={(e) => setStatus(e.target.value)}><option value="ALL">All order statuses</option>{orderStatuses.map((value) => <option key={value}>{value}</option>)}</select>
+        <select className="select" value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}><option value="ALL">All payment statuses</option>{paymentStatuses.map((value) => <option key={value}>{value}</option>)}</select>
+        <select className="select" value={deliveryStatus} onChange={(e) => setDeliveryStatus(e.target.value)}><option value="ALL">All delivery statuses</option>{deliveryStatuses.map((value) => <option key={value}>{value}</option>)}</select>
+        <button className="btn primary" disabled={busy}>Apply</button>
+        <button className="btn" type="button" disabled={busy} onClick={() => void clear()}>Clear</button>
+      </form>
+    </div>
+    {orders.length === 0 ? <div className="empty">No orders match these filters.</div> : <div className="table-wrap"><table className="orders-table"><thead><tr><th>Order</th><th>Merchant</th><th>Customer</th><th>Total</th><th>Payment</th><th>Order status</th><th>Delivery</th><th>Created</th><th></th></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><div className="cell-title">{order.orderNumber}</div><div className="cell-sub">{order._count?.items ?? 0} item{(order._count?.items ?? 0) === 1 ? '' : 's'}</div></td><td><div className="cell-title">{order.tenant.name}</div><div className="cell-sub">{order.branch.city || order.branch.name}</div></td><td><div className="cell-title">{displayName(order.customer)}</div><div className="cell-sub">{order.customer.email || order.customer.phone || '—'}</div></td><td><div className="cell-title">{formatMoney(order.total, order.tenant.currency)}</div></td><td><span className={statusClass(order.paymentStatus)}>{humanizeStatus(order.paymentStatus)}</span><div className="cell-sub">{humanizeStatus(order.paymentMethod)}</div></td><td><span className={statusClass(order.status)}>{humanizeStatus(order.status)}</span></td><td>{order.delivery ? <><span className={statusClass(order.delivery.status)}>{humanizeStatus(order.delivery.status)}</span><div className="cell-sub">{order.delivery.driver ? displayName(order.delivery.driver.user) : 'No driver'}</div></> : <span className={statusClass('unassigned')}>unassigned</span>}</td><td>{formatDate(order.createdAt)}</td><td><button className="btn small" disabled={busy} onClick={() => void openOrder(order)}>View</button></td></tr>)}</tbody></table></div>}
+  </section>;
+}
+
 function UsersView({ users, query, setQuery, busy, search, approveDriver, setActive }: { users: AdminUser[]; query: string; setQuery: (v: string) => void; busy: boolean; search: (e?: FormEvent) => Promise<void>; approveDriver: (u: AdminUser) => Promise<void>; setActive: (u: AdminUser, active: boolean) => Promise<void> }) {
   return <section className="panel">
     <div className="panel-head"><div><h2>User directory</h2><p>Search accounts and approve delivery partners.</p></div><form className="toolbar" onSubmit={(e) => void search(e)}><input className="input" placeholder="Email, phone or name" value={query} onChange={(e) => setQuery(e.target.value)} /><button className="btn" disabled={busy}>Search</button></form></div>
@@ -325,4 +486,27 @@ function UsersView({ users, query, setQuery, busy, search, approveDriver, setAct
 
 function DriversView({ drivers }: { drivers: Driver[] }) {
   return <section className="panel"><div className="panel-head"><div><h2>Approved drivers</h2><p>{drivers.length} delivery partners</p></div></div>{drivers.length === 0 ? <div className="empty">No drivers approved yet.</div> : <div className="table-wrap"><table><thead><tr><th>Driver</th><th>Status</th><th>Availability</th><th>Deliveries</th><th>Last seen</th></tr></thead><tbody>{drivers.map((driver) => <tr key={driver.id}><td><div className="cell-title">{displayName(driver.user)}</div><div className="cell-sub">{driver.user.email || driver.user.phone}</div></td><td><span className={statusClass(driver.isOnline ? 'active' : 'pending')}>{driver.isOnline ? 'online' : 'offline'}</span></td><td>{driver.isAvailable ? 'Available' : 'Unavailable'}</td><td>{driver._count?.deliveries ?? 0}</td><td>{driver.lastSeenAt ? new Date(driver.lastSeenAt).toLocaleString() : 'Never'}</td></tr>)}</tbody></table></div>}</section>;
+}
+
+function OrderDetailModal({ order, onClose }: { order: OrderDetail; onClose: () => void }) {
+  const currency = order.tenant.currency;
+  const driver = order.delivery?.driver?.user;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
+    <section className="modal-card" role="dialog" aria-modal="true" aria-label={`Order ${order.orderNumber}`}>
+      <div className="modal-head"><div><div className="eyebrow">Order detail</div><h2>{order.orderNumber}</h2><div className="modal-statuses"><span className={statusClass(order.status)}>{humanizeStatus(order.status)}</span><span className={statusClass(order.paymentStatus)}>{humanizeStatus(order.paymentStatus)}</span>{order.delivery && <span className={statusClass(order.delivery.status)}>{humanizeStatus(order.delivery.status)}</span>}</div></div><button className="btn" onClick={onClose}>Close</button></div>
+
+      <div className="detail-grid">
+        <article className="detail-card"><div className="detail-label">Merchant</div><div className="detail-value">{order.tenant.name}</div><div className="cell-sub">{order.branch.name}{order.branch.city ? ` · ${order.branch.city}` : ''}</div></article>
+        <article className="detail-card"><div className="detail-label">Customer</div><div className="detail-value">{displayName(order.customer)}</div><div className="cell-sub">{order.customer.email || order.customer.phone || 'No contact'}</div></article>
+        <article className="detail-card"><div className="detail-label">Payment</div><div className="detail-value">{humanizeStatus(order.paymentMethod)}</div><div className="cell-sub">{humanizeStatus(order.paymentStatus)}</div></article>
+        <article className="detail-card"><div className="detail-label">Delivery partner</div><div className="detail-value">{driver ? displayName(driver) : 'Not assigned'}</div><div className="cell-sub">{order.delivery ? humanizeStatus(order.delivery.status) : 'unassigned'}</div></article>
+      </div>
+
+      <div className="detail-section"><h3>Delivery</h3><div className="detail-grid two"><article className="detail-card"><div className="detail-label">Address</div><div className="detail-value compact">{order.deliveryAddress || 'No delivery address'}</div>{order.deliveryInstructions && <div className="cell-sub">Instructions: {order.deliveryInstructions}</div>}</article><article className="detail-card"><div className="detail-label">Timeline</div><div className="timeline"><span>Created <strong>{formatDate(order.createdAt)}</strong></span><span>Assigned <strong>{formatDate(order.delivery?.assignedAt)}</strong></span><span>Picked up <strong>{formatDate(order.delivery?.pickedUpAt)}</strong></span><span>Delivered <strong>{formatDate(order.delivery?.deliveredAt)}</strong></span></div></article></div></div>
+
+      <div className="detail-section"><h3>Items</h3><div className="table-wrap"><table className="detail-items"><thead><tr><th>Product</th><th>Qty</th><th>Unit price</th><th>Total</th></tr></thead><tbody>{order.items.map((item) => <tr key={item.id}><td><div className="cell-title">{item.productName}</div></td><td>{item.quantity}</td><td>{formatMoney(item.unitPrice, currency)}</td><td>{formatMoney(item.totalPrice, currency)}</td></tr>)}</tbody></table></div></div>
+
+      <div className="order-totals"><div><span>Subtotal</span><strong>{formatMoney(order.subtotal, currency)}</strong></div><div><span>Delivery fee</span><strong>{formatMoney(order.deliveryFee, currency)}</strong></div><div><span>Service fee</span><strong>{formatMoney(order.serviceFee, currency)}</strong></div>{Number(order.discount) > 0 && <div><span>Discount</span><strong>-{formatMoney(order.discount, currency)}</strong></div>}<div className="grand-total"><span>Total</span><strong>{formatMoney(order.total, currency)}</strong></div></div>
+    </section>
+  </div>;
 }
