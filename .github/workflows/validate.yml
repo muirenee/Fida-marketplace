@@ -20,6 +20,8 @@ jobs:
       CORS_ORIGIN: http://localhost:3000
       APP_ENV: test
       API_BIND_ADDRESS: 127.0.0.1
+      ADMIN_BIND_ADDRESS: 127.0.0.1
+      FIDA_API_BASE_URL: http://127.0.0.1:3001
     steps:
       - uses: actions/checkout@v4
 
@@ -43,6 +45,12 @@ jobs:
       - name: Typecheck API
         run: pnpm typecheck:api
 
+      - name: Typecheck Admin web
+        run: pnpm --filter @fida/admin-web typecheck
+
+      - name: Build Admin web
+        run: pnpm --filter @fida/admin-web build
+
       - name: Validate Docker Compose configuration
         run: docker compose -f infra/docker-compose.yml config --quiet
 
@@ -52,6 +60,8 @@ jobs:
           test -f docs/DEPLOYMENT.md
           test -f infra/docker-compose.yml
           test -f apps/api/Dockerfile
+          test -f apps/admin-web/Dockerfile
+          test -f apps/admin-web/app/page.tsx
           test -f apps/customer-mobile/lib/main.dart
           test -f apps/merchant-mobile/lib/main.dart
           test -f apps/driver-mobile/lib/main.dart
