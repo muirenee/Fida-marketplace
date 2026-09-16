@@ -21,6 +21,11 @@ type Tenant = {
   status: string;
   merchantType: string;
   currency: string;
+  timezone?: string;
+  isAcceptingOrders: boolean;
+  minimumOrder: string | number;
+  defaultDeliveryFee: string | number;
+  serviceFeePercent: string | number;
   createdAt?: string;
   branches?: Array<{ id: string; name: string; city?: string | null; isActive: boolean }>;
   _count?: { memberships: number; products: number; orders: number };
@@ -92,6 +97,13 @@ type Overview = {
   orders: number;
 };
 
+type MerchantSettingsPayload = {
+  isAcceptingOrders: boolean;
+  minimumOrder: number;
+  defaultDeliveryFee: number;
+  serviceFeePercent: number;
+};
+
 type Tab = 'overview' | 'merchants' | 'orders' | 'users' | 'drivers';
 
 const displayName = (user: Partial<AdminUser>) => {
@@ -101,7 +113,7 @@ const displayName = (user: Partial<AdminUser>) => {
 
 const statusClass = (status: string) => `badge ${status.toLowerCase()}`;
 const humanizeStatus = (status: string) => status.replaceAll('_', ' ').toLowerCase();
-const formatDate = (value?: string | null) => value ? new Date(value).toLocaleString() : '—';
+const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleString() : '—');
 const formatMoney = (value: string | number, currency = 'RWF') => {
   const amount = Number(value ?? 0);
   if (!Number.isFinite(amount)) return `${currency} ${value}`;
@@ -131,6 +143,7 @@ export default function Home() {
   const [orderPaymentStatus, setOrderPaymentStatus] = useState('ALL');
   const [orderDeliveryStatus, setOrderDeliveryStatus] = useState('ALL');
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
+  const [selectedMerchant, setSelectedMerchant] = useState<Tenant | null>(null);
 
   const adminFetch = useCallback(async (path: string, init?: RequestInit) => {
     const response = await fetch(`/api/admin/${path}`, {
@@ -219,6 +232,7 @@ export default function Home() {
     setUser(null);
     setOverview(null);
     setSelectedOrder(null);
+    setSelectedMerchant(null);
   }
 
   async function setTenantStatus(tenant: Tenant, status: string) {
@@ -233,6 +247,23 @@ export default function Home() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to update merchant.');
       setBusy(false);
+    }
+  }
+
+  async function saveMerchantSettings(tenant: Tenant, payload: MerchantSettingsPayload) {
+    setBusy(true);
+    setError(null);
+    try {
+      await adminFetch(`tenants/${tenant.id}/settings`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+      setSelectedMerchant(null);
+      await loadData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to update merchant settings.');
+      setBusy(false);
+      throw e;
     }
   }
 
@@ -330,7 +361,7 @@ export default function Home() {
   }
 
   const filteredTenants = useMemo(
-    () => tenantFilter === 'ALL' ? tenants : tenants.filter((tenant) => tenant.status === tenantFilter),
+    () => (tenantFilter === 'ALL' ? tenants : tenants.filter((tenant) => tenant.status === tenantFilter)),
     [tenants, tenantFilter],
   );
 
@@ -339,7 +370,7 @@ export default function Home() {
 
   const titles: Record<Tab, [string, string]> = {
     overview: ['Overview', 'Marketplace health and pending work.'],
-    merchants: ['Merchants', 'Approve, suspend and review marketplace tenants.'],
+    merchants: ['Merchants', 'Approve merchants and control commercial settings.'],
     orders: ['Orders', 'Search marketplace orders and review fulfillment details.'],
     users: ['Users', 'Customer accounts, access state and driver approval.'],
     drivers: ['Drivers', 'Approved delivery partners and live availability.'],
@@ -374,9 +405,23 @@ export default function Home() {
         </header>
         {error && <div className="error">{error}</div>}
 
-        {tab === 'overview' && <OverviewView overview={overview} tenants={tenants} onOpenMerchants={() => setTab('merchants')} onOpenOrders={() => setTab('orders')} />}
+        {tab === 'overview' && (
+          <OverviewView
+            overview={overview}
+            tenants={tenants}
+            onOpenMerchants={() => setTab('merchants')}
+            onOpenOrders={() => setTab('orders')}
+          />
+        )}
         {tab === 'merchants' && (
-          <MerchantsView tenants={filteredTenants} filter={tenantFilter} setFilter={setTenantFilter} busy={busy} setStatus={setTenantStatus} />
+          <MerchantsView
+            tenants={filteredTenants}
+            filter={tenantFilter}
+            setFilter={setTenantFilter}
+            busy={busy}
+            setStatus={setTenantStatus}
+            openSettings={setSelectedMerchant}
+          />
         )}
         {tab === 'orders' && (
           <OrdersView
@@ -396,18 +441,36 @@ export default function Home() {
           />
         )}
         {tab === 'users' && (
-          <UsersView users={users} query={userQuery} setQuery={setUserQuery} busy={busy} search={searchUsers} approveDriver={approveDriver} setActive={setUserActive} />
+          <UsersView
+            users={users}
+            query={userQuery}
+            setQuery={setUserQuery}
+            busy={busy}
+            search={searchUsers}
+            approveDriver={approveDriver}
+            setActive={setUserActive}
+          />
         )}
         {tab === 'drivers' && <DriversView drivers={drivers} />}
       </main>
 
       <nav className="mobile-nav">
         {navItems.map((value) => (
-          <button key={value} className={tab === value ? 'active' : ''} onClick={() => setTab(value)}>{value === 'overview' ? 'Home' : value}</button>
+          <button key={value} className={tab === value ? 'active' : ''} onClick={() => setTab(value)}>
+            {value === 'overview' ? 'Home' : value}
+          </button>
         ))}
       </nav>
 
       {selectedOrder && <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />}
+      {selectedMerchant && (
+        <MerchantSettingsModal
+          tenant={selectedMerchant}
+          busy={busy}
+          onClose={() => setSelectedMerchant(null)}
+          onSave={saveMerchantSettings}
+        />
+      )}
     </div>
   );
 }
@@ -441,22 +504,92 @@ function OverviewView({ overview, tenants, onOpenMerchants, onOpenOrders }: { ov
   ];
   const pending = tenants.filter((tenant) => tenant.status === 'PENDING');
   return <>
-    <section className="cards">{cards.map(([label, value, note]) => <article className={`card stat ${label === 'Orders' ? 'clickable' : ''}`} key={label} onClick={label === 'Orders' ? onOpenOrders : undefined} role={label === 'Orders' ? 'button' : undefined} tabIndex={label === 'Orders' ? 0 : undefined}><div className="stat-label">{label}</div><div className="stat-value">{value}</div><div className="stat-note">{note}</div></article>)}</section>
+    <section className="cards">
+      {cards.map(([label, value, note]) => (
+        <article
+          className={`card stat ${label === 'Orders' ? 'clickable' : ''}`}
+          key={label}
+          onClick={label === 'Orders' ? onOpenOrders : undefined}
+          role={label === 'Orders' ? 'button' : undefined}
+          tabIndex={label === 'Orders' ? 0 : undefined}
+        >
+          <div className="stat-label">{label}</div>
+          <div className="stat-value">{value}</div>
+          <div className="stat-note">{note}</div>
+        </article>
+      ))}
+    </section>
     <section className="panel">
-      <div className="panel-head"><div><h2>Pending merchant approvals</h2><p>New businesses stay hidden from customers until activated.</p></div><button className="btn small" onClick={onOpenMerchants}>Open merchants</button></div>
-      {pending.length === 0 ? <div className="empty">No merchants are waiting for approval.</div> : <div className="table-wrap"><table><thead><tr><th>Merchant</th><th>Type</th><th>Branches</th><th>Products</th></tr></thead><tbody>{pending.slice(0, 6).map((tenant) => <tr key={tenant.id}><td><div className="cell-title">{tenant.name}</div><div className="cell-sub">{tenant.slug}</div></td><td>{tenant.merchantType}</td><td>{tenant.branches?.length ?? 0}</td><td>{tenant._count?.products ?? 0}</td></tr>)}</tbody></table></div>}
+      <div className="panel-head">
+        <div><h2>Pending merchant approvals</h2><p>New businesses stay hidden from customers until activated.</p></div>
+        <button className="btn small" onClick={onOpenMerchants}>Open merchants</button>
+      </div>
+      {pending.length === 0 ? <div className="empty">No merchants are waiting for approval.</div> : (
+        <div className="table-wrap"><table><thead><tr><th>Merchant</th><th>Type</th><th>Branches</th><th>Products</th></tr></thead><tbody>
+          {pending.slice(0, 6).map((tenant) => <tr key={tenant.id}><td><div className="cell-title">{tenant.name}</div><div className="cell-sub">{tenant.slug}</div></td><td>{tenant.merchantType}</td><td>{tenant.branches?.length ?? 0}</td><td>{tenant._count?.products ?? 0}</td></tr>)}
+        </tbody></table></div>
+      )}
     </section>
   </>;
 }
 
-function MerchantsView({ tenants, filter, setFilter, busy, setStatus }: { tenants: Tenant[]; filter: string; setFilter: (v: string) => void; busy: boolean; setStatus: (t: Tenant, s: string) => Promise<void> }) {
+function MerchantsView({ tenants, filter, setFilter, busy, setStatus, openSettings }: {
+  tenants: Tenant[];
+  filter: string;
+  setFilter: (v: string) => void;
+  busy: boolean;
+  setStatus: (t: Tenant, s: string) => Promise<void>;
+  openSettings: (t: Tenant) => void;
+}) {
   return <section className="panel">
-    <div className="panel-head"><div><h2>Marketplace merchants</h2><p>{tenants.length} shown</p></div><div className="toolbar"><select className="select" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="ALL">All statuses</option><option>PENDING</option><option>ACTIVE</option><option>SUSPENDED</option><option>CLOSED</option></select></div></div>
-    {tenants.length === 0 ? <div className="empty">No merchants match this filter.</div> : <div className="table-wrap"><table><thead><tr><th>Merchant</th><th>Status</th><th>Branches</th><th>Catalog</th><th>Orders</th><th>Actions</th></tr></thead><tbody>{tenants.map((tenant) => <tr key={tenant.id}><td><div className="cell-title">{tenant.name}</div><div className="cell-sub">{tenant.merchantType.toLowerCase()} · {tenant.currency}</div></td><td><span className={statusClass(tenant.status)}>{tenant.status}</span></td><td>{tenant.branches?.map((b) => b.city || b.name).join(', ') || '—'}</td><td>{tenant._count?.products ?? 0}</td><td>{tenant._count?.orders ?? 0}</td><td><div className="actions">{tenant.status !== 'ACTIVE' && tenant.status !== 'CLOSED' && <button className="btn primary small" disabled={busy} onClick={() => void setStatus(tenant, 'ACTIVE')}>Activate</button>}{tenant.status === 'ACTIVE' && <button className="btn small" disabled={busy} onClick={() => void setStatus(tenant, 'SUSPENDED')}>Suspend</button>}{tenant.status !== 'CLOSED' && <button className="btn danger small" disabled={busy} onClick={() => void setStatus(tenant, 'CLOSED')}>Close</button>}</div></td></tr>)}</tbody></table></div>}
+    <div className="panel-head">
+      <div><h2>Marketplace merchants</h2><p>{tenants.length} shown</p></div>
+      <div className="toolbar">
+        <select className="select" value={filter} onChange={(e) => setFilter(e.target.value)}>
+          <option value="ALL">All statuses</option><option>PENDING</option><option>ACTIVE</option><option>SUSPENDED</option><option>CLOSED</option>
+        </select>
+      </div>
+    </div>
+    {tenants.length === 0 ? <div className="empty">No merchants match this filter.</div> : (
+      <div className="table-wrap"><table className="merchants-table"><thead><tr><th>Merchant</th><th>Status</th><th>Orders</th><th>Commercial settings</th><th>Catalog</th><th>Actions</th></tr></thead><tbody>
+        {tenants.map((tenant) => (
+          <tr key={tenant.id}>
+            <td><div className="cell-title">{tenant.name}</div><div className="cell-sub">{tenant.merchantType.toLowerCase()} · {tenant.currency} · {tenant.branches?.map((b) => b.city || b.name).join(', ') || 'No branch'}</div></td>
+            <td><span className={statusClass(tenant.status)}>{humanizeStatus(tenant.status)}</span></td>
+            <td>{tenant._count?.orders ?? 0}</td>
+            <td>
+              <span className={statusClass(tenant.isAcceptingOrders ? 'active' : 'suspended')}>{tenant.isAcceptingOrders ? 'accepting orders' : 'orders paused'}</span>
+              <div className="cell-sub">Min {formatMoney(tenant.minimumOrder, tenant.currency)} · Delivery {formatMoney(tenant.defaultDeliveryFee, tenant.currency)} · Service {Number(tenant.serviceFeePercent)}%</div>
+            </td>
+            <td>{tenant._count?.products ?? 0}</td>
+            <td><div className="actions">
+              <button className="btn small" disabled={busy} onClick={() => openSettings(tenant)}>Settings</button>
+              {tenant.status !== 'ACTIVE' && tenant.status !== 'CLOSED' && <button className="btn primary small" disabled={busy} onClick={() => void setStatus(tenant, 'ACTIVE')}>Activate</button>}
+              {tenant.status === 'ACTIVE' && <button className="btn small" disabled={busy} onClick={() => void setStatus(tenant, 'SUSPENDED')}>Suspend</button>}
+              {tenant.status !== 'CLOSED' && <button className="btn danger small" disabled={busy} onClick={() => void setStatus(tenant, 'CLOSED')}>Close</button>}
+            </div></td>
+          </tr>
+        ))}
+      </tbody></table></div>
+    )}
   </section>;
 }
 
-function OrdersView({ orders, query, setQuery, status, setStatus, paymentStatus, setPaymentStatus, deliveryStatus, setDeliveryStatus, busy, search, clear, openOrder }: { orders: Order[]; query: string; setQuery: (v: string) => void; status: string; setStatus: (v: string) => void; paymentStatus: string; setPaymentStatus: (v: string) => void; deliveryStatus: string; setDeliveryStatus: (v: string) => void; busy: boolean; search: (e?: FormEvent) => Promise<void>; clear: () => Promise<void>; openOrder: (order: Order) => Promise<void> }) {
+function OrdersView({ orders, query, setQuery, status, setStatus, paymentStatus, setPaymentStatus, deliveryStatus, setDeliveryStatus, busy, search, clear, openOrder }: {
+  orders: Order[];
+  query: string;
+  setQuery: (v: string) => void;
+  status: string;
+  setStatus: (v: string) => void;
+  paymentStatus: string;
+  setPaymentStatus: (v: string) => void;
+  deliveryStatus: string;
+  setDeliveryStatus: (v: string) => void;
+  busy: boolean;
+  search: (e?: FormEvent) => Promise<void>;
+  clear: () => Promise<void>;
+  openOrder: (order: Order) => Promise<void>;
+}) {
   const orderStatuses = ['PENDING', 'ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP', 'PICKED_UP', 'DELIVERING', 'COMPLETED', 'CANCELLED', 'REJECTED'];
   const paymentStatuses = ['PENDING', 'AUTHORIZED', 'PAID', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED'];
   const deliveryStatuses = ['UNASSIGNED', 'OFFERED', 'ASSIGNED', 'AT_PICKUP', 'PICKED_UP', 'AT_DROPOFF', 'DELIVERED', 'CANCELLED'];
@@ -473,11 +606,23 @@ function OrdersView({ orders, query, setQuery, status, setStatus, paymentStatus,
         <button className="btn" type="button" disabled={busy} onClick={() => void clear()}>Clear</button>
       </form>
     </div>
-    {orders.length === 0 ? <div className="empty">No orders match these filters.</div> : <div className="table-wrap"><table className="orders-table"><thead><tr><th>Order</th><th>Merchant</th><th>Customer</th><th>Total</th><th>Payment</th><th>Order status</th><th>Delivery</th><th>Created</th><th></th></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><div className="cell-title">{order.orderNumber}</div><div className="cell-sub">{order._count?.items ?? 0} item{(order._count?.items ?? 0) === 1 ? '' : 's'}</div></td><td><div className="cell-title">{order.tenant.name}</div><div className="cell-sub">{order.branch.city || order.branch.name}</div></td><td><div className="cell-title">{displayName(order.customer)}</div><div className="cell-sub">{order.customer.email || order.customer.phone || '—'}</div></td><td><div className="cell-title">{formatMoney(order.total, order.tenant.currency)}</div></td><td><span className={statusClass(order.paymentStatus)}>{humanizeStatus(order.paymentStatus)}</span><div className="cell-sub">{humanizeStatus(order.paymentMethod)}</div></td><td><span className={statusClass(order.status)}>{humanizeStatus(order.status)}</span></td><td>{order.delivery ? <><span className={statusClass(order.delivery.status)}>{humanizeStatus(order.delivery.status)}</span><div className="cell-sub">{order.delivery.driver ? displayName(order.delivery.driver.user) : 'No driver'}</div></> : <span className={statusClass('unassigned')}>unassigned</span>}</td><td>{formatDate(order.createdAt)}</td><td><button className="btn small" disabled={busy} onClick={() => void openOrder(order)}>View</button></td></tr>)}</tbody></table></div>}
+    {orders.length === 0 ? <div className="empty">No orders match these filters.</div> : (
+      <div className="table-wrap"><table className="orders-table"><thead><tr><th>Order</th><th>Merchant</th><th>Customer</th><th>Total</th><th>Payment</th><th>Order status</th><th>Delivery</th><th>Created</th><th></th></tr></thead><tbody>
+        {orders.map((order) => <tr key={order.id}><td><div className="cell-title">{order.orderNumber}</div><div className="cell-sub">{order._count?.items ?? 0} item{(order._count?.items ?? 0) === 1 ? '' : 's'}</div></td><td><div className="cell-title">{order.tenant.name}</div><div className="cell-sub">{order.branch.city || order.branch.name}</div></td><td><div className="cell-title">{displayName(order.customer)}</div><div className="cell-sub">{order.customer.email || order.customer.phone || '—'}</div></td><td><div className="cell-title">{formatMoney(order.total, order.tenant.currency)}</div></td><td><span className={statusClass(order.paymentStatus)}>{humanizeStatus(order.paymentStatus)}</span><div className="cell-sub">{humanizeStatus(order.paymentMethod)}</div></td><td><span className={statusClass(order.status)}>{humanizeStatus(order.status)}</span></td><td>{order.delivery ? <><span className={statusClass(order.delivery.status)}>{humanizeStatus(order.delivery.status)}</span><div className="cell-sub">{order.delivery.driver ? displayName(order.delivery.driver.user) : 'No driver'}</div></> : <span className={statusClass('unassigned')}>unassigned</span>}</td><td>{formatDate(order.createdAt)}</td><td><button className="btn small" disabled={busy} onClick={() => void openOrder(order)}>View</button></td></tr>)}
+      </tbody></table></div>
+    )}
   </section>;
 }
 
-function UsersView({ users, query, setQuery, busy, search, approveDriver, setActive }: { users: AdminUser[]; query: string; setQuery: (v: string) => void; busy: boolean; search: (e?: FormEvent) => Promise<void>; approveDriver: (u: AdminUser) => Promise<void>; setActive: (u: AdminUser, active: boolean) => Promise<void> }) {
+function UsersView({ users, query, setQuery, busy, search, approveDriver, setActive }: {
+  users: AdminUser[];
+  query: string;
+  setQuery: (v: string) => void;
+  busy: boolean;
+  search: (e?: FormEvent) => Promise<void>;
+  approveDriver: (u: AdminUser) => Promise<void>;
+  setActive: (u: AdminUser, active: boolean) => Promise<void>;
+}) {
   return <section className="panel">
     <div className="panel-head"><div><h2>User directory</h2><p>Search accounts and approve delivery partners.</p></div><form className="toolbar" onSubmit={(e) => void search(e)}><input className="input" placeholder="Email, phone or name" value={query} onChange={(e) => setQuery(e.target.value)} /><button className="btn" disabled={busy}>Search</button></form></div>
     {users.length === 0 ? <div className="empty">No users found.</div> : <div className="table-wrap"><table><thead><tr><th>User</th><th>Account</th><th>Driver</th><th>Actions</th></tr></thead><tbody>{users.map((row) => <tr key={row.id}><td><div className="cell-title">{displayName(row)}</div><div className="cell-sub">{row.email || row.phone || row.id}</div></td><td><span className={statusClass(row.isActive ? 'active' : 'inactive')}>{row.isPlatformAdmin ? 'platform admin' : row.isActive ? 'active' : 'inactive'}</span></td><td>{row.driver ? <><span className={statusClass(row.driver.isOnline ? 'active' : 'pending')}>{row.driver.isOnline ? 'online' : 'approved'}</span><div className="cell-sub">{row.driver.isAvailable ? 'available' : 'not available'}</div></> : 'Not approved'}</td><td><div className="actions">{!row.driver && row.isActive && !row.isPlatformAdmin && <button className="btn primary small" disabled={busy} onClick={() => void approveDriver(row)}>Approve driver</button>}{!row.isPlatformAdmin && <button className={`btn small ${row.isActive ? 'danger' : ''}`} disabled={busy} onClick={() => void setActive(row, !row.isActive)}>{row.isActive ? 'Disable' : 'Enable'}</button>}</div></td></tr>)}</tbody></table></div>}
@@ -486,6 +631,66 @@ function UsersView({ users, query, setQuery, busy, search, approveDriver, setAct
 
 function DriversView({ drivers }: { drivers: Driver[] }) {
   return <section className="panel"><div className="panel-head"><div><h2>Approved drivers</h2><p>{drivers.length} delivery partners</p></div></div>{drivers.length === 0 ? <div className="empty">No drivers approved yet.</div> : <div className="table-wrap"><table><thead><tr><th>Driver</th><th>Status</th><th>Availability</th><th>Deliveries</th><th>Last seen</th></tr></thead><tbody>{drivers.map((driver) => <tr key={driver.id}><td><div className="cell-title">{displayName(driver.user)}</div><div className="cell-sub">{driver.user.email || driver.user.phone}</div></td><td><span className={statusClass(driver.isOnline ? 'active' : 'pending')}>{driver.isOnline ? 'online' : 'offline'}</span></td><td>{driver.isAvailable ? 'Available' : 'Unavailable'}</td><td>{driver._count?.deliveries ?? 0}</td><td>{driver.lastSeenAt ? new Date(driver.lastSeenAt).toLocaleString() : 'Never'}</td></tr>)}</tbody></table></div>}</section>;
+}
+
+function MerchantSettingsModal({ tenant, busy, onClose, onSave }: {
+  tenant: Tenant;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (tenant: Tenant, payload: MerchantSettingsPayload) => Promise<void>;
+}) {
+  const [acceptingOrders, setAcceptingOrders] = useState(tenant.isAcceptingOrders);
+  const [minimumOrder, setMinimumOrder] = useState(String(tenant.minimumOrder ?? 0));
+  const [deliveryFee, setDeliveryFee] = useState(String(tenant.defaultDeliveryFee ?? 0));
+  const [serviceFeePercent, setServiceFeePercent] = useState(String(tenant.serviceFeePercent ?? 0));
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const minimum = Number(minimumOrder);
+    const delivery = Number(deliveryFee);
+    const service = Number(serviceFeePercent);
+    if (!Number.isFinite(minimum) || minimum < 0 || !Number.isFinite(delivery) || delivery < 0 || !Number.isFinite(service) || service < 0 || service > 100) {
+      setLocalError('Enter valid non-negative fees. Service fee must be between 0 and 100%.');
+      return;
+    }
+    setLocalError(null);
+    try {
+      await onSave(tenant, {
+        isAcceptingOrders: acceptingOrders,
+        minimumOrder: minimum,
+        defaultDeliveryFee: delivery,
+        serviceFeePercent: service,
+      });
+    } catch {
+      // Parent surfaces the API error above the page; keep the modal open for correction.
+    }
+  }
+
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (!busy && event.currentTarget === event.target) onClose(); }}>
+    <form className="modal-card settings-modal" role="dialog" aria-modal="true" aria-label={`Settings for ${tenant.name}`} onSubmit={(e) => void submit(e)}>
+      <div className="modal-head"><div><div className="eyebrow">Merchant commercial settings</div><h2>{tenant.name}</h2><div className="modal-statuses"><span className={statusClass(tenant.status)}>{humanizeStatus(tenant.status)}</span><span className={statusClass(acceptingOrders ? 'active' : 'suspended')}>{acceptingOrders ? 'accepting orders' : 'orders paused'}</span></div></div><button className="btn" type="button" disabled={busy} onClick={onClose}>Close</button></div>
+      <div className="settings-body">
+        {localError && <div className="error">{localError}</div>}
+        <div className="settings-summary">
+          <article className="detail-card"><div className="detail-label">Currency</div><div className="detail-value">{tenant.currency}</div></article>
+          <article className="detail-card"><div className="detail-label">Timezone</div><div className="detail-value">{tenant.timezone || 'Africa/Kigali'}</div></article>
+          <article className="detail-card"><div className="detail-label">Merchant type</div><div className="detail-value">{humanizeStatus(tenant.merchantType)}</div></article>
+        </div>
+        <label className="toggle-row">
+          <div><strong>Accept new orders</strong><span>Turn this off to pause checkout for this merchant without suspending the account.</span></div>
+          <input type="checkbox" checked={acceptingOrders} onChange={(e) => setAcceptingOrders(e.target.checked)} />
+        </label>
+        <div className="settings-grid">
+          <div className="field"><label>Minimum order ({tenant.currency})</label><input className="input" type="number" min="0" step={tenant.currency === 'RWF' ? '1' : '0.01'} required value={minimumOrder} onChange={(e) => setMinimumOrder(e.target.value)} /><span className="field-help">Customer subtotal must reach this amount before checkout.</span></div>
+          <div className="field"><label>Default delivery fee ({tenant.currency})</label><input className="input" type="number" min="0" step={tenant.currency === 'RWF' ? '1' : '0.01'} required value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} /><span className="field-help">Added to new orders from this merchant.</span></div>
+          <div className="field"><label>Service fee (%)</label><input className="input" type="number" min="0" max="100" step="0.01" required value={serviceFeePercent} onChange={(e) => setServiceFeePercent(e.target.value)} /><span className="field-help">Calculated from the order subtotal.</span></div>
+        </div>
+        <div className="settings-note">Changes apply to new orders only. Existing order totals remain unchanged.</div>
+      </div>
+      <div className="settings-actions"><button className="btn" type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy}>{busy ? 'Saving…' : 'Save settings'}</button></div>
+    </form>
+  </div>;
 }
 
 function OrderDetailModal({ order, onClose }: { order: OrderDetail; onClose: () => void }) {
