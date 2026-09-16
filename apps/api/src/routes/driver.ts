@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   DeliveryStatus,
   OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
   prisma,
 } from '@fida/database/client';
 import { authenticate } from '../lib/auth.js';
@@ -295,6 +297,15 @@ export async function driverRoutes(app: FastifyInstance) {
       }
 
       if (nextStatus === DeliveryStatus.DELIVERED) {
+        await tx.order.updateMany({
+          where: {
+            id: delivery.orderId,
+            paymentMethod: PaymentMethod.CASH,
+            paymentStatus: PaymentStatus.PENDING,
+          },
+          data: { paymentStatus: PaymentStatus.PAID },
+        });
+
         await tx.driver.update({
           where: { id: driver.id },
           data: { isAvailable: driver.isOnline, lastSeenAt: now },
