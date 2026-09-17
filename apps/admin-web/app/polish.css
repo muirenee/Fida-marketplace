@@ -1,0 +1,21 @@
+/* Small UX fixes discovered during the integrated Admin validation pass. */
+
+.modal-card .detail-section .orders-table {
+  min-width: 0;
+  table-layout: auto;
+}
+
+.modal-card .detail-section .orders-table th,
+.modal-card .detail-section .orders-table td {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .modal-card .detail-section .table-wrap {
+    overflow-x: auto;
+  }
+
+  .modal-card .detail-section .orders-table {
+    min-width: 860px;
+  }
+}
