@@ -135,43 +135,12 @@ class _MerchantLogisticsPageState extends State<MerchantLogisticsPage> with Sing
   Future<void> _addZone() async {
     final branch = _selectedBranch;
     if (branch == null || !_canAdmin) return;
-    final minController = TextEditingController();
-    final maxController = TextEditingController();
-    final feeController = TextEditingController();
 
     final row = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Add delivery distance'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: minController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'From km', border: OutlineInputBorder())),
-            const SizedBox(height: 10),
-            TextField(controller: maxController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'To km', border: OutlineInputBorder())),
-            const SizedBox(height: 10),
-            TextField(controller: feeController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Delivery price (0 = free)', border: OutlineInputBorder())),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              final min = double.tryParse(minController.text.trim());
-              final max = double.tryParse(maxController.text.trim());
-              final fee = double.tryParse(feeController.text.trim());
-              if (min == null || max == null || fee == null || min < 0 || max <= min || fee < 0) return;
-              Navigator.pop(dialogContext, {'minDistanceKm': min, 'maxDistanceKm': max, 'fee': fee});
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
+      builder: (dialogContext) => const _AddDeliveryZoneDialog(),
     );
-    minController.dispose();
-    maxController.dispose();
-    feeController.dispose();
-    if (row == null) return;
+    if (!mounted || row == null) return;
 
     final zones = ((branch['deliveryZones'] as List? ?? const [])
             .whereType<Map>()
@@ -462,5 +431,94 @@ class _MerchantLogisticsPageState extends State<MerchantLogisticsPage> with Sing
     final user = driver['user'] as Map? ?? const {};
     final name = [user['firstName'], user['lastName']].where((value) => value != null && value.toString().trim().isNotEmpty).join(' ').trim();
     return name.isNotEmpty ? name : user['email']?.toString() ?? user['phone']?.toString() ?? 'Driver';
+  }
+}
+
+
+class _AddDeliveryZoneDialog extends StatefulWidget {
+  const _AddDeliveryZoneDialog();
+
+  @override
+  State<_AddDeliveryZoneDialog> createState() => _AddDeliveryZoneDialogState();
+}
+
+class _AddDeliveryZoneDialogState extends State<_AddDeliveryZoneDialog> {
+  final _formKey = GlobalKey<FormState>();
+  String _minText = '0';
+  String _maxText = '';
+  String _feeText = '';
+
+  double? _number(String value) => double.tryParse(value.trim());
+
+  String? _validateMin(String? value) {
+    final number = _number(value ?? '');
+    if (number == null) return 'Enter a valid distance.';
+    if (number < 0) return 'Distance cannot be negative.';
+    return null;
+  }
+
+  String? _validateMax(String? value) {
+    final number = _number(value ?? '');
+    final min = _number(_minText);
+    if (number == null) return 'Enter a valid distance.';
+    if (min != null && number <= min) return 'Must be greater than From km.';
+    return null;
+  }
+
+  String? _validateFee(String? value) {
+    final number = _number(value ?? '');
+    if (number == null) return 'Enter a valid price.';
+    if (number < 0) return 'Price cannot be negative.';
+    return null;
+  }
+
+  void _submit() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    Navigator.of(context).pop(<String, dynamic>{
+      'minDistanceKm': _number(_minText)!,
+      'maxDistanceKm': _number(_maxText)!,
+      'fee': _number(_feeText)!,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add delivery distance'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              initialValue: _minText,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'From km', border: OutlineInputBorder()),
+              validator: _validateMin,
+              onChanged: (value) => _minText = value,
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'To km', border: OutlineInputBorder()),
+              validator: _validateMax,
+              onChanged: (value) => _maxText = value,
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Delivery price (0 = free)', border: OutlineInputBorder()),
+              validator: _validateFee,
+              onChanged: (value) => _feeText = value,
+              onFieldSubmitted: (_) => _submit(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        FilledButton(onPressed: _submit, child: const Text('Add')),
+      ],
+    );
   }
 }
