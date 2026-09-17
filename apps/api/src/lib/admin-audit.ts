@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { prisma } from '@fida/database/client';
+import { Prisma, prisma } from '@fida/database/client';
 
 const sensitiveKey = /(password|secret|token|authorization|cookie|credential)/i;
 
@@ -14,6 +14,10 @@ function sanitize(value: unknown, depth = 0): unknown {
     output[key] = sensitiveKey.test(key) ? '[redacted]' : sanitize(item, depth + 1);
   }
   return output;
+}
+
+function asJson(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(sanitize(value))) as Prisma.InputJsonValue;
 }
 
 function stringParam(params: unknown, key: string) {
@@ -102,11 +106,11 @@ export function registerAdminAudit(app: FastifyInstance) {
           tenantId: classification.tenantId,
           statusCode,
           success: statusCode >= 200 && statusCode < 400,
-          changes: request.body === undefined ? undefined : (sanitize(request.body) as object),
-          metadata: {
+          changes: request.body === undefined ? undefined : asJson(request.body),
+          metadata: asJson({
             params: sanitize(request.params),
             query: sanitize(request.query),
-          },
+          }),
           ipAddress: request.ip,
           userAgent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : undefined,
         },
