@@ -1,6 +1,23 @@
 import type { FastifyInstance } from 'fastify';
 import { MerchantType, Prisma, TenantStatus, prisma } from '@fida/database/client';
 
+const branchSelect = {
+  id: true,
+  name: true,
+  city: true,
+  addressLine: true,
+  latitude: true,
+  longitude: true,
+  pickupEnabled: true,
+  deliveryEnabled: true,
+  logisticsMode: true,
+  deliveryZones: {
+    where: { isActive: true },
+    orderBy: [{ minDistanceKm: 'asc' as const }, { maxDistanceKm: 'asc' as const }],
+    select: { id: true, minDistanceKm: true, maxDistanceKm: true, fee: true },
+  },
+};
+
 export async function marketplaceRoutes(app: FastifyInstance) {
   app.get('/v1/marketplace/merchants', async (request) => {
     const query = (request.query ?? {}) as Record<string, unknown>;
@@ -32,11 +49,9 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         merchantType: true,
         currency: true,
         minimumOrder: true,
-        defaultDeliveryFee: true,
-        serviceFeePercent: true,
         branches: {
           where: { isActive: true, isAcceptingOrders: true },
-          select: { id: true, name: true, city: true, addressLine: true, latitude: true, longitude: true },
+          select: branchSelect,
         },
       },
       orderBy: { name: 'asc' },
@@ -58,11 +73,9 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         merchantType: true,
         currency: true,
         minimumOrder: true,
-        defaultDeliveryFee: true,
-        serviceFeePercent: true,
         branches: {
           where: { isActive: true, isAcceptingOrders: true },
-          select: { id: true, name: true, city: true, addressLine: true, latitude: true, longitude: true },
+          select: branchSelect,
           orderBy: { name: 'asc' },
         },
         categories: {
@@ -82,10 +95,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       },
     });
 
-    if (!merchant) {
-      return reply.code(404).send({ error: 'merchant_not_found' });
-    }
-
+    if (!merchant) return reply.code(404).send({ error: 'merchant_not_found' });
     return merchant;
   });
 }
