@@ -1,12 +1,17 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
+  DeliveryOperatorType,
   DeliveryStatus,
+  FulfillmentType,
+  LogisticsMode,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  Prisma,
   prisma,
 } from '@fida/database/client';
 import { authenticate } from '../lib/auth.js';
+import { haversineKm } from '../lib/delivery-pricing.js';
 
 async function requireDriver(request: FastifyRequest, reply: FastifyReply) {
   await authenticate(request, reply);
@@ -16,26 +21,58 @@ async function requireDriver(request: FastifyRequest, reply: FastifyReply) {
     where: { userId: request.authUser!.id },
     include: {
       user: { select: { firstName: true, lastName: true, phone: true, email: true } },
+      operator: true,
+      branch: { select: { id: true, name: true, city: true } },
     },
   });
 
-  if (!driver) {
-    reply.code(403).send({ error: 'driver_not_approved', message: 'This account is not an approved driver.' });
+  if (!driver || !driver.isActive || !driver.operatorId || !driver.operator?.isActive) {
+    reply.code(403).send({
+      error: 'driver_not_enrolled',
+      message: 'This account is not enrolled by an active merchant delivery operation.',
+    });
     return null;
   }
 
   return driver;
 }
 
-function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const radians = (value: number) => (value * Math.PI) / 180;
-  const earthRadiusKm = 6371;
-  const dLat = radians(lat2 - lat1);
-  const dLon = radians(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(radians(lat1)) * Math.cos(radians(lat2)) * Math.sin(dLon / 2) ** 2;
-  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+function availableScope(driver: NonNullable<Awaited<ReturnType<typeof requireDriver>>>): Prisma.DeliveryWhereInput | null {
+  if (!driver.operator) return null;
+  const base: Prisma.DeliveryWhereInput = {
+    driverId: null,
+    status: DeliveryStatus.UNASSIGNED,
+    order: {
+      status: OrderStatus.READY_FOR_PICKUP,
+      fulfillmentType: FulfillmentType.DELIVERY,
+    },
+  };
+
+  if (driver.operator.type === DeliveryOperatorType.MERCHANT && driver.operator.tenantId) {
+    return {
+      ...base,
+      order: {
+        status: OrderStatus.READY_FOR_PICKUP,
+        fulfillmentType: FulfillmentType.DELIVERY,
+        tenantId: driver.operator.tenantId,
+        branch: { logisticsMode: { in: [LogisticsMode.MERCHANT, LogisticsMode.HYBRID] } },
+        ...(driver.branchId ? { branchId: driver.branchId } : {}),
+      },
+    };
+  }
+
+  if (driver.operator.type === DeliveryOperatorType.FIDA) {
+    return {
+      ...base,
+      order: {
+        status: OrderStatus.READY_FOR_PICKUP,
+        fulfillmentType: FulfillmentType.DELIVERY,
+        branch: { logisticsMode: { in: [LogisticsMode.FIDA, LogisticsMode.HYBRID] } },
+      },
+    };
+  }
+
+  return null;
 }
 
 const deliveryTransitions: Partial<Record<DeliveryStatus, DeliveryStatus[]>> = {
@@ -64,28 +101,19 @@ export async function driverRoutes(app: FastifyInstance) {
     const activeDelivery = await prisma.delivery.findFirst({
       where: {
         driverId: driver.id,
-        status: {
-          in: [
-            DeliveryStatus.ASSIGNED,
-            DeliveryStatus.AT_PICKUP,
-            DeliveryStatus.PICKED_UP,
-            DeliveryStatus.AT_DROPOFF,
-          ],
-        },
+        status: { in: [DeliveryStatus.ASSIGNED, DeliveryStatus.AT_PICKUP, DeliveryStatus.PICKED_UP, DeliveryStatus.AT_DROPOFF] },
       },
       select: { id: true },
     });
 
     if (activeDelivery && isAvailable) {
-      return reply.code(409).send({
-        error: 'active_delivery',
-        message: 'Complete the active delivery before becoming available for another order.',
-      });
+      return reply.code(409).send({ error: 'active_delivery', message: 'Complete the active delivery before becoming available for another order.' });
     }
 
     return prisma.driver.update({
       where: { id: driver.id },
       data: { isOnline, isAvailable, lastSeenAt: new Date() },
+      include: { operator: true, branch: true },
     });
   });
 
@@ -96,15 +124,7 @@ export async function driverRoutes(app: FastifyInstance) {
     const body = (request.body ?? {}) as Record<string, unknown>;
     const latitude = Number(body.latitude);
     const longitude = Number(body.longitude);
-
-    if (
-      !Number.isFinite(latitude) ||
-      !Number.isFinite(longitude) ||
-      latitude < -90 ||
-      latitude > 90 ||
-      longitude < -180 ||
-      longitude > 180
-    ) {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
       return reply.code(400).send({ error: 'invalid_location' });
     }
 
@@ -118,17 +138,15 @@ export async function driverRoutes(app: FastifyInstance) {
   app.get('/v1/driver/deliveries/available', async (request, reply) => {
     const driver = await requireDriver(request, reply);
     if (!driver) return;
-
     if (!driver.isOnline || !driver.isAvailable) {
       return reply.code(409).send({ error: 'driver_unavailable', message: 'Driver must be online and available.' });
     }
 
+    const scope = availableScope(driver);
+    if (!scope) return reply.code(403).send({ error: 'driver_scope_unavailable' });
+
     const deliveries = await prisma.delivery.findMany({
-      where: {
-        driverId: null,
-        status: DeliveryStatus.UNASSIGNED,
-        order: { status: OrderStatus.READY_FOR_PICKUP },
-      },
+      where: scope,
       include: {
         order: {
           include: {
@@ -152,7 +170,6 @@ export async function driverRoutes(app: FastifyInstance) {
         driverLat !== null && driverLon !== null && branchLat !== null && branchLon !== null
           ? Number(haversineKm(driverLat, driverLon, branchLat, branchLon).toFixed(1))
           : null;
-
       return { ...delivery, distanceToPickupKm: distanceKm };
     });
   });
@@ -164,14 +181,7 @@ export async function driverRoutes(app: FastifyInstance) {
     return prisma.delivery.findFirst({
       where: {
         driverId: driver.id,
-        status: {
-          in: [
-            DeliveryStatus.ASSIGNED,
-            DeliveryStatus.AT_PICKUP,
-            DeliveryStatus.PICKED_UP,
-            DeliveryStatus.AT_DROPOFF,
-          ],
-        },
+        status: { in: [DeliveryStatus.ASSIGNED, DeliveryStatus.AT_PICKUP, DeliveryStatus.PICKED_UP, DeliveryStatus.AT_DROPOFF] },
       },
       include: {
         order: {
@@ -191,53 +201,33 @@ export async function driverRoutes(app: FastifyInstance) {
     const driver = await requireDriver(request, reply);
     if (!driver) return;
     const { deliveryId } = request.params as { deliveryId: string };
-
-    if (!driver.isOnline || !driver.isAvailable) {
-      return reply.code(409).send({ error: 'driver_unavailable' });
-    }
+    if (!driver.isOnline || !driver.isAvailable) return reply.code(409).send({ error: 'driver_unavailable' });
 
     const existingActive = await prisma.delivery.findFirst({
       where: {
         driverId: driver.id,
-        status: {
-          in: [
-            DeliveryStatus.ASSIGNED,
-            DeliveryStatus.AT_PICKUP,
-            DeliveryStatus.PICKED_UP,
-            DeliveryStatus.AT_DROPOFF,
-          ],
-        },
+        status: { in: [DeliveryStatus.ASSIGNED, DeliveryStatus.AT_PICKUP, DeliveryStatus.PICKED_UP, DeliveryStatus.AT_DROPOFF] },
       },
       select: { id: true },
     });
     if (existingActive) return reply.code(409).send({ error: 'active_delivery' });
 
-    const delivery = await prisma.delivery.findFirst({
-      where: {
-        id: deliveryId,
-        driverId: null,
-        status: DeliveryStatus.UNASSIGNED,
-        order: { status: OrderStatus.READY_FOR_PICKUP },
-      },
-      select: { id: true },
-    });
+    const scope = availableScope(driver);
+    if (!scope) return reply.code(403).send({ error: 'driver_scope_unavailable' });
+    const delivery = await prisma.delivery.findFirst({ where: { AND: [{ id: deliveryId }, scope] }, select: { id: true } });
     if (!delivery) return reply.code(409).send({ error: 'delivery_unavailable' });
 
     const result = await prisma.$transaction(async (tx) => {
       const claimed = await tx.delivery.updateMany({
         where: { id: delivery.id, driverId: null, status: DeliveryStatus.UNASSIGNED },
-        data: { driverId: driver.id, status: DeliveryStatus.ASSIGNED, assignedAt: new Date() },
+        data: { driverId: driver.id, operatorId: driver.operatorId, status: DeliveryStatus.ASSIGNED, assignedAt: new Date() },
       });
       if (claimed.count !== 1) return null;
 
-      await tx.driver.update({
-        where: { id: driver.id },
-        data: { isAvailable: false, lastSeenAt: new Date() },
-      });
-
+      await tx.driver.update({ where: { id: driver.id }, data: { isAvailable: false, lastSeenAt: new Date() } });
       return tx.delivery.findUnique({
         where: { id: delivery.id },
-        include: { order: { include: { tenant: true, branch: true, items: true } } },
+        include: { order: { include: { tenant: true, branch: true, items: true } }, operator: true },
       });
     });
 
@@ -265,11 +255,7 @@ export async function driverRoutes(app: FastifyInstance) {
     const nextStatus = requestedStatus as DeliveryStatus;
     const allowed = deliveryTransitions[delivery.status] ?? [];
     if (!allowed.includes(nextStatus)) {
-      return reply.code(409).send({
-        error: 'invalid_delivery_transition',
-        currentStatus: delivery.status,
-        allowed,
-      });
+      return reply.code(409).send({ error: 'invalid_delivery_transition', currentStatus: delivery.status, allowed });
     }
 
     const now = new Date();
@@ -292,26 +278,15 @@ export async function driverRoutes(app: FastifyInstance) {
         },
       });
 
-      if (orderStatus) {
-        await tx.order.update({ where: { id: delivery.orderId }, data: { status: orderStatus } });
-      }
+      if (orderStatus) await tx.order.update({ where: { id: delivery.orderId }, data: { status: orderStatus } });
 
       if (nextStatus === DeliveryStatus.DELIVERED) {
         await tx.order.updateMany({
-          where: {
-            id: delivery.orderId,
-            paymentMethod: PaymentMethod.CASH,
-            paymentStatus: PaymentStatus.PENDING,
-          },
+          where: { id: delivery.orderId, paymentMethod: PaymentMethod.CASH, paymentStatus: PaymentStatus.PENDING },
           data: { paymentStatus: PaymentStatus.PAID },
         });
-
-        await tx.driver.update({
-          where: { id: driver.id },
-          data: { isAvailable: driver.isOnline, lastSeenAt: now },
-        });
+        await tx.driver.update({ where: { id: driver.id }, data: { isAvailable: driver.isOnline, lastSeenAt: now } });
       }
-
       return changed;
     });
 

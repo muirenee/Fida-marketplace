@@ -10,8 +10,9 @@ type CurrencyRow = {
   completedOrders: number;
   paidOrders: number;
   paidValue: number;
-  serviceFeesPaid: number;
-  deliveryFeesPaid: number;
+  merchandiseSalesPaid: number;
+  platformCommissionPaid: number;
+  merchantDeliveryValuePaid: number;
 };
 type MerchantRow = {
   tenantId: string;
@@ -22,8 +23,9 @@ type MerchantRow = {
   completedOrders: number;
   paidOrders: number;
   paidValue: number;
-  serviceFeesPaid: number;
-  deliveryFeesPaid: number;
+  merchandiseSalesPaid: number;
+  platformCommissionPaid: number;
+  merchantDeliveryValuePaid: number;
 };
 type DailyRow = {
   date: string;
@@ -32,6 +34,7 @@ type DailyRow = {
   completedOrders: number;
   paidOrders: number;
   paidValue: number;
+  platformCommissionPaid: number;
 };
 type Report = {
   period: { from: string; to: string; days: number };
@@ -141,8 +144,8 @@ export default function ReportsPage() {
     if (!report) return;
     downloadCsv(
       `fida-merchant-report-${from}-to-${to}.csv`,
-      ['Merchant', 'Status', 'Currency', 'Orders', 'Completed orders', 'Paid orders', 'Paid value', 'Paid service fees', 'Paid delivery fees'],
-      report.merchants.map((row) => [row.merchant, row.status, row.currency, row.orders, row.completedOrders, row.paidOrders, row.paidValue, row.serviceFeesPaid, row.deliveryFeesPaid]),
+      ['Merchant', 'Status', 'Currency', 'Orders', 'Completed orders', 'Paid orders', 'Paid value', 'Merchandise sales', 'Fida commission', 'Merchant delivery value'],
+      report.merchants.map((row) => [row.merchant, row.status, row.currency, row.orders, row.completedOrders, row.paidOrders, row.paidValue, row.merchandiseSalesPaid, row.platformCommissionPaid, row.merchantDeliveryValuePaid]),
     );
   }
 
@@ -150,8 +153,8 @@ export default function ReportsPage() {
     if (!report) return;
     downloadCsv(
       `fida-daily-report-${from}-to-${to}.csv`,
-      ['Date', 'Currency', 'Orders', 'Completed orders', 'Paid orders', 'Paid value'],
-      report.daily.map((row) => [row.date, row.currency, row.orders, row.completedOrders, row.paidOrders, row.paidValue]),
+      ['Date', 'Currency', 'Orders', 'Completed orders', 'Paid orders', 'Paid value', 'Fida commission'],
+      report.daily.map((row) => [row.date, row.currency, row.orders, row.completedOrders, row.paidOrders, row.paidValue, row.platformCommissionPaid]),
     );
   }
 
@@ -163,7 +166,7 @@ export default function ReportsPage() {
       <nav className="nav"><a className="btn" href="/" style={{ textDecoration: 'none', textAlign: 'center' }}>Control Center</a><a className="btn" href="/finance" style={{ textDecoration: 'none', textAlign: 'center' }}>Finance</a><a className="btn" href="/support" style={{ textDecoration: 'none', textAlign: 'center' }}>Support</a></nav>
     </aside>
     <main className="content">
-      <header className="topbar"><div><h1>Reports</h1><p>Marketplace activity and paid-value reporting by period, merchant and currency.</p></div><div className="actions"><button className="btn" disabled={!report || busy} onClick={exportMerchants}>Export merchants CSV</button><button className="btn" disabled={!report || busy} onClick={exportDaily}>Export daily CSV</button></div></header>
+      <header className="topbar"><div><h1>Reports</h1><p>Marketplace activity, merchandise sales and Fida commission by period, merchant and currency.</p></div><div className="actions"><button className="btn" disabled={!report || busy} onClick={exportMerchants}>Export merchants CSV</button><button className="btn" disabled={!report || busy} onClick={exportDaily}>Export daily CSV</button></div></header>
       {error && <div className="error">{error}</div>}
 
       <section className="panel">
@@ -173,13 +176,13 @@ export default function ReportsPage() {
 
       {report && <>
         <section className="cards">
-          {report.currencies.map((row) => <article className="card stat" key={row.currency}><div className="stat-label">{row.currency} paid value</div><div className="stat-value">{formatMoney(row.paidValue, row.currency)}</div><div className="stat-note">{row.orders} orders · {row.completedOrders} completed · {row.paidOrders} paid</div><div className="stat-note">Service fees {formatMoney(row.serviceFeesPaid, row.currency)} · Delivery fees {formatMoney(row.deliveryFeesPaid, row.currency)}</div></article>)}
+          {report.currencies.map((row) => <article className="card stat" key={row.currency}><div className="stat-label">{row.currency} Fida commission</div><div className="stat-value">{formatMoney(row.platformCommissionPaid, row.currency)}</div><div className="stat-note">{row.orders} orders · {row.completedOrders} completed · {row.paidOrders} paid</div><div className="stat-note">Merchandise sales {formatMoney(row.merchandiseSalesPaid, row.currency)} · Merchant delivery {formatMoney(row.merchantDeliveryValuePaid, row.currency)}</div></article>)}
           {report.currencies.length === 0 && <article className="card stat"><div className="stat-label">Orders</div><div className="stat-value">0</div><div className="stat-note">No orders in this period</div></article>}
         </section>
 
-        <section className="panel"><div className="panel-head"><div><h2>Merchant performance</h2><p>{report.merchants.length} merchants with orders in this period</p></div></div>{report.merchants.length === 0 ? <div className="empty">No merchant activity in this period.</div> : <div className="table-wrap"><table><thead><tr><th>Merchant</th><th>Status</th><th>Currency</th><th>Orders</th><th>Completed</th><th>Paid</th><th>Paid value</th><th>Service fees</th><th>Delivery fees</th></tr></thead><tbody>{report.merchants.map((row) => <tr key={row.tenantId}><td><div className="cell-title">{row.merchant}</div></td><td><span className={statusClass(row.status)}>{humanize(row.status)}</span></td><td>{row.currency}</td><td>{row.orders}</td><td>{row.completedOrders}</td><td>{row.paidOrders}</td><td><strong>{formatMoney(row.paidValue, row.currency)}</strong></td><td>{formatMoney(row.serviceFeesPaid, row.currency)}</td><td>{formatMoney(row.deliveryFeesPaid, row.currency)}</td></tr>)}</tbody></table></div>}</section>
+        <section className="panel"><div className="panel-head"><div><h2>Merchant performance</h2><p>{report.merchants.length} merchants with orders in this period</p></div></div>{report.merchants.length === 0 ? <div className="empty">No merchant activity in this period.</div> : <div className="table-wrap"><table><thead><tr><th>Merchant</th><th>Status</th><th>Currency</th><th>Orders</th><th>Completed</th><th>Paid</th><th>Merchandise sales</th><th>Fida commission</th><th>Delivery value</th><th>Customer paid</th></tr></thead><tbody>{report.merchants.map((row) => <tr key={row.tenantId}><td><div className="cell-title">{row.merchant}</div></td><td><span className={statusClass(row.status)}>{humanize(row.status)}</span></td><td>{row.currency}</td><td>{row.orders}</td><td>{row.completedOrders}</td><td>{row.paidOrders}</td><td>{formatMoney(row.merchandiseSalesPaid, row.currency)}</td><td><strong>{formatMoney(row.platformCommissionPaid, row.currency)}</strong></td><td>{formatMoney(row.merchantDeliveryValuePaid, row.currency)}</td><td>{formatMoney(row.paidValue, row.currency)}</td></tr>)}</tbody></table></div>}</section>
 
-        <section className="panel"><div className="panel-head"><div><h2>Daily activity</h2><p>Order creation date, separated by currency.</p></div></div>{report.daily.length === 0 ? <div className="empty">No daily activity in this period.</div> : <div className="table-wrap"><table><thead><tr><th>Date</th><th>Currency</th><th>Orders</th><th>Completed</th><th>Paid</th><th>Paid value</th></tr></thead><tbody>{report.daily.map((row) => <tr key={`${row.date}-${row.currency}`}><td>{row.date}</td><td>{row.currency}</td><td>{row.orders}</td><td>{row.completedOrders}</td><td>{row.paidOrders}</td><td><strong>{formatMoney(row.paidValue, row.currency)}</strong></td></tr>)}</tbody></table></div>}</section>
+        <section className="panel"><div className="panel-head"><div><h2>Daily activity</h2><p>Order creation date, separated by currency.</p></div></div>{report.daily.length === 0 ? <div className="empty">No daily activity in this period.</div> : <div className="table-wrap"><table><thead><tr><th>Date</th><th>Currency</th><th>Orders</th><th>Completed</th><th>Paid</th><th>Paid value</th><th>Fida commission</th></tr></thead><tbody>{report.daily.map((row) => <tr key={`${row.date}-${row.currency}`}><td>{row.date}</td><td>{row.currency}</td><td>{row.orders}</td><td>{row.completedOrders}</td><td>{row.paidOrders}</td><td>{formatMoney(row.paidValue, row.currency)}</td><td><strong>{formatMoney(row.platformCommissionPaid, row.currency)}</strong></td></tr>)}</tbody></table></div>}</section>
 
         <div className="detail-grid two" style={{ padding: 0 }}>
           <section className="panel"><div className="panel-head"><div><h2>Order statuses</h2></div></div>{report.orderStatuses.length === 0 ? <div className="empty">No order statuses.</div> : <div className="table-wrap"><table><thead><tr><th>Status</th><th>Orders</th></tr></thead><tbody>{report.orderStatuses.map((row) => <tr key={row.status}><td><span className={statusClass(row.status)}>{humanize(row.status)}</span></td><td>{row.total}</td></tr>)}</tbody></table></div>}</section>

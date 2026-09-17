@@ -34,9 +34,18 @@ type Membership = {
 };
 type Driver = {
   id: string;
+  isActive: boolean;
   isOnline: boolean;
   isAvailable: boolean;
   lastSeenAt?: string | null;
+  operator?: {
+    id: string;
+    name: string;
+    type: string;
+    tenantId?: string | null;
+    tenant?: { id: string; name: string } | null;
+  } | null;
+  branch?: { id: string; name: string; city?: string | null } | null;
   user: {
     id: string;
     email?: string | null;
@@ -198,26 +207,13 @@ export default function OperationsPage() {
     }
   }
 
-  async function patchDriver(driver: Driver, patch: { isOnline?: boolean; isAvailable?: boolean }) {
-    setBusy(true);
-    setError(null);
-    try {
-      await adminFetch(`drivers/${driver.id}/state`, { method: 'PATCH', body: JSON.stringify(patch) });
-      setDrivers(await adminFetch('drivers') as Driver[]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to update driver state.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   if (checking) return <div className="loading">Checking admin session…</div>;
 
   const titles: Record<View, [string, string]> = {
-    summary: ['Operations', 'Live marketplace operations, settlement exposure and workload.'],
-    branches: ['Branches', 'Control branch availability without suspending the entire merchant.'],
+    summary: ['Operations', 'Live marketplace operations and payment activity.'],
+    branches: ['Branches', 'Control branch availability without changing merchant-owned delivery configuration.'],
     staff: ['Merchant staff', 'Review merchant roles and branch assignments.'],
-    drivers: ['Driver controls', 'Operational controls for approved delivery partners.'],
+    drivers: ['Driver oversight', 'Read-only platform visibility into merchant-managed delivery teams.'],
   };
 
   return <div className="admin-shell">
@@ -227,7 +223,7 @@ export default function OperationsPage() {
         <button className={view === 'summary' ? 'active' : ''} onClick={() => setView('summary')}>Summary</button>
         <button className={view === 'branches' ? 'active' : ''} onClick={() => setView('branches')}>Branches</button>
         <button className={view === 'staff' ? 'active' : ''} onClick={() => setView('staff')}>Merchant staff</button>
-        <button className={view === 'drivers' ? 'active' : ''} onClick={() => setView('drivers')}>Driver controls</button>
+        <button className={view === 'drivers' ? 'active' : ''} onClick={() => setView('drivers')}>Driver oversight</button>
       </nav>
       <div className="sidebar-footer">
         <div className="sidebar-user"><strong>{sessionUser ? displayName(sessionUser) : 'Platform admin'}</strong><br />{sessionUser?.email}</div>
@@ -243,7 +239,7 @@ export default function OperationsPage() {
       {view === 'summary' && <SummaryView summary={summary} />}
       {view === 'branches' && <BranchesView branches={filteredBranches} tenants={tenants} tenantId={tenantId} setTenantId={setTenantId} state={branchState} setState={setBranchState} busy={busy} patchBranch={patchBranch} />}
       {view === 'staff' && <StaffView memberships={filteredMemberships} branches={branches} tenants={tenants} tenantId={tenantId} setTenantId={setTenantId} query={staffQuery} setQuery={setStaffQuery} busy={busy} patchMembership={patchMembership} />}
-      {view === 'drivers' && <DriversView drivers={drivers} busy={busy} patchDriver={patchDriver} />}
+      {view === 'drivers' && <DriversView drivers={drivers} />}
     </main>
   </div>;
 }
@@ -255,13 +251,13 @@ function SummaryView({ summary }: { summary: OperationsSummary | null }) {
     ['Orders in progress', summary?.activeOrders ?? '—', 'Across all merchants'],
     ['Completed orders', summary?.completedOrders ?? '—', 'Marketplace lifetime'],
     ['Merchant staff', summary?.merchantStaff ?? '—', 'Membership assignments'],
-    ['Pending cash', summary?.pendingCashOrders ?? '—', 'Awaiting delivery settlement'],
+    ['Pending cash', summary?.pendingCashOrders ?? '—', 'Merchant-held until order completion'],
   ];
   return <>
     <section className="cards">{cards.map(([label, value, note]) => <article className="card stat" key={label}><div className="stat-label">{label}</div><div className="stat-value">{value}</div><div className="stat-note">{note}</div></article>)}</section>
     <section className="panel">
-      <div className="panel-head"><div><h2>Settlement snapshot</h2><p>Financial values are separated by currency.</p></div><a className="btn small" href="/finance" style={{ textDecoration: 'none' }}>Open Finance</a></div>
-      {!summary || summary.settlementByCurrency.length === 0 ? <div className="empty">No settled or pending cash value yet.</div> : <div className="table-wrap"><table><thead><tr><th>Currency</th><th>Completed paid orders</th><th>Completed paid value</th><th>Pending cash orders</th><th>Pending cash value</th></tr></thead><tbody>{summary.settlementByCurrency.map((row) => <tr key={row.currency}><td><strong>{row.currency}</strong></td><td>{row.completedPaidOrders}</td><td><strong>{formatMoney(row.completedPaidValue, row.currency)}</strong></td><td>{row.pendingCashOrders}</td><td>{formatMoney(row.pendingCashValue, row.currency)}</td></tr>)}</tbody></table></div>}
+      <div className="panel-head"><div><h2>Payment activity</h2><p>Customer payment values are separated by currency. Merchant-delivered cash is not a Fida logistics settlement.</p></div><a className="btn small" href="/finance" style={{ textDecoration: 'none' }}>Open Finance</a></div>
+      {!summary || summary.settlementByCurrency.length === 0 ? <div className="empty">No completed paid or pending cash activity yet.</div> : <div className="table-wrap"><table><thead><tr><th>Currency</th><th>Completed paid orders</th><th>Completed paid value</th><th>Pending cash orders</th><th>Pending cash value</th></tr></thead><tbody>{summary.settlementByCurrency.map((row) => <tr key={row.currency}><td><strong>{row.currency}</strong></td><td>{row.completedPaidOrders}</td><td><strong>{formatMoney(row.completedPaidValue, row.currency)}</strong></td><td>{row.pendingCashOrders}</td><td>{formatMoney(row.pendingCashValue, row.currency)}</td></tr>)}</tbody></table></div>}
     </section>
   </>;
 }
@@ -269,7 +265,7 @@ function SummaryView({ summary }: { summary: OperationsSummary | null }) {
 function BranchesView({ branches, tenants, tenantId, setTenantId, state, setState, busy, patchBranch }: {
   branches: Branch[]; tenants: Tenant[]; tenantId: string; setTenantId: (value: string) => void; state: string; setState: (value: string) => void; busy: boolean; patchBranch: (branch: Branch, patch: { isActive?: boolean; isAcceptingOrders?: boolean }) => Promise<void>;
 }) {
-  return <section className="panel"><div className="panel-head"><div><h2>Merchant branches</h2><p>{branches.length} shown</p></div><div className="toolbar"><select className="select" value={tenantId} onChange={(e) => setTenantId(e.target.value)}><option value="ALL">All merchants</option>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>)}</select><select className="select" value={state} onChange={(e) => setState(e.target.value)}><option value="ALL">All states</option><option value="ACTIVE">Active</option><option value="PAUSED">Orders paused</option><option value="INACTIVE">Inactive</option></select></div></div>{branches.length === 0 ? <div className="empty">No branches match these filters.</div> : <div className="table-wrap"><table><thead><tr><th>Branch</th><th>Merchant</th><th>Location</th><th>State</th><th>Staff</th><th>Orders</th><th>Actions</th></tr></thead><tbody>{branches.map((branch) => <tr key={branch.id}><td><div className="cell-title">{branch.name}</div><div className="cell-sub">{branch.code || 'No code'}</div></td><td><div className="cell-title">{branch.tenant.name}</div><div className="cell-sub">{humanize(branch.tenant.status)}</div></td><td><div className="cell-title">{branch.city || '—'}</div><div className="cell-sub">{branch.addressLine || 'No address'}</div></td><td><span className={statusClass(branch.isActive ? 'active' : 'inactive')}>{branch.isActive ? 'active' : 'inactive'}</span> <span className={statusClass(branch.isAcceptingOrders ? 'available' : 'suspended')}>{branch.isAcceptingOrders ? 'accepting orders' : 'orders paused'}</span></td><td>{branch._count?.memberships ?? 0}</td><td>{branch._count?.orders ?? 0}</td><td><div className="actions">{branch.isActive ? <><button className="btn small" disabled={busy} onClick={() => void patchBranch(branch, { isAcceptingOrders: !branch.isAcceptingOrders })}>{branch.isAcceptingOrders ? 'Pause orders' : 'Resume orders'}</button><button className="btn danger small" disabled={busy} onClick={() => void patchBranch(branch, { isActive: false })}>Disable branch</button></> : <button className="btn primary small" disabled={busy} onClick={() => void patchBranch(branch, { isActive: true })}>Enable branch</button>}</div></td></tr>)}</tbody></table></div>}</section>;
+  return <section className="panel"><div className="panel-head"><div><h2>Merchant branches</h2><p>{branches.length} shown</p></div><div className="toolbar"><select className="select" value={tenantId} onChange={(e) => setTenantId(e.target.value)}><option value="ALL">All merchants</option>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>)}</select><select className="select" value={state} onChange={(e) => setState(e.target.value)}><option value="ALL">All states</option><option value="ACTIVE">Active</option><option value="PAUSED">Orders paused</option><option value="INACTIVE">Inactive</option></select></div></div>{branches.length === 0 ? <div className="empty">No branches match these filters.</div> : <div className="table-wrap"><table><thead><tr><th>Branch</th><th>Merchant</th><th>Location</th><th>State</th><th>Branch-scoped staff</th><th>Orders</th><th>Actions</th></tr></thead><tbody>{branches.map((branch) => <tr key={branch.id}><td><div className="cell-title">{branch.name}</div><div className="cell-sub">{branch.code || 'No code'}</div></td><td><div className="cell-title">{branch.tenant.name}</div><div className="cell-sub">{humanize(branch.tenant.status)}</div></td><td><div className="cell-title">{branch.city || '—'}</div><div className="cell-sub">{branch.addressLine || 'No address'}</div></td><td><span className={statusClass(branch.isActive ? 'active' : 'inactive')}>{branch.isActive ? 'active' : 'inactive'}</span> <span className={statusClass(branch.isAcceptingOrders ? 'available' : 'suspended')}>{branch.isAcceptingOrders ? 'accepting orders' : 'orders paused'}</span></td><td>{branch._count?.memberships ?? 0}</td><td>{branch._count?.orders ?? 0}</td><td><div className="actions">{branch.isActive ? <><button className="btn small" disabled={busy} onClick={() => void patchBranch(branch, { isAcceptingOrders: !branch.isAcceptingOrders })}>{branch.isAcceptingOrders ? 'Pause orders' : 'Resume orders'}</button><button className="btn danger small" disabled={busy} onClick={() => void patchBranch(branch, { isActive: false })}>Disable branch</button></> : <button className="btn primary small" disabled={busy} onClick={() => void patchBranch(branch, { isActive: true })}>Enable branch</button>}</div></td></tr>)}</tbody></table></div>}</section>;
 }
 
 function StaffView({ memberships, branches, tenants, tenantId, setTenantId, query, setQuery, busy, patchMembership }: {
@@ -279,6 +275,6 @@ function StaffView({ memberships, branches, tenants, tenantId, setTenantId, quer
   return <section className="panel"><div className="panel-head"><div><h2>Merchant staff assignments</h2><p>{memberships.length} shown · the last owner of a merchant cannot be demoted.</p></div><div className="toolbar"><input className="input" placeholder="Name, email, phone or merchant" value={query} onChange={(e) => setQuery(e.target.value)} /><select className="select" value={tenantId} onChange={(e) => setTenantId(e.target.value)}><option value="ALL">All merchants</option>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>)}</select></div></div>{memberships.length === 0 ? <div className="empty">No merchant staff match these filters.</div> : <div className="table-wrap"><table><thead><tr><th>User</th><th>Merchant</th><th>Account</th><th>Role</th><th>Branch assignment</th><th>Last login</th></tr></thead><tbody>{memberships.map((membership) => { const tenantBranches = branches.filter((branch) => branch.tenant.id === membership.tenant.id); return <tr key={membership.id}><td><div className="cell-title">{displayName(membership.user)}</div><div className="cell-sub">{membership.user.email || membership.user.phone || membership.user.id}</div></td><td><div className="cell-title">{membership.tenant.name}</div><div className="cell-sub">{humanize(membership.tenant.status)}</div></td><td><span className={statusClass(membership.user.isActive ? 'active' : 'inactive')}>{membership.user.isActive ? 'active' : 'inactive'}</span></td><td><select className="select" disabled={busy} value={membership.role} onChange={(e) => void patchMembership(membership, { role: e.target.value })}>{roles.map((role) => <option key={role} value={role}>{humanize(role)}</option>)}</select></td><td><select className="select" disabled={busy} value={membership.branchId || ''} onChange={(e) => void patchMembership(membership, { branchId: e.target.value || null })}><option value="">All branches</option>{tenantBranches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}{branch.isActive ? '' : ' (inactive)'}</option>)}</select></td><td>{formatDate(membership.user.lastLoginAt)}</td></tr>; })}</tbody></table></div>}</section>;
 }
 
-function DriversView({ drivers, busy, patchDriver }: { drivers: Driver[]; busy: boolean; patchDriver: (driver: Driver, patch: { isOnline?: boolean; isAvailable?: boolean }) => Promise<void> }) {
-  return <section className="panel"><div className="panel-head"><div><h2>Driver operations</h2><p>{drivers.length} approved delivery partners</p></div></div>{drivers.length === 0 ? <div className="empty">No drivers approved yet.</div> : <div className="table-wrap"><table><thead><tr><th>Driver</th><th>Account</th><th>Status</th><th>Availability</th><th>Deliveries</th><th>Last seen</th><th>Actions</th></tr></thead><tbody>{drivers.map((driver) => <tr key={driver.id}><td><div className="cell-title">{displayName(driver.user)}</div><div className="cell-sub">{driver.user.email || driver.user.phone}</div></td><td><span className={statusClass(driver.user.isActive ? 'active' : 'inactive')}>{driver.user.isActive ? 'active' : 'disabled'}</span></td><td><span className={statusClass(driver.isOnline ? 'active' : 'pending')}>{driver.isOnline ? 'online' : 'offline'}</span></td><td><span className={statusClass(driver.isAvailable ? 'available' : 'unavailable')}>{driver.isAvailable ? 'available' : 'unavailable'}</span></td><td>{driver._count?.deliveries ?? 0}</td><td>{formatDate(driver.lastSeenAt)}</td><td><div className="actions">{driver.isOnline && <button className="btn small" disabled={busy} onClick={() => void patchDriver(driver, { isAvailable: !driver.isAvailable })}>{driver.isAvailable ? 'Make unavailable' : 'Mark available'}</button>}{driver.isOnline && <button className="btn danger small" disabled={busy} onClick={() => void patchDriver(driver, { isOnline: false })}>Force offline</button>}</div></td></tr>)}</tbody></table></div>}</section>;
+function DriversView({ drivers }: { drivers: Driver[] }) {
+  return <section className="panel"><div className="panel-head"><div><h2>Merchant driver oversight</h2><p>{drivers.length} driver records · merchant owners/admins control enrollment and availability.</p></div><a className="btn small" href="/insights" style={{ textDecoration: 'none' }}>Open detailed insights</a></div>{drivers.length === 0 ? <div className="empty">No merchant drivers are enrolled yet.</div> : <div className="table-wrap"><table><thead><tr><th>Driver</th><th>Merchant / fleet</th><th>Branch scope</th><th>Enrollment</th><th>Connection</th><th>Availability</th><th>Deliveries</th><th>Last seen</th></tr></thead><tbody>{drivers.map((driver) => <tr key={driver.id}><td><div className="cell-title">{displayName(driver.user)}</div><div className="cell-sub">{driver.user.email || driver.user.phone}</div></td><td><div className="cell-title">{driver.operator?.tenant?.name || driver.operator?.name || 'Not enrolled'}</div><div className="cell-sub">{driver.operator ? humanize(driver.operator.type) : 'no operator'}</div></td><td>{driver.branch?.name || 'All merchant branches'}</td><td><span className={statusClass(driver.isActive && driver.user.isActive ? 'active' : 'inactive')}>{driver.isActive && driver.user.isActive ? 'active' : 'disabled'}</span></td><td><span className={statusClass(driver.isOnline ? 'active' : 'pending')}>{driver.isOnline ? 'online' : 'offline'}</span></td><td><span className={statusClass(driver.isAvailable ? 'available' : 'unavailable')}>{driver.isAvailable ? 'available' : 'unavailable'}</span></td><td>{driver._count?.deliveries ?? 0}</td><td>{formatDate(driver.lastSeenAt)}</td></tr>)}</tbody></table></div>}</section>;
 }

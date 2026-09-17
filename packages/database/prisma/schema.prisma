@@ -41,6 +41,22 @@ enum OrderStatus {
   REJECTED
 }
 
+enum FulfillmentType {
+  PICKUP
+  DELIVERY
+}
+
+enum LogisticsMode {
+  MERCHANT
+  FIDA
+  HYBRID
+}
+
+enum DeliveryOperatorType {
+  MERCHANT
+  FIDA
+}
+
 enum DeliveryStatus {
   UNASSIGNED
   OFFERED
@@ -69,25 +85,27 @@ enum PaymentStatus {
 }
 
 model Tenant {
-  id                 String       @id @default(cuid())
-  name               String
-  slug               String       @unique
-  status             TenantStatus @default(PENDING)
-  merchantType       MerchantType
-  currency           String       @default("RWF")
-  timezone           String       @default("Africa/Kigali")
-  isAcceptingOrders  Boolean      @default(true)
-  minimumOrder       Decimal      @default(0) @db.Decimal(12, 2)
-  defaultDeliveryFee Decimal      @default(0) @db.Decimal(12, 2)
-  serviceFeePercent  Decimal      @default(0) @db.Decimal(5, 2)
-  activatedAt        DateTime?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
-  branches           Branch[]
-  memberships        TenantMembership[]
-  categories         Category[]
-  products           Product[]
-  orders             Order[]
+  id                        String       @id @default(cuid())
+  name                      String
+  slug                      String       @unique
+  status                    TenantStatus @default(PENDING)
+  merchantType              MerchantType
+  currency                  String       @default("RWF")
+  timezone                  String       @default("Africa/Kigali")
+  isAcceptingOrders         Boolean      @default(true)
+  minimumOrder              Decimal      @default(0) @db.Decimal(12, 2)
+  defaultDeliveryFee        Decimal      @default(0) @db.Decimal(12, 2)
+  serviceFeePercent         Decimal      @default(0) @db.Decimal(5, 2)
+  platformCommissionPercent Decimal      @default(0) @db.Decimal(5, 2)
+  activatedAt               DateTime?
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @updatedAt
+  branches                  Branch[]
+  memberships               TenantMembership[]
+  categories                Category[]
+  products                  Product[]
+  orders                    Order[]
+  deliveryOperator          DeliveryOperator?
 }
 
 model User {
@@ -140,24 +158,43 @@ model TenantMembership {
 }
 
 model Branch {
-  id                String   @id @default(cuid())
+  id                String        @id @default(cuid())
   tenantId          String
   name              String
   code              String?
   addressLine       String?
   city              String?
-  latitude          Decimal? @db.Decimal(10, 7)
-  longitude         Decimal? @db.Decimal(10, 7)
-  isActive          Boolean  @default(true)
-  isAcceptingOrders Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  latitude          Decimal?      @db.Decimal(10, 7)
+  longitude         Decimal?      @db.Decimal(10, 7)
+  isActive          Boolean       @default(true)
+  isAcceptingOrders Boolean       @default(true)
+  pickupEnabled     Boolean       @default(true)
+  deliveryEnabled   Boolean       @default(true)
+  logisticsMode     LogisticsMode @default(MERCHANT)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   memberships       TenantMembership[]
   orders             Order[]
+  deliveryZones     DeliveryZone[]
+  drivers           Driver[]
 
   @@unique([tenantId, code])
   @@index([tenantId, isActive])
+}
+
+model DeliveryZone {
+  id            String   @id @default(cuid())
+  branchId      String
+  minDistanceKm Decimal  @db.Decimal(8, 2)
+  maxDistanceKm Decimal  @db.Decimal(8, 2)
+  fee           Decimal  @db.Decimal(12, 2)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  branch        Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, isActive, minDistanceKm, maxDistanceKm])
 }
 
 model Category {
@@ -213,33 +250,38 @@ model CustomerAddress {
 }
 
 model Order {
-  id                   String        @id @default(cuid())
-  orderNumber          String        @unique
-  tenantId             String
-  branchId             String
-  customerId           String
-  status               OrderStatus   @default(PENDING)
-  paymentMethod        PaymentMethod
-  paymentStatus        PaymentStatus @default(PENDING)
-  subtotal             Decimal       @db.Decimal(12, 2)
-  deliveryFee          Decimal       @default(0) @db.Decimal(12, 2)
-  serviceFee           Decimal       @default(0) @db.Decimal(12, 2)
-  discount             Decimal       @default(0) @db.Decimal(12, 2)
-  total                Decimal       @db.Decimal(12, 2)
-  deliveryAddress      String?
-  deliveryLatitude     Decimal?      @db.Decimal(10, 7)
-  deliveryLongitude    Decimal?      @db.Decimal(10, 7)
-  deliveryInstructions String?
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
-  tenant               Tenant        @relation(fields: [tenantId], references: [id])
-  branch               Branch        @relation(fields: [branchId], references: [id])
-  customer             User          @relation("CustomerOrders", fields: [customerId], references: [id])
-  items                OrderItem[]
-  delivery             Delivery?
+  id                        String          @id @default(cuid())
+  orderNumber               String          @unique
+  tenantId                  String
+  branchId                  String
+  customerId                String
+  status                    OrderStatus     @default(PENDING)
+  fulfillmentType           FulfillmentType @default(DELIVERY)
+  paymentMethod             PaymentMethod
+  paymentStatus             PaymentStatus   @default(PENDING)
+  subtotal                  Decimal         @db.Decimal(12, 2)
+  deliveryFee               Decimal         @default(0) @db.Decimal(12, 2)
+  serviceFee                Decimal         @default(0) @db.Decimal(12, 2)
+  discount                  Decimal         @default(0) @db.Decimal(12, 2)
+  total                     Decimal         @db.Decimal(12, 2)
+  platformCommissionPercent Decimal         @default(0) @db.Decimal(5, 2)
+  platformCommissionAmount  Decimal         @default(0) @db.Decimal(12, 2)
+  deliveryDistanceKm        Decimal?        @db.Decimal(8, 2)
+  deliveryAddress           String?
+  deliveryLatitude          Decimal?        @db.Decimal(10, 7)
+  deliveryLongitude         Decimal?        @db.Decimal(10, 7)
+  deliveryInstructions      String?
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+  tenant                    Tenant          @relation(fields: [tenantId], references: [id])
+  branch                    Branch          @relation(fields: [branchId], references: [id])
+  customer                  User            @relation("CustomerOrders", fields: [customerId], references: [id])
+  items                     OrderItem[]
+  delivery                  Delivery?
 
   @@index([tenantId, status, createdAt])
   @@index([customerId, createdAt])
+  @@index([tenantId, fulfillmentType, createdAt])
 }
 
 model OrderItem {
@@ -254,30 +296,56 @@ model OrderItem {
   product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 }
 
-model Driver {
-  id          String     @id @default(cuid())
-  userId      String     @unique
-  isOnline    Boolean    @default(false)
-  isAvailable Boolean    @default(false)
-  latitude    Decimal?   @db.Decimal(10, 7)
-  longitude   Decimal?   @db.Decimal(10, 7)
-  lastSeenAt  DateTime?
-  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+model DeliveryOperator {
+  id        String               @id @default(cuid())
+  type      DeliveryOperatorType
+  name      String
+  tenantId  String?              @unique
+  isActive  Boolean              @default(true)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  tenant    Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  drivers   Driver[]
   deliveries Delivery[]
+
+  @@index([type, isActive])
+}
+
+model Driver {
+  id          String            @id @default(cuid())
+  userId      String            @unique
+  operatorId  String?
+  branchId    String?
+  isActive    Boolean           @default(true)
+  isOnline    Boolean           @default(false)
+  isAvailable Boolean           @default(false)
+  latitude    Decimal?          @db.Decimal(10, 7)
+  longitude   Decimal?          @db.Decimal(10, 7)
+  lastSeenAt  DateTime?
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  operator    DeliveryOperator? @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+  branch      Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  deliveries Delivery[]
+
+  @@index([operatorId, isActive, isOnline, isAvailable])
+  @@index([branchId, isActive])
 }
 
 model Delivery {
-  id          String         @id @default(cuid())
-  orderId     String         @unique
+  id          String            @id @default(cuid())
+  orderId     String            @unique
   driverId    String?
-  status      DeliveryStatus @default(UNASSIGNED)
+  operatorId  String?
+  status      DeliveryStatus    @default(UNASSIGNED)
   assignedAt  DateTime?
   pickedUpAt  DateTime?
   deliveredAt DateTime?
-  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  driver      Driver?        @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  order       Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  driver      Driver?           @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  operator    DeliveryOperator? @relation(fields: [operatorId], references: [id], onDelete: SetNull)
 
   @@index([driverId, status])
+  @@index([operatorId, status])
 }
 
 model AdminAuditEvent {

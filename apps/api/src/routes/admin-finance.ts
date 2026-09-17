@@ -6,13 +6,13 @@ export async function adminFinanceRoutes(app: FastifyInstance) {
   app.get('/v1/admin/finance/summary', { preHandler: requirePlatformAdmin }, async () => {
     const [tenants, grouped] = await Promise.all([
       prisma.tenant.findMany({
-        select: { id: true, name: true, currency: true, status: true },
+        select: { id: true, name: true, currency: true, status: true, platformCommissionPercent: true },
         orderBy: { name: 'asc' },
       }),
       prisma.order.groupBy({
         by: ['tenantId', 'paymentMethod', 'paymentStatus'],
         _count: { _all: true },
-        _sum: { total: true },
+        _sum: { total: true, subtotal: true, deliveryFee: true, platformCommissionAmount: true },
       }),
     ]);
 
@@ -27,6 +27,9 @@ export async function adminFinanceRoutes(app: FastifyInstance) {
       partiallyRefundedOrders: number;
       paidValue: number;
       pendingValue: number;
+      merchandiseSales: number;
+      platformCommission: number;
+      merchantDeliveryValue: number;
       refundedValue: number;
     }>();
     const merchantMap = new Map<string, {
@@ -34,11 +37,16 @@ export async function adminFinanceRoutes(app: FastifyInstance) {
       merchant: string;
       status: string;
       currency: string;
+      commissionPercent: number;
       orders: number;
       paidOrders: number;
       pendingOrders: number;
       paidValue: number;
       pendingValue: number;
+      merchandiseSales: number;
+      platformCommission: number;
+      merchantNetSales: number;
+      merchantDeliveryValue: number;
     }>();
 
     for (const row of grouped) {
@@ -46,6 +54,9 @@ export async function adminFinanceRoutes(app: FastifyInstance) {
       if (!tenant) continue;
       const count = row._count._all;
       const value = Number(row._sum.total ?? 0);
+      const subtotal = Number(row._sum.subtotal ?? 0);
+      const commission = Number(row._sum.platformCommissionAmount ?? 0);
+      const deliveryValue = Number(row._sum.deliveryFee ?? 0);
 
       const currency = currencyMap.get(tenant.currency) ?? {
         currency: tenant.currency,
@@ -57,12 +68,18 @@ export async function adminFinanceRoutes(app: FastifyInstance) {
         partiallyRefundedOrders: 0,
         paidValue: 0,
         pendingValue: 0,
+        merchandiseSales: 0,
+        platformCommission: 0,
+        merchantDeliveryValue: 0,
         refundedValue: 0,
       };
       currency.orders += count;
       if (row.paymentStatus === PaymentStatus.PAID) {
         currency.paidOrders += count;
         currency.paidValue += value;
+        currency.merchandiseSales += subtotal;
+        currency.platformCommission += commission;
+        currency.merchantDeliveryValue += deliveryValue;
       } else if (row.paymentStatus === PaymentStatus.PENDING || row.paymentStatus === PaymentStatus.AUTHORIZED) {
         currency.pendingOrders += count;
         currency.pendingValue += value;
@@ -81,16 +98,25 @@ export async function adminFinanceRoutes(app: FastifyInstance) {
         merchant: tenant.name,
         status: tenant.status,
         currency: tenant.currency,
+        commissionPercent: Number(tenant.platformCommissionPercent),
         orders: 0,
         paidOrders: 0,
         pendingOrders: 0,
         paidValue: 0,
         pendingValue: 0,
+        merchandiseSales: 0,
+        platformCommission: 0,
+        merchantNetSales: 0,
+        merchantDeliveryValue: 0,
       };
       merchant.orders += count;
       if (row.paymentStatus === PaymentStatus.PAID) {
         merchant.paidOrders += count;
         merchant.paidValue += value;
+        merchant.merchandiseSales += subtotal;
+        merchant.platformCommission += commission;
+        merchant.merchantNetSales += subtotal - commission;
+        merchant.merchantDeliveryValue += deliveryValue;
       } else if (row.paymentStatus === PaymentStatus.PENDING || row.paymentStatus === PaymentStatus.AUTHORIZED) {
         merchant.pendingOrders += count;
         merchant.pendingValue += value;
@@ -100,7 +126,7 @@ export async function adminFinanceRoutes(app: FastifyInstance) {
 
     return {
       currencies: [...currencyMap.values()].sort((a, b) => a.currency.localeCompare(b.currency)),
-      merchants: [...merchantMap.values()].sort((a, b) => b.paidValue - a.paidValue || a.merchant.localeCompare(b.merchant)),
+      merchants: [...merchantMap.values()].sort((a, b) => b.platformCommission - a.platformCommission || a.merchant.localeCompare(b.merchant)),
       paymentGroups: grouped.map((row) => ({
         tenantId: row.tenantId,
         merchant: tenantMap.get(row.tenantId)?.name ?? 'Unknown merchant',
@@ -109,6 +135,9 @@ export async function adminFinanceRoutes(app: FastifyInstance) {
         paymentStatus: row.paymentStatus,
         orders: row._count._all,
         value: Number(row._sum.total ?? 0),
+        merchandiseSales: Number(row._sum.subtotal ?? 0),
+        platformCommission: Number(row._sum.platformCommissionAmount ?? 0),
+        merchantDeliveryValue: Number(row._sum.deliveryFee ?? 0),
       })),
     };
   });

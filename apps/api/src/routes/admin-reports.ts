@@ -62,13 +62,14 @@ export async function adminReportRoutes(app: FastifyInstance) {
         id: true,
         tenantId: true,
         status: true,
+        fulfillmentType: true,
         paymentMethod: true,
         paymentStatus: true,
         subtotal: true,
         deliveryFee: true,
-        serviceFee: true,
         discount: true,
         total: true,
+        platformCommissionAmount: true,
         createdAt: true,
         tenant: { select: { id: true, name: true, currency: true, status: true } },
       },
@@ -83,8 +84,9 @@ export async function adminReportRoutes(app: FastifyInstance) {
       completedOrders: number;
       paidOrders: number;
       paidValue: number;
-      serviceFeesPaid: number;
-      deliveryFeesPaid: number;
+      merchandiseSalesPaid: number;
+      platformCommissionPaid: number;
+      merchantDeliveryValuePaid: number;
     }>();
     const merchantMap = new Map<string, {
       tenantId: string;
@@ -95,8 +97,9 @@ export async function adminReportRoutes(app: FastifyInstance) {
       completedOrders: number;
       paidOrders: number;
       paidValue: number;
-      serviceFeesPaid: number;
-      deliveryFeesPaid: number;
+      merchandiseSalesPaid: number;
+      platformCommissionPaid: number;
+      merchantDeliveryValuePaid: number;
     }>();
     const dailyMap = new Map<string, {
       date: string;
@@ -105,6 +108,7 @@ export async function adminReportRoutes(app: FastifyInstance) {
       completedOrders: number;
       paidOrders: number;
       paidValue: number;
+      platformCommissionPaid: number;
     }>();
 
     for (const order of orders) {
@@ -112,8 +116,9 @@ export async function adminReportRoutes(app: FastifyInstance) {
       paymentStatuses.set(order.paymentStatus, (paymentStatuses.get(order.paymentStatus) ?? 0) + 1);
 
       const total = Number(order.total);
-      const serviceFee = Number(order.serviceFee);
-      const deliveryFee = Number(order.deliveryFee);
+      const subtotal = Number(order.subtotal);
+      const commission = Number(order.platformCommissionAmount);
+      const deliveryValue = Number(order.deliveryFee);
       const isCompleted = order.status === OrderStatus.COMPLETED;
       const isPaid = order.paymentStatus === PaymentStatus.PAID;
 
@@ -123,16 +128,18 @@ export async function adminReportRoutes(app: FastifyInstance) {
         completedOrders: 0,
         paidOrders: 0,
         paidValue: 0,
-        serviceFeesPaid: 0,
-        deliveryFeesPaid: 0,
+        merchandiseSalesPaid: 0,
+        platformCommissionPaid: 0,
+        merchantDeliveryValuePaid: 0,
       };
       currency.orders += 1;
       if (isCompleted) currency.completedOrders += 1;
       if (isPaid) {
         currency.paidOrders += 1;
         currency.paidValue += total;
-        currency.serviceFeesPaid += serviceFee;
-        currency.deliveryFeesPaid += deliveryFee;
+        currency.merchandiseSalesPaid += subtotal;
+        currency.platformCommissionPaid += commission;
+        currency.merchantDeliveryValuePaid += deliveryValue;
       }
       currencyMap.set(order.tenant.currency, currency);
 
@@ -145,16 +152,18 @@ export async function adminReportRoutes(app: FastifyInstance) {
         completedOrders: 0,
         paidOrders: 0,
         paidValue: 0,
-        serviceFeesPaid: 0,
-        deliveryFeesPaid: 0,
+        merchandiseSalesPaid: 0,
+        platformCommissionPaid: 0,
+        merchantDeliveryValuePaid: 0,
       };
       merchant.orders += 1;
       if (isCompleted) merchant.completedOrders += 1;
       if (isPaid) {
         merchant.paidOrders += 1;
         merchant.paidValue += total;
-        merchant.serviceFeesPaid += serviceFee;
-        merchant.deliveryFeesPaid += deliveryFee;
+        merchant.merchandiseSalesPaid += subtotal;
+        merchant.platformCommissionPaid += commission;
+        merchant.merchantDeliveryValuePaid += deliveryValue;
       }
       merchantMap.set(order.tenantId, merchant);
 
@@ -167,22 +176,20 @@ export async function adminReportRoutes(app: FastifyInstance) {
         completedOrders: 0,
         paidOrders: 0,
         paidValue: 0,
+        platformCommissionPaid: 0,
       };
       daily.orders += 1;
       if (isCompleted) daily.completedOrders += 1;
       if (isPaid) {
         daily.paidOrders += 1;
         daily.paidValue += total;
+        daily.platformCommissionPaid += commission;
       }
       dailyMap.set(dayKey, daily);
     }
 
     return {
-      period: {
-        from: requestedFrom.toISOString(),
-        to: requestedTo.toISOString(),
-        days: durationDays,
-      },
+      period: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), days: durationDays },
       orders: orders.length,
       orderStatuses: [...orderStatuses.entries()].map(([status, total]) => ({ status, total })),
       paymentStatuses: [...paymentStatuses.entries()].map(([status, total]) => ({ status, total })),

@@ -10,6 +10,7 @@
     "db:push": "prisma db push --config prisma.config.ts",
     "db:migrate": "prisma migrate dev --config prisma.config.ts",
     "db:seed": "tsx packages/database/prisma/seed.ts",
+    "db:backfill-logistics": "tsx packages/database/prisma/backfill-logistics.ts",
     "typecheck:api": "tsc -p apps/api/tsconfig.json --noEmit"
   },
   "devDependencies": {
