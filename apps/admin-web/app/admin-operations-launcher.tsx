@@ -10,6 +10,7 @@ const tools = [
   { href: '/finance', label: 'Finance' },
   { href: '/support', label: 'Support' },
   { href: '/reports', label: 'Reports' },
+  { href: '/audit', label: 'Audit' },
 ];
 
 export default function AdminOperationsLauncher() {
