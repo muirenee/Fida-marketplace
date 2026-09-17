@@ -136,6 +136,11 @@ class _MerchantScreenState extends State<MerchantScreen> {
     final currency = merchant['currency']?.toString() ?? 'RWF';
     final categories = merchant['categories'] as List? ?? const [];
     final branches = merchant['branches'] as List? ?? const [];
+    final firstBranch = branches.isNotEmpty && branches.first is Map ? branches.first as Map : null;
+    final pickupEnabled = firstBranch?['pickupEnabled'] == true;
+    final deliveryEnabled = firstBranch?['deliveryEnabled'] == true;
+    final zones = firstBranch?['deliveryZones'] as List? ?? const [];
+    final hasFreeZone = zones.any((zone) => zone is Map && asDouble(zone['fee']) == 0);
 
     return Scaffold(
       appBar: AppBar(title: Text(merchant['name'].toString())),
@@ -179,11 +184,17 @@ class _MerchantScreenState extends State<MerchantScreen> {
                         spacing: 14,
                         runSpacing: 8,
                         children: [
-                          _Info(icon: Icons.delivery_dining_rounded, text: 'Delivery ${money(merchant['defaultDeliveryFee'], currency: currency)}'),
+                          if (pickupEnabled)
+                            const _Info(icon: Icons.shopping_bag_outlined, text: 'Pickup'),
+                          if (deliveryEnabled)
+                            _Info(
+                              icon: Icons.delivery_dining_rounded,
+                              text: hasFreeZone ? 'Free delivery nearby' : 'Delivery by distance',
+                            ),
                           if (asDouble(merchant['minimumOrder']) > 0)
-                            _Info(icon: Icons.shopping_bag_outlined, text: 'Min ${money(merchant['minimumOrder'], currency: currency)}'),
-                          if (branches.isNotEmpty)
-                            _Info(icon: Icons.location_on_outlined, text: (branches.first as Map)['city']?.toString() ?? (branches.first as Map)['name'].toString()),
+                            _Info(icon: Icons.receipt_long_outlined, text: 'Min ${money(merchant['minimumOrder'], currency: currency)}'),
+                          if (firstBranch != null)
+                            _Info(icon: Icons.location_on_outlined, text: firstBranch['city']?.toString() ?? firstBranch['name'].toString()),
                         ],
                       ),
                     ],
