@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import { addressRoutes } from './routes/addresses.js';
 import { adminCatalogRoutes } from './routes/admin-catalog.js';
+import { adminOperationsRoutes } from './routes/admin-operations.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
 import { driverRoutes } from './routes/driver.js';
@@ -34,6 +35,7 @@ await app.register(tenantRoutes);
 await app.register(merchantRoutes);
 await app.register(adminRoutes);
 await app.register(adminCatalogRoutes);
+await app.register(adminOperationsRoutes);
 
 app.get('/health', async () => ({
   service: 'fida-marketplace-api',
