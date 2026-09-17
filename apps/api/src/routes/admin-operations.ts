@@ -264,7 +264,10 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
           where: { tenantId: membership.tenantId, role: MembershipRole.OWNER, id: { not: membership.id } },
         });
         if (otherOwners === 0) {
-          return reply.code(409).send({ error: 'last_owner_required' });
+          return reply.code(409).send({
+            error: 'last_owner_required',
+            message: 'This merchant must keep at least one owner. Assign another owner before changing this role.',
+          });
         }
       }
     }
