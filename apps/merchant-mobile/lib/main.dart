@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api_client.dart';
+import 'logistics_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -123,6 +124,8 @@ class _FidaMerchantAppState extends State<FidaMerchantApp> {
         useMaterial3: true,
         colorSchemeSeed: const Color(0xFF176B55),
         scaffoldBackgroundColor: const Color(0xFFF8FAF9),
+        cardTheme: const CardThemeData(elevation: 0),
+        inputDecorationTheme: const InputDecorationTheme(filled: true, fillColor: Colors.white),
       ),
       home: loading && user == null
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
@@ -370,6 +373,12 @@ class _MerchantShellState extends State<_MerchantShell> {
     final pages = [
       _OrdersPage(api: widget.api, tenantId: tenantId),
       _CatalogPage(api: widget.api, tenantId: tenantId),
+      MerchantLogisticsPage(
+        key: ValueKey('logistics-$tenantId'),
+        api: widget.api,
+        tenantId: tenantId,
+        role: widget.selected['role'].toString(),
+      ),
       _MerchantAccount(
         membership: widget.selected,
         memberships: widget.memberships,
@@ -383,7 +392,7 @@ class _MerchantShellState extends State<_MerchantShell> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(tenant['name'].toString(), style: const TextStyle(fontWeight: FontWeight.w800)),
+            Text(tenant['name'].toString(), style: const TextStyle(fontWeight: FontWeight.w900)),
             Text('${tenant['status']} · ${widget.selected['role']}', style: Theme.of(context).textTheme.labelSmall),
           ],
         ),
@@ -395,6 +404,7 @@ class _MerchantShellState extends State<_MerchantShell> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long_rounded), label: 'Orders'),
           NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2_rounded), label: 'Catalog'),
+          NavigationDestination(icon: Icon(Icons.local_shipping_outlined), selectedIcon: Icon(Icons.local_shipping_rounded), label: 'Delivery'),
           NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings_rounded), label: 'Account'),
         ],
       ),
@@ -438,12 +448,16 @@ class _OrdersPageState extends State<_OrdersPage> {
     }
   }
 
-  List<String> actions(String status) => switch (status) {
-        'PENDING' => ['ACCEPTED', 'REJECTED'],
-        'ACCEPTED' => ['PREPARING'],
-        'PREPARING' => ['READY_FOR_PICKUP'],
-        _ => const [],
-      };
+  List<String> actions(Map<String, dynamic> order) {
+    final status = order['status']?.toString();
+    return switch (status) {
+      'PENDING' => ['ACCEPTED', 'REJECTED'],
+      'ACCEPTED' => ['PREPARING'],
+      'PREPARING' => ['READY_FOR_PICKUP'],
+      'READY_FOR_PICKUP' when order['fulfillmentType'] == 'PICKUP' => ['COMPLETED'],
+      _ => const [],
+    };
+  }
 
   Future<void> move(Map<String, dynamic> order, String status) async {
     try {
@@ -494,12 +508,13 @@ class _OrdersPageState extends State<_OrdersPage> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
               sliver: SliverList.separated(
                 itemCount: orders.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
                 itemBuilder: (context, index) {
                   final order = orders[index];
                   final customer = order['customer'] as Map? ?? {};
                   final items = order['items'] as List? ?? const [];
-                  final next = actions(order['status'].toString());
+                  final next = actions(order);
+                  final fulfillment = order['fulfillmentType']?.toString() ?? 'DELIVERY';
                   return Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -512,6 +527,17 @@ class _OrdersPageState extends State<_OrdersPage> {
                               Chip(label: Text(order['status'].toString().replaceAll('_', ' ').toLowerCase())),
                             ],
                           ),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              Chip(
+                                avatar: Icon(fulfillment == 'PICKUP' ? Icons.shopping_bag_outlined : Icons.delivery_dining_rounded, size: 16),
+                                label: Text(fulfillment.toLowerCase()),
+                              ),
+                              if (order['deliveryDistanceKm'] != null) Chip(label: Text('${order['deliveryDistanceKm']} km')),
+                            ],
+                          ),
                           Text([customer['firstName'], customer['lastName']].where((v) => v != null && '$v'.isNotEmpty).join(' ')),
                           const SizedBox(height: 8),
                           ...items.take(4).map((raw) {
@@ -521,7 +547,8 @@ class _OrdersPageState extends State<_OrdersPage> {
                           if (items.length > 4) Text('+ ${items.length - 4} more'),
                           const SizedBox(height: 10),
                           Text('Total: ${order['total']} · ${order['paymentMethod']}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                          Text('Deliver to: ${order['deliveryAddress']}'),
+                          if (fulfillment == 'DELIVERY') Text('Deliver to: ${order['deliveryAddress'] ?? 'Address unavailable'}'),
+                          if (fulfillment == 'PICKUP') const Text('Customer will collect this order at the branch.'),
                           if (next.isNotEmpty) ...[
                             const SizedBox(height: 14),
                             Wrap(
@@ -530,7 +557,8 @@ class _OrdersPageState extends State<_OrdersPage> {
                                 if (status == 'REJECTED') {
                                   return OutlinedButton(onPressed: () => move(order, status), child: const Text('Reject'));
                                 }
-                                return FilledButton(onPressed: () => move(order, status), child: Text(status.replaceAll('_', ' ').toLowerCase()));
+                                final label = status == 'COMPLETED' ? 'Handed to customer' : status.replaceAll('_', ' ').toLowerCase();
+                                return FilledButton(onPressed: () => move(order, status), child: Text(label));
                               }).toList(),
                             ),
                           ],
@@ -802,6 +830,14 @@ class _MerchantAccount extends StatelessWidget {
             leading: Icon(tenant['status'] == 'ACTIVE' ? Icons.verified_rounded : Icons.hourglass_top_rounded),
             title: Text(tenant['status'] == 'ACTIVE' ? 'Marketplace active' : 'Awaiting platform approval'),
             subtitle: const Text('Only active merchants are visible to customers.'),
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Card(
+          child: ListTile(
+            leading: Icon(Icons.local_shipping_outlined),
+            title: Text('Your logistics'),
+            subtitle: Text('Use the Delivery tab to configure pickup, distance pricing and your merchant drivers.'),
           ),
         ),
         const SizedBox(height: 18),
