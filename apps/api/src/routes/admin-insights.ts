@@ -18,8 +18,7 @@ export async function adminInsightRoutes(app: FastifyInstance) {
         timezone: true,
         isAcceptingOrders: true,
         minimumOrder: true,
-        defaultDeliveryFee: true,
-        serviceFeePercent: true,
+        platformCommissionPercent: true,
         activatedAt: true,
         createdAt: true,
         updatedAt: true,
@@ -31,9 +30,19 @@ export async function adminInsightRoutes(app: FastifyInstance) {
             code: true,
             city: true,
             addressLine: true,
+            latitude: true,
+            longitude: true,
             isActive: true,
             isAcceptingOrders: true,
-            _count: { select: { memberships: true, orders: true } },
+            pickupEnabled: true,
+            deliveryEnabled: true,
+            logisticsMode: true,
+            deliveryZones: {
+              where: { isActive: true },
+              orderBy: { minDistanceKm: 'asc' },
+              select: { id: true, minDistanceKm: true, maxDistanceKm: true, fee: true },
+            },
+            _count: { select: { memberships: true, orders: true, drivers: true } },
           },
         },
         memberships: {
@@ -74,9 +83,14 @@ export async function adminInsightRoutes(app: FastifyInstance) {
             id: true,
             orderNumber: true,
             status: true,
+            fulfillmentType: true,
             paymentMethod: true,
             paymentStatus: true,
+            subtotal: true,
+            deliveryFee: true,
             total: true,
+            platformCommissionAmount: true,
+            deliveryDistanceKm: true,
             createdAt: true,
             branch: { select: { id: true, name: true, city: true } },
             customer: {
@@ -86,6 +100,7 @@ export async function adminInsightRoutes(app: FastifyInstance) {
               select: {
                 status: true,
                 deliveredAt: true,
+                operator: { select: { id: true, name: true, type: true } },
                 driver: {
                   select: {
                     id: true,
@@ -102,7 +117,7 @@ export async function adminInsightRoutes(app: FastifyInstance) {
 
     if (!tenant) return reply.code(404).send({ error: 'tenant_not_found' });
 
-    const [orderStatuses, paymentStatuses, paidTotals, activeProducts, availableProducts] = await Promise.all([
+    const [orderStatuses, paymentStatuses, paidTotals, activeProducts, availableProducts, activeDrivers] = await Promise.all([
       prisma.order.groupBy({
         by: ['status'],
         where: { tenantId },
@@ -117,10 +132,11 @@ export async function adminInsightRoutes(app: FastifyInstance) {
       prisma.order.aggregate({
         where: { tenantId, paymentStatus: PaymentStatus.PAID },
         _count: { _all: true },
-        _sum: { total: true, serviceFee: true, deliveryFee: true },
+        _sum: { total: true, subtotal: true, deliveryFee: true, platformCommissionAmount: true },
       }),
       prisma.product.count({ where: { tenantId, isActive: true } }),
       prisma.product.count({ where: { tenantId, isActive: true, isAvailable: true } }),
+      prisma.driver.count({ where: { isActive: true, operator: { is: { tenantId } } } }),
     ]);
 
     return {
@@ -128,10 +144,12 @@ export async function adminInsightRoutes(app: FastifyInstance) {
       metrics: {
         activeProducts,
         availableProducts,
+        activeDrivers,
         paidOrders: paidTotals._count._all,
         paidValue: paidTotals._sum.total ?? 0,
-        paidServiceFees: paidTotals._sum.serviceFee ?? 0,
-        paidDeliveryFees: paidTotals._sum.deliveryFee ?? 0,
+        paidMerchandiseSales: paidTotals._sum.subtotal ?? 0,
+        paidPlatformCommission: paidTotals._sum.platformCommissionAmount ?? 0,
+        paidDeliveryValue: paidTotals._sum.deliveryFee ?? 0,
       },
       orderStatuses: orderStatuses.map((row) => ({ status: row.status, total: row._count._all })),
       paymentStatuses: paymentStatuses.map((row) => ({
@@ -149,11 +167,21 @@ export async function adminInsightRoutes(app: FastifyInstance) {
       where: { id: driverId },
       select: {
         id: true,
+        isActive: true,
         isOnline: true,
         isAvailable: true,
         latitude: true,
         longitude: true,
         lastSeenAt: true,
+        operator: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            tenant: { select: { id: true, name: true } },
+          },
+        },
+        branch: { select: { id: true, name: true, city: true } },
         user: {
           select: {
             id: true,
@@ -180,6 +208,7 @@ export async function adminInsightRoutes(app: FastifyInstance) {
                 id: true,
                 orderNumber: true,
                 status: true,
+                fulfillmentType: true,
                 paymentStatus: true,
                 total: true,
                 createdAt: true,
