@@ -24,6 +24,7 @@ export async function adminFinanceRoutes(app: FastifyInstance) {
       pendingOrders: number;
       failedOrders: number;
       refundedOrders: number;
+      partiallyRefundedOrders: number;
       paidValue: number;
       pendingValue: number;
       refundedValue: number;
@@ -53,6 +54,7 @@ export async function adminFinanceRoutes(app: FastifyInstance) {
         pendingOrders: 0,
         failedOrders: 0,
         refundedOrders: 0,
+        partiallyRefundedOrders: 0,
         paidValue: 0,
         pendingValue: 0,
         refundedValue: 0,
@@ -66,9 +68,11 @@ export async function adminFinanceRoutes(app: FastifyInstance) {
         currency.pendingValue += value;
       } else if (row.paymentStatus === PaymentStatus.FAILED) {
         currency.failedOrders += count;
-      } else if (row.paymentStatus === PaymentStatus.REFUNDED || row.paymentStatus === PaymentStatus.PARTIALLY_REFUNDED) {
+      } else if (row.paymentStatus === PaymentStatus.REFUNDED) {
         currency.refundedOrders += count;
         currency.refundedValue += value;
+      } else if (row.paymentStatus === PaymentStatus.PARTIALLY_REFUNDED) {
+        currency.partiallyRefundedOrders += count;
       }
       currencyMap.set(tenant.currency, currency);
 
