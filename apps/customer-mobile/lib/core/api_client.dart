@@ -106,14 +106,7 @@ class ApiClient {
     final response = await http.Response.fromStream(streamed);
 
     if (response.statusCode == 401 && authenticated && allowRefresh && await refreshSession()) {
-      return _send(
-        method,
-        path,
-        body: body,
-        authenticated: authenticated,
-        query: query,
-        allowRefresh: false,
-      );
+      return _send(method, path, body: body, authenticated: authenticated, query: query, allowRefresh: false);
     }
     return response;
   }
@@ -135,12 +128,7 @@ class ApiClient {
     final response = await _send(
       'POST',
       '/v1/auth/register',
-      body: {
-        'firstName': firstName,
-        'lastName': lastName,
-        'email': email,
-        'password': password,
-      },
+      body: {'firstName': firstName, 'lastName': lastName, 'email': email, 'password': password},
     );
     if (response.statusCode != 201) throw _error(response);
     final json = _decode(response) as Map<String, dynamic>;
@@ -151,14 +139,8 @@ class ApiClient {
   Future<bool> refreshSession() async {
     final token = _refreshToken;
     if (token == null) return false;
-
     try {
-      final response = await _send(
-        'POST',
-        '/v1/auth/refresh',
-        body: {'refreshToken': token},
-        allowRefresh: false,
-      );
+      final response = await _send('POST', '/v1/auth/refresh', body: {'refreshToken': token}, allowRefresh: false);
       if (response.statusCode != 200) {
         await clearSession();
         return false;
@@ -183,9 +165,7 @@ class ApiClient {
     if (refresh != null) {
       try {
         await _send('POST', '/v1/auth/logout', body: {'refreshToken': refresh});
-      } catch (_) {
-        // Local logout must still succeed when the API is unavailable.
-      }
+      } catch (_) {}
     }
     await clearSession();
   }
@@ -220,6 +200,8 @@ class ApiClient {
     String? label,
     String? city,
     String? instructions,
+    double? latitude,
+    double? longitude,
     bool isDefault = false,
   }) async {
     final response = await _send(
@@ -231,10 +213,23 @@ class ApiClient {
         if (label != null) 'label': label,
         if (city != null) 'city': city,
         if (instructions != null) 'instructions': instructions,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
         'isDefault': isDefault,
       },
     );
     if (response.statusCode != 201) throw _error(response);
+    return (_decode(response) as Map).cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> deliveryQuote({required String branchId, required String addressId}) async {
+    final response = await _send(
+      'GET',
+      '/v1/customer/delivery-quote',
+      authenticated: true,
+      query: {'branchId': branchId, 'addressId': addressId},
+    );
+    if (response.statusCode != 200) throw _error(response);
     return (_decode(response) as Map).cast<String, dynamic>();
   }
 
@@ -243,6 +238,7 @@ class ApiClient {
     required String branchId,
     required List<Map<String, dynamic>> items,
     required String paymentMethod,
+    required String fulfillmentType,
     String? addressId,
     String? deliveryAddress,
     String? deliveryInstructions,
@@ -256,6 +252,7 @@ class ApiClient {
         'branchId': branchId,
         'items': items,
         'paymentMethod': paymentMethod,
+        'fulfillmentType': fulfillmentType,
         if (addressId != null) 'addressId': addressId,
         if (deliveryAddress != null) 'deliveryAddress': deliveryAddress,
         if (deliveryInstructions != null) 'deliveryInstructions': deliveryInstructions,
