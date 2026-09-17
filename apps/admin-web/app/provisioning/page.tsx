@@ -93,6 +93,7 @@ export default function ProvisioningPage() {
     const haystack = [user.firstName, user.lastName, user.email, user.phone].filter(Boolean).join(' ').toLowerCase();
     return haystack.includes(userQuery.trim().toLowerCase());
   }), [memberships, staffTenantId, userQuery, users]);
+  const noEligibleUser = Boolean(userQuery.trim()) && filteredUsers.length === 0;
 
   async function createBranch(event: FormEvent) {
     event.preventDefault();
@@ -184,8 +185,8 @@ export default function ProvisioningPage() {
         <form className="panel-body" onSubmit={(e) => void assignStaff(e)}>
           <div className="settings-grid">
             <div className="field"><label>Merchant</label><select className="select" required value={staffTenantId} onChange={(e) => { setStaffTenantId(e.target.value); setStaffUserId(''); setStaffBranchId(''); }}>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>)}</select></div>
-            <div className="field"><label>Find user</label><input className="input" value={userQuery} onChange={(e) => setUserQuery(e.target.value)} placeholder="Name, email or phone" /></div>
-            <div className="field"><label>User</label><select className="select" required value={staffUserId} onChange={(e) => setStaffUserId(e.target.value)}><option value="">Select user</option>{filteredUsers.map((user) => <option key={user.id} value={user.id}>{displayName(user)} · {user.email || user.phone || user.id}</option>)}</select></div>
+            <div className="field"><label>Find user</label><input className="input" value={userQuery} onChange={(e) => { setUserQuery(e.target.value); setStaffUserId(''); }} placeholder="Name, email or phone" /></div>
+            <div className="field"><label>User</label><select className="select" required value={staffUserId} onChange={(e) => setStaffUserId(e.target.value)}><option value="">{noEligibleUser ? 'No eligible user found' : 'Select user'}</option>{filteredUsers.map((user) => <option key={user.id} value={user.id}>{displayName(user)} · {user.email || user.phone || user.id}</option>)}</select>{noEligibleUser && <div className="field-help">Existing members of this merchant, inactive users and platform admins are excluded.</div>}</div>
             <div className="field"><label>Role</label><select className="select" value={staffRole} onChange={(e) => setStaffRole(e.target.value)}><option value="OWNER">owner</option><option value="ADMIN">admin</option><option value="MANAGER">manager</option><option value="STAFF">staff</option></select></div>
             <div className="field"><label>Branch scope</label><select className="select" value={staffBranchId} onChange={(e) => setStaffBranchId(e.target.value)}><option value="">All branches</option>{staffBranches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}{branch.isActive ? '' : ' (inactive)'}</option>)}</select></div>
           </div>
@@ -193,7 +194,7 @@ export default function ProvisioningPage() {
         </form>
       </section>
 
-      <section className="panel"><div className="panel-head"><div><h2>Current branch inventory</h2><p>{branches.length} branches across {tenants.length} merchants</p></div></div>{branches.length === 0 ? <div className="empty">No branches found.</div> : <div className="table-wrap"><table><thead><tr><th>Branch</th><th>Merchant</th><th>Location</th><th>Status</th><th>Staff</th><th>Orders</th></tr></thead><tbody>{branches.map((branch) => <tr key={branch.id}><td><div className="cell-title">{branch.name}</div><div className="cell-sub">{branch.code || 'No code'}</div></td><td>{branch.tenant.name}</td><td><div className="cell-title">{branch.city || '—'}</div><div className="cell-sub">{branch.addressLine || 'No address'}</div></td><td><span className={statusClass(branch.isActive ? 'active' : 'inactive')}>{branch.isActive ? 'active' : 'inactive'}</span></td><td>{branch._count?.memberships ?? 0}</td><td>{branch._count?.orders ?? 0}</td></tr>)}</tbody></table></div>}</section>
+      <section className="panel"><div className="panel-head"><div><h2>Current branch inventory</h2><p>{branches.length} branches across {tenants.length} merchants</p></div></div>{branches.length === 0 ? <div className="empty">No branches found.</div> : <div className="table-wrap"><table><thead><tr><th>Branch</th><th>Merchant</th><th>Location</th><th>Status</th><th>Branch-scoped staff</th><th>Orders</th></tr></thead><tbody>{branches.map((branch) => <tr key={branch.id}><td><div className="cell-title">{branch.name}</div><div className="cell-sub">{branch.code || 'No code'}</div></td><td>{branch.tenant.name}</td><td><div className="cell-title">{branch.city || '—'}</div><div className="cell-sub">{branch.addressLine || 'No address'}</div></td><td><span className={statusClass(branch.isActive ? 'active' : 'inactive')}>{branch.isActive ? 'active' : 'inactive'}</span></td><td>{branch._count?.memberships ?? 0}</td><td>{branch._count?.orders ?? 0}</td></tr>)}</tbody></table></div>}</section>
     </main>
   </div>;
 }
