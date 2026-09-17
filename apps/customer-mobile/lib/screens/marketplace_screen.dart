@@ -114,8 +114,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text('Deliver now', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.black54)),
-                                        Text('Choose delivery address', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+                                        Text('Order near you', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.black54)),
+                                        Text('Pickup or delivery', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
                                       ],
                                     ),
                                   ),
@@ -189,9 +189,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Local delivery, simplified', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                                Text('Local ordering, simplified', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
                                 SizedBox(height: 4),
-                                Text('Order from nearby restaurants and stores with clear fees before checkout.'),
+                                Text('Choose pickup or merchant-priced delivery when you check out.'),
                               ],
                             ),
                           ),
@@ -220,10 +220,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             ),
           ),
           if (_loading)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(child: CircularProgressIndicator()),
-            )
+            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator()))
           else if (_error != null)
             SliverFillRemaining(
               hasScrollBody: false,
@@ -265,9 +262,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 itemBuilder: (context, index) => _MerchantCard(
                   merchant: merchants[index],
                   onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => MerchantScreen(api: widget.api, slug: merchants[index]['slug'].toString()),
-                    ),
+                    MaterialPageRoute(builder: (_) => MerchantScreen(api: widget.api, slug: merchants[index]['slug'].toString())),
                   ),
                 ),
               ),
@@ -335,8 +330,11 @@ class _MerchantCard extends StatelessWidget {
     final branches = merchant['branches'] as List? ?? const [];
     final branch = branches.isNotEmpty && branches.first is Map ? branches.first as Map : null;
     final currency = (merchant['currency'] ?? 'RWF').toString();
-    final deliveryFee = money(merchant['defaultDeliveryFee'], currency: currency);
     final minimum = asDouble(merchant['minimumOrder']);
+    final pickupEnabled = branch?['pickupEnabled'] == true;
+    final deliveryEnabled = branch?['deliveryEnabled'] == true;
+    final zones = branch?['deliveryZones'] as List? ?? const [];
+    final hasFreeZone = zones.any((zone) => zone is Map && asDouble(zone['fee']) == 0);
     final location = branch == null
         ? merchant['merchantType'].toString().replaceAll('_', ' ').toLowerCase()
         : [branch['name'], branch['city']].where((value) => value != null && '$value'.trim().isNotEmpty).join(' · ');
@@ -347,38 +345,25 @@ class _MerchantCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Stack(
-            children: [
-              Container(
-                height: 150,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFE8F4EF), Color(0xFFF3F1E8)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                child: Center(
-                  child: Container(
-                    width: 82,
-                    height: 82,
-                    decoration: BoxDecoration(color: Colors.white.withOpacity(.9), shape: BoxShape.circle),
-                    child: Icon(_icon, size: 42, color: const Color(0xFF176B55)),
-                  ),
-                ),
+          Container(
+            height: 150,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: const LinearGradient(
+                colors: [Color(0xFFE8F4EF), Color(0xFFF3F1E8)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              Positioned(
-                right: 12,
-                top: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
-                  child: Text(deliveryFee, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
-                ),
+            ),
+            child: Center(
+              child: Container(
+                width: 82,
+                height: 82,
+                decoration: BoxDecoration(color: Colors.white.withValues(alpha: .9), shape: BoxShape.circle),
+                child: Icon(_icon, size: 42, color: const Color(0xFF176B55)),
               ),
-            ],
+            ),
           ),
           const SizedBox(height: 10),
           Row(
@@ -393,13 +378,17 @@ class _MerchantCard extends StatelessWidget {
                     Text(location.isEmpty ? 'Local merchant' : location, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.black54)),
                     const SizedBox(height: 5),
                     Wrap(
-                      spacing: 8,
+                      spacing: 10,
                       runSpacing: 4,
                       children: [
-                        const _MetaText(icon: Icons.schedule_rounded, text: 'Delivery'),
-                        _MetaText(icon: Icons.delivery_dining_rounded, text: deliveryFee),
+                        if (pickupEnabled) const _MetaText(icon: Icons.shopping_bag_outlined, text: 'Pickup'),
+                        if (deliveryEnabled)
+                          _MetaText(
+                            icon: Icons.delivery_dining_rounded,
+                            text: hasFreeZone ? 'Free delivery nearby' : 'Delivery by distance',
+                          ),
                         if (minimum > 0)
-                          _MetaText(icon: Icons.shopping_bag_outlined, text: 'Min ${money(merchant['minimumOrder'], currency: currency)}'),
+                          _MetaText(icon: Icons.receipt_long_outlined, text: 'Min ${money(merchant['minimumOrder'], currency: currency)}'),
                       ],
                     ),
                   ],
