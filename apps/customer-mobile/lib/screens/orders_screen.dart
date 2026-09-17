@@ -187,6 +187,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final driverUser = (driver?['user'] as Map?)?.cast<String, dynamic>();
     final items = order['items'] as List? ?? const [];
     final currency = merchant['currency']?.toString() ?? 'RWF';
+    final isPickup = order['fulfillmentType']?.toString() == 'PICKUP';
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -219,7 +220,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           ),
         ),
         const SizedBox(height: 22),
-        Text('Delivery progress', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+        Text(isPickup ? 'Order progress' : 'Delivery progress', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
         const SizedBox(height: 10),
         _Progress(status: order['status'].toString()),
         if (driver != null) ...[
@@ -252,15 +253,25 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           ),
         const Divider(),
         _PriceRow(label: 'Subtotal', value: money(order['subtotal'], currency: currency)),
-        _PriceRow(label: 'Delivery', value: money(order['deliveryFee'], currency: currency)),
+        _PriceRow(
+          label: isPickup ? 'Pickup' : 'Delivery',
+          value: isPickup ? 'Free' : money(order['deliveryFee'], currency: currency),
+        ),
         if (asDouble(order['serviceFee']) > 0) _PriceRow(label: 'Service fee', value: money(order['serviceFee'], currency: currency)),
         const SizedBox(height: 6),
         _PriceRow(label: 'Total', value: money(order['total'], currency: currency), strong: true),
         const SizedBox(height: 22),
-        Text('Deliver to', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+        Text(isPickup ? 'Pickup from' : 'Deliver to', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
         const SizedBox(height: 6),
-        Text(order['deliveryAddress']?.toString() ?? 'No delivery address'),
-        if ((order['deliveryInstructions'] ?? '').toString().isNotEmpty)
+        if (isPickup)
+          Text([
+            branch['name'],
+            branch['addressLine'],
+            branch['city'],
+          ].where((value) => value != null && value.toString().trim().isNotEmpty).join(' · '))
+        else
+          Text(order['deliveryAddress']?.toString() ?? 'No delivery address'),
+        if (!isPickup && (order['deliveryInstructions'] ?? '').toString().isNotEmpty)
           Text('Instructions: ${order['deliveryInstructions']}'),
       ],
     );
