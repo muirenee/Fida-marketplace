@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import AdminOperationsLauncher from './admin-operations-launcher';
 import './globals.css';
+import './polish.css';
 
 export const metadata: Metadata = {
   title: 'Fida Marketplace Control Center',
