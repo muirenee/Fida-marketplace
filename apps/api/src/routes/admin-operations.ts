@@ -26,9 +26,10 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
       unavailableProducts,
       activeOrders,
       completedOrders,
-      completedRevenue,
-      pendingCash,
       merchantStaff,
+      tenantCurrencies,
+      completedPaidGroups,
+      pendingCashGroups,
     ] = await Promise.all([
       prisma.branch.count({ where: { isActive: true } }),
       prisma.branch.count({ where: { isActive: true, isAcceptingOrders: false } }),
@@ -49,17 +50,57 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
         },
       }),
       prisma.order.count({ where: { status: OrderStatus.COMPLETED } }),
-      prisma.order.aggregate({
+      prisma.tenantMembership.count(),
+      prisma.tenant.findMany({ select: { id: true, currency: true } }),
+      prisma.order.groupBy({
+        by: ['tenantId'],
         where: { status: OrderStatus.COMPLETED, paymentStatus: PaymentStatus.PAID },
+        _count: { _all: true },
         _sum: { total: true },
       }),
-      prisma.order.aggregate({
+      prisma.order.groupBy({
+        by: ['tenantId'],
         where: { paymentMethod: PaymentMethod.CASH, paymentStatus: PaymentStatus.PENDING },
         _count: { _all: true },
         _sum: { total: true },
       }),
-      prisma.tenantMembership.count(),
     ]);
+
+    const currencyByTenant = new Map(tenantCurrencies.map((tenant) => [tenant.id, tenant.currency]));
+    const settlementMap = new Map<string, {
+      currency: string;
+      completedPaidOrders: number;
+      completedPaidValue: number;
+      pendingCashOrders: number;
+      pendingCashValue: number;
+    }>();
+
+    const getSettlement = (tenantId: string) => {
+      const currency = currencyByTenant.get(tenantId) ?? 'RWF';
+      const existing = settlementMap.get(currency);
+      if (existing) return existing;
+      const created = {
+        currency,
+        completedPaidOrders: 0,
+        completedPaidValue: 0,
+        pendingCashOrders: 0,
+        pendingCashValue: 0,
+      };
+      settlementMap.set(currency, created);
+      return created;
+    };
+
+    for (const row of completedPaidGroups) {
+      const settlement = getSettlement(row.tenantId);
+      settlement.completedPaidOrders += row._count._all;
+      settlement.completedPaidValue += Number(row._sum.total ?? 0);
+    }
+
+    for (const row of pendingCashGroups) {
+      const settlement = getSettlement(row.tenantId);
+      settlement.pendingCashOrders += row._count._all;
+      settlement.pendingCashValue += Number(row._sum.total ?? 0);
+    }
 
     return {
       activeBranches,
@@ -68,10 +109,9 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
       unavailableProducts,
       activeOrders,
       completedOrders,
-      completedRevenue: completedRevenue._sum.total ?? 0,
-      pendingCashOrders: pendingCash._count._all,
-      pendingCashValue: pendingCash._sum.total ?? 0,
       merchantStaff,
+      pendingCashOrders: pendingCashGroups.reduce((sum, row) => sum + row._count._all, 0),
+      settlementByCurrency: [...settlementMap.values()].sort((a, b) => a.currency.localeCompare(b.currency)),
     };
   });
 
