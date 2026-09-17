@@ -7,6 +7,8 @@ import { adminCatalogRoutes } from './routes/admin-catalog.js';
 import { adminFinanceRoutes } from './routes/admin-finance.js';
 import { adminOperationsRoutes } from './routes/admin-operations.js';
 import { adminProvisioningRoutes } from './routes/admin-provisioning.js';
+import { adminReportRoutes } from './routes/admin-reports.js';
+import { adminSupportRoutes } from './routes/admin-support.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
 import { driverRoutes } from './routes/driver.js';
@@ -40,6 +42,8 @@ await app.register(adminCatalogRoutes);
 await app.register(adminOperationsRoutes);
 await app.register(adminProvisioningRoutes);
 await app.register(adminFinanceRoutes);
+await app.register(adminSupportRoutes);
+await app.register(adminReportRoutes);
 
 app.get('/health', async () => ({
   service: 'fida-marketplace-api',
