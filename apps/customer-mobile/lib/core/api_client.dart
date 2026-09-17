@@ -233,6 +233,25 @@ class ApiClient {
     return (_decode(response) as Map).cast<String, dynamic>();
   }
 
+  Future<Map<String, dynamic>> deliveryQuoteForLocation({
+    required String branchId,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final response = await _send(
+      'GET',
+      '/v1/customer/delivery-quote/location',
+      authenticated: true,
+      query: {
+        'branchId': branchId,
+        'latitude': latitude.toString(),
+        'longitude': longitude.toString(),
+      },
+    );
+    if (response.statusCode != 200) throw _error(response);
+    return (_decode(response) as Map).cast<String, dynamic>();
+  }
+
   Future<Map<String, dynamic>> createOrder({
     required String tenantId,
     required String branchId,
