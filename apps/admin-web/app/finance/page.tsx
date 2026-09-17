@@ -11,6 +11,9 @@ type CurrencySummary = {
   refundedOrders: number;
   paidValue: number;
   pendingValue: number;
+  merchandiseSales: number;
+  platformCommission: number;
+  merchantDeliveryValue: number;
   refundedValue: number;
 };
 
@@ -19,11 +22,16 @@ type MerchantSummary = {
   merchant: string;
   status: string;
   currency: string;
+  commissionPercent: number;
   orders: number;
   paidOrders: number;
   pendingOrders: number;
   paidValue: number;
   pendingValue: number;
+  merchandiseSales: number;
+  platformCommission: number;
+  merchantNetSales: number;
+  merchantDeliveryValue: number;
 };
 
 type PaymentGroup = {
@@ -34,6 +42,9 @@ type PaymentGroup = {
   paymentStatus: string;
   orders: number;
   value: number;
+  merchandiseSales: number;
+  platformCommission: number;
+  merchantDeliveryValue: number;
 };
 
 type FinanceSummary = {
@@ -136,21 +147,21 @@ export default function FinancePage() {
 
       <main className="content">
         <header className="topbar">
-          <div><h1>Finance</h1><p>Read-only marketplace payment and settlement visibility.</p></div>
+          <div><h1>Finance</h1><p>Marketplace sales, Fida commission and merchant payment visibility.</p></div>
           <div className="actions"><button className="btn" disabled={busy} onClick={() => void loadFinance()}>{busy ? 'Refreshing…' : 'Refresh'}</button></div>
         </header>
         {error && <div className="error">{error}</div>}
 
         <section className="panel">
-          <div className="panel-head"><div><h2>Currency summaries</h2><p>Values stay separated by currency to avoid misleading cross-currency totals.</p></div></div>
+          <div className="panel-head"><div><h2>Currency summaries</h2><p>Fida commission is calculated on merchandise sales only. Merchant delivery value is excluded.</p></div></div>
           {summary.currencies.length === 0 ? <div className="empty">No marketplace payments yet.</div> : (
             <div className="cards panel-body">
               {summary.currencies.map((row) => (
                 <article className="card stat" key={row.currency}>
-                  <div className="stat-label">{row.currency} paid value</div>
-                  <div className="stat-value">{formatMoney(row.paidValue, row.currency)}</div>
-                  <div className="stat-note">{row.paidOrders} paid · {row.pendingOrders} pending · {row.orders} total orders</div>
-                  <div className="stat-note">Pending {formatMoney(row.pendingValue, row.currency)} · Refunded {formatMoney(row.refundedValue, row.currency)}</div>
+                  <div className="stat-label">{row.currency} Fida commission</div>
+                  <div className="stat-value">{formatMoney(row.platformCommission, row.currency)}</div>
+                  <div className="stat-note">Merchandise sales {formatMoney(row.merchandiseSales, row.currency)} · {row.paidOrders} paid orders</div>
+                  <div className="stat-note">Merchant delivery value {formatMoney(row.merchantDeliveryValue, row.currency)} · Pending customer payments {formatMoney(row.pendingValue, row.currency)}</div>
                 </article>
               ))}
             </div>
@@ -159,10 +170,10 @@ export default function FinancePage() {
 
         <section className="panel">
           <div className="panel-head">
-            <div><h2>Merchant payment position</h2><p>{merchantRows.length} merchants shown</p></div>
+            <div><h2>Merchant commission position</h2><p>{merchantRows.length} merchants shown</p></div>
             <div className="toolbar"><select className="select" value={currencyFilter} onChange={(e) => setCurrencyFilter(e.target.value)}><option value="ALL">All currencies</option>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select></div>
           </div>
-          {merchantRows.length === 0 ? <div className="empty">No merchant payment data matches this currency.</div> : <div className="table-wrap"><table><thead><tr><th>Merchant</th><th>Status</th><th>Currency</th><th>Orders</th><th>Paid orders</th><th>Pending orders</th><th>Paid value</th><th>Pending value</th></tr></thead><tbody>{merchantRows.map((row) => <tr key={row.tenantId}><td><div className="cell-title">{row.merchant}</div></td><td><span className={statusClass(row.status)}>{humanize(row.status)}</span></td><td>{row.currency}</td><td>{row.orders}</td><td>{row.paidOrders}</td><td>{row.pendingOrders}</td><td><strong>{formatMoney(row.paidValue, row.currency)}</strong></td><td>{formatMoney(row.pendingValue, row.currency)}</td></tr>)}</tbody></table></div>}
+          {merchantRows.length === 0 ? <div className="empty">No merchant payment data matches this currency.</div> : <div className="table-wrap"><table><thead><tr><th>Merchant</th><th>Status</th><th>Commission</th><th>Paid orders</th><th>Merchandise sales</th><th>Fida commission</th><th>Merchant net sales</th><th>Delivery value</th></tr></thead><tbody>{merchantRows.map((row) => <tr key={row.tenantId}><td><div className="cell-title">{row.merchant}</div><div className="cell-sub">{row.currency}</div></td><td><span className={statusClass(row.status)}>{humanize(row.status)}</span></td><td>{row.commissionPercent}%</td><td>{row.paidOrders}</td><td>{formatMoney(row.merchandiseSales, row.currency)}</td><td><strong>{formatMoney(row.platformCommission, row.currency)}</strong></td><td>{formatMoney(row.merchantNetSales, row.currency)}</td><td>{formatMoney(row.merchantDeliveryValue, row.currency)}</td></tr>)}</tbody></table></div>}
         </section>
 
         <section className="panel">
@@ -174,10 +185,10 @@ export default function FinancePage() {
               <button className="btn" type="button" onClick={() => { setCurrencyFilter('ALL'); setMethodFilter('ALL'); setStatusFilter('ALL'); }}>Clear filters</button>
             </div>
           </div>
-          {paymentRows.length === 0 ? <div className="empty">No payment groups match these filters.</div> : <div className="table-wrap"><table><thead><tr><th>Merchant</th><th>Method</th><th>Payment status</th><th>Orders</th><th>Value</th></tr></thead><tbody>{paymentRows.map((row) => <tr key={`${row.tenantId}-${row.paymentMethod}-${row.paymentStatus}`}><td><div className="cell-title">{row.merchant}</div><div className="cell-sub">{row.currency}</div></td><td>{humanize(row.paymentMethod)}</td><td><span className={statusClass(row.paymentStatus)}>{humanize(row.paymentStatus)}</span></td><td>{row.orders}</td><td><strong>{formatMoney(row.value, row.currency)}</strong></td></tr>)}</tbody></table></div>}
+          {paymentRows.length === 0 ? <div className="empty">No payment groups match these filters.</div> : <div className="table-wrap"><table><thead><tr><th>Merchant</th><th>Method</th><th>Payment status</th><th>Orders</th><th>Merchandise sales</th><th>Fida commission</th><th>Delivery value</th><th>Customer paid value</th></tr></thead><tbody>{paymentRows.map((row) => <tr key={`${row.tenantId}-${row.paymentMethod}-${row.paymentStatus}`}><td><div className="cell-title">{row.merchant}</div><div className="cell-sub">{row.currency}</div></td><td>{humanize(row.paymentMethod)}</td><td><span className={statusClass(row.paymentStatus)}>{humanize(row.paymentStatus)}</span></td><td>{row.orders}</td><td>{formatMoney(row.merchandiseSales, row.currency)}</td><td><strong>{formatMoney(row.platformCommission, row.currency)}</strong></td><td>{formatMoney(row.merchantDeliveryValue, row.currency)}</td><td>{formatMoney(row.value, row.currency)}</td></tr>)}</tbody></table></div>}
         </section>
 
-        <div className="settings-note">Finance is intentionally read-only in this batch. Payment status changes continue to follow the order and delivery workflows rather than manual Admin overrides.</div>
+        <div className="settings-note">Fida earns platform commission on merchandise sales. Delivery pricing and merchant-driver costs remain merchant logistics unless a future Fida fleet is selected.</div>
       </main>
     </div>
   );
