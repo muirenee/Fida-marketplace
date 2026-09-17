@@ -7,6 +7,8 @@ const tools = [
   { href: '/operations', label: 'Operations' },
   { href: '/provisioning', label: 'Provisioning' },
   { href: '/finance', label: 'Finance' },
+  { href: '/support', label: 'Support' },
+  { href: '/reports', label: 'Reports' },
 ];
 
 export default function AdminOperationsLauncher() {
@@ -35,52 +37,13 @@ export default function AdminOperationsLauncher() {
   if (availableTools.length === 0) return null;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        right: 20,
-        bottom: 84,
-        zIndex: 60,
-        display: 'grid',
-        justifyItems: 'end',
-        gap: 8,
-      }}
-    >
+    <div style={{ position: 'fixed', right: 20, bottom: 84, zIndex: 60, display: 'grid', justifyItems: 'end', gap: 8 }}>
       {open && (
-        <div
-          style={{
-            display: 'grid',
-            gap: 6,
-            minWidth: 165,
-            padding: 8,
-            background: 'white',
-            border: '1px solid var(--line)',
-            borderRadius: 14,
-            boxShadow: '0 12px 32px rgba(0,0,0,.16)',
-          }}
-        >
-          {availableTools.map((tool) => (
-            <a
-              key={tool.href}
-              href={tool.href}
-              className="btn"
-              style={{ textDecoration: 'none', textAlign: 'left' }}
-            >
-              {tool.label}
-            </a>
-          ))}
+        <div style={{ display: 'grid', gap: 6, minWidth: 175, padding: 8, background: 'white', border: '1px solid var(--line)', borderRadius: 14, boxShadow: '0 12px 32px rgba(0,0,0,.16)' }}>
+          {availableTools.map((tool) => <a key={tool.href} href={tool.href} className="btn" style={{ textDecoration: 'none', textAlign: 'left' }}>{tool.label}</a>)}
         </div>
       )}
-      <button
-        type="button"
-        className="btn primary"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        aria-label="Open admin tools"
-        style={{ boxShadow: '0 10px 28px rgba(0,0,0,.18)' }}
-      >
-        Admin tools
-      </button>
+      <button type="button" className="btn primary" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label="Open admin tools" style={{ boxShadow: '0 10px 28px rgba(0,0,0,.18)' }}>Admin tools</button>
     </div>
   );
 }
