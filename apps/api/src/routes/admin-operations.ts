@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  DeliveryOperatorType,
   DeliveryStatus,
   MembershipRole,
   OrderStatus,
@@ -153,27 +154,18 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
     const data: { isActive?: boolean; isAcceptingOrders?: boolean } = {};
 
     if ('isActive' in body) {
-      if (typeof body.isActive !== 'boolean') {
-        return reply.code(400).send({ error: 'invalid_is_active' });
-      }
+      if (typeof body.isActive !== 'boolean') return reply.code(400).send({ error: 'invalid_is_active' });
       data.isActive = body.isActive;
       if (!body.isActive) data.isAcceptingOrders = false;
     }
-
     if ('isAcceptingOrders' in body) {
-      if (typeof body.isAcceptingOrders !== 'boolean') {
-        return reply.code(400).send({ error: 'invalid_is_accepting_orders' });
-      }
+      if (typeof body.isAcceptingOrders !== 'boolean') return reply.code(400).send({ error: 'invalid_is_accepting_orders' });
       data.isAcceptingOrders = body.isAcceptingOrders;
     }
-
-    if (Object.keys(data).length === 0) {
-      return reply.code(400).send({ error: 'branch_update_required' });
-    }
+    if (Object.keys(data).length === 0) return reply.code(400).send({ error: 'branch_update_required' });
 
     const existing = await prisma.branch.findUnique({ where: { id: branchId }, select: { id: true, isActive: true } });
     if (!existing) return reply.code(404).send({ error: 'branch_not_found' });
-
     if (data.isAcceptingOrders === true && data.isActive !== true && !existing.isActive) {
       return reply.code(409).send({ error: 'inactive_branch_cannot_accept_orders' });
     }
@@ -251,14 +243,12 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
     if (!membership) return reply.code(404).send({ error: 'membership_not_found' });
 
     const data: { role?: MembershipRole; branchId?: string | null } = {};
-
     if ('role' in body) {
       const requestedRole = typeof body.role === 'string' ? body.role.toUpperCase() : '';
       if (!membershipRoles.includes(requestedRole as MembershipRole)) {
         return reply.code(400).send({ error: 'invalid_membership_role', allowed: membershipRoles });
       }
       data.role = requestedRole as MembershipRole;
-
       if (membership.role === MembershipRole.OWNER && data.role !== MembershipRole.OWNER) {
         const otherOwners = await prisma.tenantMembership.count({
           where: { tenantId: membership.tenantId, role: MembershipRole.OWNER, id: { not: membership.id } },
@@ -287,9 +277,7 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
       }
     }
 
-    if (Object.keys(data).length === 0) {
-      return reply.code(400).send({ error: 'membership_update_required' });
-    }
+    if (Object.keys(data).length === 0) return reply.code(400).send({ error: 'membership_update_required' });
 
     return prisma.tenantMembership.update({
       where: { id: membership.id },
@@ -324,13 +312,20 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
       where: { id: driverId },
       include: {
         user: { select: { id: true, isActive: true } },
+        operator: { select: { id: true, type: true, tenantId: true } },
       },
     });
     if (!driver) return reply.code(404).send({ error: 'driver_not_found' });
 
+    if (!driver.operator || driver.operator.type !== DeliveryOperatorType.FIDA) {
+      return reply.code(409).send({
+        error: 'merchant_managed_driver',
+        message: 'This driver belongs to merchant logistics. The merchant controls availability and enrollment.',
+      });
+    }
+
     let isOnline = typeof body.isOnline === 'boolean' ? body.isOnline : driver.isOnline;
     let isAvailable = typeof body.isAvailable === 'boolean' ? body.isAvailable : driver.isAvailable;
-
     if (!driver.user.isActive) {
       isOnline = false;
       isAvailable = false;
@@ -342,18 +337,15 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
         where: { driverId, status: { in: activeDeliveryStatuses } },
         select: { id: true },
       });
-      if (activeDelivery) {
-        return reply.code(409).send({ error: 'active_delivery', message: 'Driver has an active delivery.' });
-      }
+      if (activeDelivery) return reply.code(409).send({ error: 'active_delivery', message: 'Driver has an active delivery.' });
     }
 
     return prisma.driver.update({
       where: { id: driverId },
       data: { isOnline, isAvailable, lastSeenAt: new Date() },
       include: {
-        user: {
-          select: { id: true, email: true, phone: true, firstName: true, lastName: true, isActive: true },
-        },
+        user: { select: { id: true, email: true, phone: true, firstName: true, lastName: true, isActive: true } },
+        operator: true,
         _count: { select: { deliveries: true } },
       },
     });
