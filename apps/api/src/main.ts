@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import { registerAdminAudit } from './lib/admin-audit.js';
+import { registerAdminGuardrails } from './lib/admin-guardrails.js';
 import { addressRoutes } from './routes/addresses.js';
 import { adminAuditRoutes } from './routes/admin-audit.js';
 import { adminCatalogRoutes } from './routes/admin-catalog.js';
@@ -33,6 +34,7 @@ await app.register(cors, {
 });
 await app.register(jwt, { secret: jwtSecret });
 registerAdminAudit(app);
+registerAdminGuardrails(app);
 
 await app.register(authRoutes);
 await app.register(marketplaceRoutes);
