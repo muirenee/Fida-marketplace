@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import {
   DeliveryStatus,
+  FulfillmentType,
   OrderStatus,
   PaymentMethod,
   Prisma,
@@ -9,6 +10,7 @@ import {
   prisma,
 } from '@fida/database/client';
 import { authenticate } from '../lib/auth.js';
+import { quoteBranchDelivery } from '../lib/delivery-pricing.js';
 
 function orderNumber() {
   const date = new Date().toISOString().slice(0, 10).replaceAll('-', '');
@@ -34,13 +36,56 @@ function parseItems(value: unknown) {
   return quantities;
 }
 
+function validCoordinate(latitude: number, longitude: number) {
+  return Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
+}
+
 export async function orderRoutes(app: FastifyInstance) {
+  app.get('/v1/customer/delivery-quote', { preHandler: authenticate }, async (request, reply) => {
+    const query = (request.query ?? {}) as Record<string, unknown>;
+    const branchId = typeof query.branchId === 'string' ? query.branchId : '';
+    const addressId = typeof query.addressId === 'string' ? query.addressId : '';
+    if (!branchId || !addressId) return reply.code(400).send({ error: 'branch_and_address_required' });
+
+    const [branch, address] = await Promise.all([
+      prisma.branch.findFirst({
+        where: { id: branchId, isActive: true, isAcceptingOrders: true, deliveryEnabled: true, tenant: { status: TenantStatus.ACTIVE, isAcceptingOrders: true } },
+        select: { id: true, tenant: { select: { id: true, currency: true } } },
+      }),
+      prisma.customerAddress.findFirst({
+        where: { id: addressId, userId: request.authUser!.id },
+        select: { id: true, latitude: true, longitude: true },
+      }),
+    ]);
+
+    if (!branch) return reply.code(404).send({ error: 'branch_not_found' });
+    if (!address) return reply.code(404).send({ error: 'address_not_found' });
+    if (address.latitude === null || address.longitude === null) {
+      return reply.code(409).send({ error: 'address_location_required', message: 'Choose a precise location for this delivery address.' });
+    }
+
+    const quote = await quoteBranchDelivery(branch.id, Number(address.latitude), Number(address.longitude));
+    if (!quote) {
+      return reply.code(409).send({ error: 'outside_delivery_area', message: 'This address is outside the merchant delivery area.' });
+    }
+
+    return {
+      branchId: branch.id,
+      tenantId: branch.tenant.id,
+      currency: branch.tenant.currency,
+      distanceKm: quote.distanceKm,
+      deliveryPrice: quote.fee,
+      freeDelivery: quote.fee.isZero(),
+    };
+  });
+
   app.post('/v1/customer/orders', { preHandler: authenticate }, async (request, reply) => {
     const body = (request.body ?? {}) as Record<string, unknown>;
     const tenantId = typeof body.tenantId === 'string' ? body.tenantId : '';
     const branchId = typeof body.branchId === 'string' ? body.branchId : '';
     const quantities = parseItems(body.items);
     const requestedPaymentMethod = typeof body.paymentMethod === 'string' ? body.paymentMethod.toUpperCase() : '';
+    const requestedFulfillment = typeof body.fulfillmentType === 'string' ? body.fulfillmentType.toUpperCase() : FulfillmentType.DELIVERY;
 
     if (!tenantId || !branchId || !quantities) {
       return reply.code(400).send({ error: 'invalid_order', message: 'Merchant, branch and valid order items are required.' });
@@ -49,18 +94,17 @@ export async function orderRoutes(app: FastifyInstance) {
     if (!Object.values(PaymentMethod).includes(requestedPaymentMethod as PaymentMethod)) {
       return reply.code(400).send({ error: 'invalid_payment_method', allowed: Object.values(PaymentMethod) });
     }
+    if (!Object.values(FulfillmentType).includes(requestedFulfillment as FulfillmentType)) {
+      return reply.code(400).send({ error: 'invalid_fulfillment_type', allowed: Object.values(FulfillmentType) });
+    }
+    const fulfillmentType = requestedFulfillment as FulfillmentType;
 
     const tenant = await prisma.tenant.findFirst({
-      where: {
-        id: tenantId,
-        status: TenantStatus.ACTIVE,
-        isAcceptingOrders: true,
-      },
+      where: { id: tenantId, status: TenantStatus.ACTIVE, isAcceptingOrders: true },
       select: {
         id: true,
         minimumOrder: true,
-        defaultDeliveryFee: true,
-        serviceFeePercent: true,
+        platformCommissionPercent: true,
       },
     });
 
@@ -69,27 +113,27 @@ export async function orderRoutes(app: FastifyInstance) {
     }
 
     const branch = await prisma.branch.findFirst({
-      where: {
-        id: branchId,
-        tenantId,
-        isActive: true,
-        isAcceptingOrders: true,
+      where: { id: branchId, tenantId, isActive: true, isAcceptingOrders: true },
+      select: {
+        id: true,
+        pickupEnabled: true,
+        deliveryEnabled: true,
       },
-      select: { id: true },
     });
 
     if (!branch) {
       return reply.code(409).send({ error: 'branch_unavailable', message: 'Branch is not currently accepting orders.' });
     }
+    if (fulfillmentType === FulfillmentType.PICKUP && !branch.pickupEnabled) {
+      return reply.code(409).send({ error: 'pickup_unavailable' });
+    }
+    if (fulfillmentType === FulfillmentType.DELIVERY && !branch.deliveryEnabled) {
+      return reply.code(409).send({ error: 'delivery_unavailable' });
+    }
 
     const productIds = [...quantities.keys()];
     const products = await prisma.product.findMany({
-      where: {
-        id: { in: productIds },
-        tenantId,
-        isActive: true,
-        isAvailable: true,
-      },
+      where: { id: { in: productIds }, tenantId, isActive: true, isAvailable: true },
       select: { id: true, name: true, price: true },
     });
 
@@ -112,42 +156,50 @@ export async function orderRoutes(app: FastifyInstance) {
     });
 
     if (subtotal.lessThan(tenant.minimumOrder)) {
-      return reply.code(409).send({
-        error: 'minimum_order_not_met',
-        minimumOrder: tenant.minimumOrder,
-        subtotal,
-      });
+      return reply.code(409).send({ error: 'minimum_order_not_met', minimumOrder: tenant.minimumOrder, subtotal });
     }
 
-    const addressId = typeof body.addressId === 'string' ? body.addressId : null;
-    let deliveryAddress = typeof body.deliveryAddress === 'string' ? body.deliveryAddress.trim() : '';
-    let deliveryLatitude = typeof body.deliveryLatitude === 'number' ? body.deliveryLatitude : null;
-    let deliveryLongitude = typeof body.deliveryLongitude === 'number' ? body.deliveryLongitude : null;
-    let deliveryInstructions = typeof body.deliveryInstructions === 'string' ? body.deliveryInstructions.trim() || null : null;
+    let deliveryAddress: string | null = null;
+    let deliveryLatitude: number | null = null;
+    let deliveryLongitude: number | null = null;
+    let deliveryInstructions: string | null = null;
+    let deliveryFee = new Prisma.Decimal(0);
+    let deliveryDistanceKm: number | null = null;
 
-    if (addressId) {
-      const savedAddress = await prisma.customerAddress.findFirst({
-        where: { id: addressId, userId: request.authUser!.id },
-      });
-      if (!savedAddress) return reply.code(404).send({ error: 'address_not_found' });
+    if (fulfillmentType === FulfillmentType.DELIVERY) {
+      const addressId = typeof body.addressId === 'string' ? body.addressId : null;
+      deliveryAddress = typeof body.deliveryAddress === 'string' ? body.deliveryAddress.trim() : '';
+      deliveryLatitude = typeof body.deliveryLatitude === 'number' ? body.deliveryLatitude : null;
+      deliveryLongitude = typeof body.deliveryLongitude === 'number' ? body.deliveryLongitude : null;
+      deliveryInstructions = typeof body.deliveryInstructions === 'string' ? body.deliveryInstructions.trim() || null : null;
 
-      deliveryAddress = savedAddress.addressLine;
-      deliveryLatitude = savedAddress.latitude ? Number(savedAddress.latitude) : null;
-      deliveryLongitude = savedAddress.longitude ? Number(savedAddress.longitude) : null;
-      deliveryInstructions = deliveryInstructions ?? savedAddress.instructions;
+      if (addressId) {
+        const savedAddress = await prisma.customerAddress.findFirst({ where: { id: addressId, userId: request.authUser!.id } });
+        if (!savedAddress) return reply.code(404).send({ error: 'address_not_found' });
+        deliveryAddress = savedAddress.addressLine;
+        deliveryLatitude = savedAddress.latitude ? Number(savedAddress.latitude) : null;
+        deliveryLongitude = savedAddress.longitude ? Number(savedAddress.longitude) : null;
+        deliveryInstructions = deliveryInstructions ?? savedAddress.instructions;
+      }
+
+      if (!deliveryAddress) return reply.code(400).send({ error: 'delivery_address_required' });
+      if (deliveryLatitude === null || deliveryLongitude === null || !validCoordinate(deliveryLatitude, deliveryLongitude)) {
+        return reply.code(409).send({ error: 'delivery_location_required', message: 'A precise delivery location is required to calculate delivery price.' });
+      }
+
+      const quote = await quoteBranchDelivery(branch.id, deliveryLatitude, deliveryLongitude);
+      if (!quote) {
+        return reply.code(409).send({ error: 'outside_delivery_area', message: 'This address is outside the merchant delivery area.' });
+      }
+      deliveryFee = quote.fee;
+      deliveryDistanceKm = quote.distanceKm;
     }
 
-    if (!deliveryAddress) {
-      return reply.code(400).send({ error: 'delivery_address_required' });
-    }
-
-    const deliveryFee = tenant.defaultDeliveryFee;
-    const serviceFee = subtotal
-      .mul(tenant.serviceFeePercent)
-      .div(100)
-      .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+    const serviceFee = new Prisma.Decimal(0);
     const discount = new Prisma.Decimal(0);
-    const total = subtotal.plus(deliveryFee).plus(serviceFee).minus(discount);
+    const total = subtotal.plus(deliveryFee).minus(discount);
+    const commissionPercent = tenant.platformCommissionPercent;
+    const commissionAmount = subtotal.mul(commissionPercent).div(100).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 
     const order = await prisma.$transaction(async (tx) => {
       return tx.order.create({
@@ -156,18 +208,24 @@ export async function orderRoutes(app: FastifyInstance) {
           tenantId,
           branchId,
           customerId: request.authUser!.id,
+          fulfillmentType,
           paymentMethod: requestedPaymentMethod as PaymentMethod,
           subtotal,
           deliveryFee,
           serviceFee,
           discount,
           total,
+          platformCommissionPercent: commissionPercent,
+          platformCommissionAmount: commissionAmount,
+          deliveryDistanceKm,
           deliveryAddress,
           deliveryLatitude,
           deliveryLongitude,
           deliveryInstructions,
           items: { create: itemData },
-          delivery: { create: { status: DeliveryStatus.UNASSIGNED } },
+          ...(fulfillmentType === FulfillmentType.DELIVERY
+            ? { delivery: { create: { status: DeliveryStatus.UNASSIGNED } } }
+            : {}),
         },
         include: {
           tenant: { select: { id: true, name: true, slug: true } },
@@ -213,10 +271,7 @@ export async function orderRoutes(app: FastifyInstance) {
 
   app.post('/v1/customer/orders/:orderId/cancel', { preHandler: authenticate }, async (request, reply) => {
     const { orderId } = request.params as { orderId: string };
-    const order = await prisma.order.findFirst({
-      where: { id: orderId, customerId: request.authUser!.id },
-      select: { id: true, status: true },
-    });
+    const order = await prisma.order.findFirst({ where: { id: orderId, customerId: request.authUser!.id }, select: { id: true, status: true } });
 
     if (!order) return reply.code(404).send({ error: 'order_not_found' });
     if (order.status !== OrderStatus.PENDING) {
