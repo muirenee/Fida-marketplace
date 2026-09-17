@@ -2,7 +2,10 @@ import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
+import { registerAdminAudit } from './lib/admin-audit.js';
+import { registerAdminGuardrails } from './lib/admin-guardrails.js';
 import { addressRoutes } from './routes/addresses.js';
+import { adminAuditRoutes } from './routes/admin-audit.js';
 import { adminCatalogRoutes } from './routes/admin-catalog.js';
 import { adminFinanceRoutes } from './routes/admin-finance.js';
 import { adminInsightRoutes } from './routes/admin-insights.js';
@@ -30,6 +33,8 @@ await app.register(cors, {
   credentials: true,
 });
 await app.register(jwt, { secret: jwtSecret });
+registerAdminAudit(app);
+registerAdminGuardrails(app);
 
 await app.register(authRoutes);
 await app.register(marketplaceRoutes);
@@ -46,6 +51,7 @@ await app.register(adminFinanceRoutes);
 await app.register(adminSupportRoutes);
 await app.register(adminReportRoutes);
 await app.register(adminInsightRoutes);
+await app.register(adminAuditRoutes);
 
 app.get('/health', async () => ({
   service: 'fida-marketplace-api',

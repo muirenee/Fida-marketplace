@@ -154,7 +154,7 @@ model Branch {
   updatedAt         DateTime @updatedAt
   tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   memberships       TenantMembership[]
-  orders            Order[]
+  orders             Order[]
 
   @@unique([tenantId, code])
   @@index([tenantId, isActive])
@@ -278,4 +278,30 @@ model Delivery {
   driver      Driver?        @relation(fields: [driverId], references: [id], onDelete: SetNull)
 
   @@index([driverId, status])
+}
+
+model AdminAuditEvent {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  actorEmail  String?
+  method      String
+  route       String
+  path        String
+  action      String
+  targetType  String?
+  targetId    String?
+  tenantId    String?
+  statusCode  Int
+  success     Boolean
+  changes     Json?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([action, createdAt])
 }

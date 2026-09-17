@@ -2,6 +2,8 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '@fida/database/client';
 
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
+  if (request.authUser) return;
+
   try {
     await request.jwtVerify();
   } catch {
