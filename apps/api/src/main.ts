@@ -5,6 +5,7 @@ import jwt from '@fastify/jwt';
 import { addressRoutes } from './routes/addresses.js';
 import { adminCatalogRoutes } from './routes/admin-catalog.js';
 import { adminFinanceRoutes } from './routes/admin-finance.js';
+import { adminInsightRoutes } from './routes/admin-insights.js';
 import { adminOperationsRoutes } from './routes/admin-operations.js';
 import { adminProvisioningRoutes } from './routes/admin-provisioning.js';
 import { adminReportRoutes } from './routes/admin-reports.js';
@@ -44,6 +45,7 @@ await app.register(adminProvisioningRoutes);
 await app.register(adminFinanceRoutes);
 await app.register(adminSupportRoutes);
 await app.register(adminReportRoutes);
+await app.register(adminInsightRoutes);
 
 app.get('/health', async () => ({
   service: 'fida-marketplace-api',
