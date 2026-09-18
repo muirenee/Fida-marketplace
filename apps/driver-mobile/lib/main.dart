@@ -256,7 +256,7 @@ class _DriverHome extends StatefulWidget {
 
 class _DriverHomeState extends State<_DriverHome> {
   late Map<String, dynamic> driver;
-  Map<String, dynamic>? current;
+  List<Map<String, dynamic>> activeDeliveries = [];
   List<Map<String, dynamic>> offers = [];
   bool loading = true;
   String? error;
@@ -324,8 +324,8 @@ class _DriverHomeState extends State<_DriverHome> {
     });
     try {
       driver = await widget.api.profile();
-      current = await widget.api.currentDelivery();
-      if (driver['isOnline'] == true && driver['isAvailable'] == true && current == null) {
+      activeDeliveries = await widget.api.activeDeliveries();
+      if (driver['isOnline'] == true && driver['isAvailable'] == true) {
         offers = await widget.api.availableDeliveries();
       } else {
         offers = [];
@@ -374,9 +374,7 @@ class _DriverHomeState extends State<_DriverHome> {
     }
   }
 
-  Future<void> _advance(String status) async {
-    final delivery = current;
-    if (delivery == null) return;
+  Future<void> _advance(Map<String, dynamic> delivery, String status) async {
     try {
       await widget.api.updateDeliveryStatus(delivery['id'].toString(), status);
       await _refresh();
@@ -428,10 +426,10 @@ class _DriverHomeState extends State<_DriverHome> {
             _StatusCard(
               isOnline: isOnline,
               isAvailable: isAvailable,
-              hasDelivery: current != null,
+              activeDeliveryCount: activeDeliveries.length,
               operatorType: operatorType,
               onOnlineChanged: loading ? null : _setOnline,
-              onAvailableChanged: loading || !isOnline || current != null ? null : _setAvailable,
+              onAvailableChanged: loading || !isOnline ? null : _setAvailable,
             ),
             if (error != null) ...[
               const SizedBox(height: 12),
@@ -441,38 +439,56 @@ class _DriverHomeState extends State<_DriverHome> {
               ),
             ],
             const SizedBox(height: 18),
-            if (current != null)
-              _CurrentDeliveryCard(
-                delivery: current!,
-                nextStatus: _nextStatus((current!['status']).toString()),
-                actionLabel: _actionLabel,
-                onAdvance: _advance,
-              )
-            else ...[
+            if (activeDeliveries.isNotEmpty) ...[
               Row(
                 children: [
-                  Expanded(child: Text('Delivery offers', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900))),
+                  Expanded(
+                    child: Text(
+                      'Active deliveries (${activeDeliveries.length})',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                    ),
+                  ),
                   if (loading) const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2)),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                operatorType == 'FIDA' ? 'Pickup-ready orders assigned to the Fida fleet.' : 'Pickup-ready orders from your enrolled merchant scope.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54),
-              ),
-              const SizedBox(height: 10),
-              if (!isOnline)
-                const _EmptyState(icon: Icons.power_settings_new_rounded, text: 'Go online to receive delivery offers.')
-              else if (!isAvailable)
-                const _EmptyState(icon: Icons.pause_circle_outline_rounded, text: 'You are online but unavailable for new deliveries.')
-              else if (!loading && offers.isEmpty)
-                const _EmptyState(icon: Icons.delivery_dining_outlined, text: 'No pickup-ready deliveries are available in your delivery scope right now.')
-              else
-                for (final delivery in offers) ...[
-                  _OfferCard(delivery: delivery, onClaim: () => _claim(delivery)),
-                  const SizedBox(height: 10),
-                ],
+              const SizedBox(height: 8),
+              for (final delivery in activeDeliveries) ...[
+                _CurrentDeliveryCard(
+                  delivery: delivery,
+                  nextStatus: _nextStatus(delivery['status'].toString()),
+                  actionLabel: _actionLabel,
+                  onAdvance: (status) => _advance(delivery, status),
+                ),
+                const SizedBox(height: 10),
+              ],
+              const SizedBox(height: 8),
             ],
+            Row(
+              children: [
+                Expanded(child: Text('Delivery offers', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900))),
+                if (loading && activeDeliveries.isEmpty)
+                  const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              operatorType == 'FIDA'
+                  ? 'Accept more pickup-ready orders while you are available.'
+                  : 'Accept more pickup-ready orders from your merchant scope while you are available.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54),
+            ),
+            const SizedBox(height: 10),
+            if (!isOnline)
+              const _EmptyState(icon: Icons.power_settings_new_rounded, text: 'Go online to receive delivery offers.')
+            else if (!isAvailable)
+              const _EmptyState(icon: Icons.pause_circle_outline_rounded, text: 'You are online but unavailable for new delivery offers.')
+            else if (!loading && offers.isEmpty)
+              const _EmptyState(icon: Icons.delivery_dining_outlined, text: 'No pickup-ready deliveries are available in your delivery scope right now.')
+            else
+              for (final delivery in offers) ...[
+                _OfferCard(delivery: delivery, onClaim: () => _claim(delivery)),
+                const SizedBox(height: 10),
+              ],
           ],
         ),
       ),
@@ -505,7 +521,7 @@ class _StatusCard extends StatelessWidget {
   const _StatusCard({
     required this.isOnline,
     required this.isAvailable,
-    required this.hasDelivery,
+    required this.activeDeliveryCount,
     required this.operatorType,
     required this.onOnlineChanged,
     required this.onAvailableChanged,
@@ -513,7 +529,7 @@ class _StatusCard extends StatelessWidget {
 
   final bool isOnline;
   final bool isAvailable;
-  final bool hasDelivery;
+  final int activeDeliveryCount;
   final String operatorType;
   final ValueChanged<bool>? onOnlineChanged;
   final ValueChanged<bool>? onAvailableChanged;
@@ -538,11 +554,11 @@ class _StatusCard extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
               value: isAvailable,
               onChanged: onAvailableChanged,
-              secondary: Icon(hasDelivery ? Icons.route_rounded : Icons.check_circle_outline_rounded),
-              title: Text(hasDelivery ? 'Active delivery' : 'Available for deliveries'),
+              secondary: Icon(activeDeliveryCount > 0 ? Icons.route_rounded : Icons.check_circle_outline_rounded),
+              title: Text(isAvailable ? 'Available for deliveries' : 'Not accepting new deliveries'),
               subtitle: Text(
-                hasDelivery
-                    ? 'Finish your current delivery first.'
+                activeDeliveryCount > 0
+                    ? '$activeDeliveryCount active deliver${activeDeliveryCount == 1 ? 'y' : 'ies'} · ${isAvailable ? 'accepting more orders' : 'new offers paused'}'
                     : operatorType == 'FIDA'
                         ? 'Receive pickup-ready orders from the Fida fleet queue.'
                         : 'Receive pickup-ready orders from your merchant delivery queue.',
@@ -632,7 +648,7 @@ class _CurrentDeliveryCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(child: Text('Active delivery', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900))),
+                Expanded(child: Text('Delivery ${order['orderNumber'] ?? ''}', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900))),
                 Chip(label: Text(delivery['status'].toString().replaceAll('_', ' ').toLowerCase())),
               ],
             ),
