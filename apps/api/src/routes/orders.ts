@@ -277,7 +277,24 @@ export async function orderRoutes(app: FastifyInstance) {
     });
 
     if (!order) return reply.code(404).send({ error: 'order_not_found' });
-    return order;
+
+    return {
+      ...order,
+      deliveryLatitude: order.deliveryLatitude === null ? null : Number(order.deliveryLatitude),
+      deliveryLongitude: order.deliveryLongitude === null ? null : Number(order.deliveryLongitude),
+      delivery: order.delivery
+        ? {
+            ...order.delivery,
+            driver: order.delivery.driver
+              ? {
+                  ...order.delivery.driver,
+                  latitude: order.delivery.driver.latitude === null ? null : Number(order.delivery.driver.latitude),
+                  longitude: order.delivery.driver.longitude === null ? null : Number(order.delivery.driver.longitude),
+                }
+              : null,
+          }
+        : null,
+    };
   });
 
   app.post('/v1/customer/orders/:orderId/cancel', { preHandler: authenticate }, async (request, reply) => {
