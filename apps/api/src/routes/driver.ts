@@ -98,18 +98,6 @@ export async function driverRoutes(app: FastifyInstance) {
     const requestedAvailable = typeof body.isAvailable === 'boolean' ? body.isAvailable : driver.isAvailable;
     const isAvailable = isOnline ? requestedAvailable : false;
 
-    const activeDelivery = await prisma.delivery.findFirst({
-      where: {
-        driverId: driver.id,
-        status: { in: [DeliveryStatus.ASSIGNED, DeliveryStatus.AT_PICKUP, DeliveryStatus.PICKED_UP, DeliveryStatus.AT_DROPOFF] },
-      },
-      select: { id: true },
-    });
-
-    if (activeDelivery && isAvailable) {
-      return reply.code(409).send({ error: 'active_delivery', message: 'Complete the active delivery before becoming available for another order.' });
-    }
-
     return prisma.driver.update({
       where: { id: driver.id },
       data: { isOnline, isAvailable, lastSeenAt: new Date() },
@@ -197,20 +185,35 @@ export async function driverRoutes(app: FastifyInstance) {
     });
   });
 
+  app.get('/v1/driver/deliveries/active', async (request, reply) => {
+    const driver = await requireDriver(request, reply);
+    if (!driver) return;
+
+    return prisma.delivery.findMany({
+      where: {
+        driverId: driver.id,
+        status: { in: [DeliveryStatus.ASSIGNED, DeliveryStatus.AT_PICKUP, DeliveryStatus.PICKED_UP, DeliveryStatus.AT_DROPOFF] },
+      },
+      include: {
+        order: {
+          include: {
+            tenant: { select: { id: true, name: true, slug: true } },
+            branch: true,
+            customer: { select: { firstName: true, lastName: true, phone: true } },
+            items: true,
+          },
+        },
+      },
+      orderBy: [{ assignedAt: 'asc' }, { order: { createdAt: 'asc' } }],
+    });
+  });
+
+
   app.post('/v1/driver/deliveries/:deliveryId/claim', async (request, reply) => {
     const driver = await requireDriver(request, reply);
     if (!driver) return;
     const { deliveryId } = request.params as { deliveryId: string };
     if (!driver.isOnline || !driver.isAvailable) return reply.code(409).send({ error: 'driver_unavailable' });
-
-    const existingActive = await prisma.delivery.findFirst({
-      where: {
-        driverId: driver.id,
-        status: { in: [DeliveryStatus.ASSIGNED, DeliveryStatus.AT_PICKUP, DeliveryStatus.PICKED_UP, DeliveryStatus.AT_DROPOFF] },
-      },
-      select: { id: true },
-    });
-    if (existingActive) return reply.code(409).send({ error: 'active_delivery' });
 
     const scope = availableScope(driver);
     if (!scope) return reply.code(403).send({ error: 'driver_scope_unavailable' });
@@ -224,7 +227,7 @@ export async function driverRoutes(app: FastifyInstance) {
       });
       if (claimed.count !== 1) return null;
 
-      await tx.driver.update({ where: { id: driver.id }, data: { isAvailable: false, lastSeenAt: new Date() } });
+      await tx.driver.update({ where: { id: driver.id }, data: { lastSeenAt: new Date() } });
       return tx.delivery.findUnique({
         where: { id: delivery.id },
         include: { order: { include: { tenant: true, branch: true, items: true } }, operator: true },
@@ -285,7 +288,7 @@ export async function driverRoutes(app: FastifyInstance) {
           where: { id: delivery.orderId, paymentMethod: PaymentMethod.CASH, paymentStatus: PaymentStatus.PENDING },
           data: { paymentStatus: PaymentStatus.PAID },
         });
-        await tx.driver.update({ where: { id: driver.id }, data: { isAvailable: driver.isOnline, lastSeenAt: now } });
+        await tx.driver.update({ where: { id: driver.id }, data: { lastSeenAt: now } });
       }
       return changed;
     });
