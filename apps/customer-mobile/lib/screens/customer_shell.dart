@@ -50,15 +50,68 @@ class _CustomerShellState extends State<CustomerShell> {
   }
 }
 
-class _AccountScreen extends StatelessWidget {
+class _AccountScreen extends StatefulWidget {
   const _AccountScreen({required this.session});
 
   final SessionController session;
 
   @override
+  State<_AccountScreen> createState() => _AccountScreenState();
+}
+
+class _AccountScreenState extends State<_AccountScreen> {
+  Future<void> _editPhone() async {
+    final controller = TextEditingController(text: widget.session.user?['phone']?.toString() ?? '');
+    final formKey = GlobalKey<FormState>();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Customer phone number'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Phone number',
+              hintText: '+250 7xx xxx xxx',
+              border: OutlineInputBorder(),
+            ),
+            validator: (value) {
+              final digits = (value ?? '').replaceAll(RegExp(r'\D'), '');
+              return digits.length >= 7 && digits.length <= 15 ? null : 'Enter a valid phone number';
+            },
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() == true) Navigator.pop(dialogContext, controller.text.trim());
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null || value.isEmpty) return;
+
+    final ok = await widget.session.updatePhone(value);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? 'Phone number updated.' : (widget.session.error ?? 'Unable to update phone number.'))),
+    );
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final user = session.user ?? {};
+    final user = widget.session.user ?? {};
     final name = customerName(user);
+    final phone = user['phone']?.toString();
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
       children: [
@@ -84,12 +137,22 @@ class _AccountScreen extends StatelessWidget {
                   ),
                   if (user['email'] != null)
                     Text(user['email'].toString(), style: Theme.of(context).textTheme.bodyMedium),
+                  if (phone != null && phone.isNotEmpty)
+                    Text(phone, style: Theme.of(context).textTheme.bodyMedium),
                 ],
               ),
             ),
           ],
         ),
         const SizedBox(height: 26),
+        _AccountTile(
+          icon: Icons.phone_outlined,
+          title: 'Phone number',
+          subtitle: phone == null || phone.isEmpty ? 'Required before placing an order' : phone,
+          onTap: widget.session.busy ? null : _editPhone,
+          warning: phone == null || phone.isEmpty,
+        ),
+        const SizedBox(height: 10),
         const _AccountTile(
           icon: Icons.location_on_outlined,
           title: 'Delivery addresses',
@@ -109,7 +172,7 @@ class _AccountScreen extends StatelessWidget {
         ),
         const SizedBox(height: 26),
         FilledButton.tonalIcon(
-          onPressed: session.busy ? null : session.logout,
+          onPressed: widget.session.busy ? null : widget.session.logout,
           icon: const Icon(Icons.logout_rounded),
           label: const Padding(
             padding: EdgeInsets.symmetric(vertical: 13),
@@ -128,11 +191,19 @@ class _AccountScreen extends StatelessWidget {
 }
 
 class _AccountTile extends StatelessWidget {
-  const _AccountTile({required this.icon, required this.title, required this.subtitle});
+  const _AccountTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.onTap,
+    this.warning = false,
+  });
 
   final IconData icon;
   final String title;
   final String subtitle;
+  final VoidCallback? onTap;
+  final bool warning;
 
   @override
   Widget build(BuildContext context) {
@@ -142,10 +213,11 @@ class _AccountTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
       ),
       child: ListTile(
-        leading: Icon(icon, color: const Color(0xFF176B55)),
+        onTap: onTap,
+        leading: Icon(icon, color: warning ? Theme.of(context).colorScheme.error : const Color(0xFF176B55)),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
         subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right_rounded),
+        trailing: onTap == null ? null : const Icon(Icons.chevron_right_rounded),
       ),
     );
   }
