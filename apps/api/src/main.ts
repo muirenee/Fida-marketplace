@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import { registerAdminAudit } from './lib/admin-audit.js';
 import { registerAdminGuardrails } from './lib/admin-guardrails.js';
+import { startPushNotificationWorker } from './lib/push.js';
 import { addressRoutes } from './routes/addresses.js';
 import { adminAuditRoutes } from './routes/admin-audit.js';
 import { adminCatalogRoutes } from './routes/admin-catalog.js';
@@ -20,6 +21,7 @@ import { driverRoutes } from './routes/driver.js';
 import { marketplaceRoutes } from './routes/marketplace.js';
 import { merchantRoutes } from './routes/merchant.js';
 import { orderRoutes } from './routes/orders.js';
+import { pushRoutes } from './routes/push.js';
 import { tenantRoutes } from './routes/tenants.js';
 
 const jwtSecret = process.env.JWT_ACCESS_SECRET;
@@ -45,6 +47,7 @@ await app.register(orderRoutes);
 await app.register(driverRoutes);
 await app.register(tenantRoutes);
 await app.register(merchantRoutes);
+await app.register(pushRoutes);
 await app.register(adminRoutes);
 await app.register(adminCatalogRoutes);
 await app.register(adminOperationsRoutes);
@@ -55,15 +58,17 @@ await app.register(adminReportRoutes);
 await app.register(adminInsightRoutes);
 await app.register(adminAuditRoutes);
 
+startPushNotificationWorker(app.log);
+
 app.get('/health', async () => ({
   service: 'fida-marketplace-api',
   status: 'ok',
-  version: '0.4.0',
+  version: '0.5.0',
 }));
 
 app.get('/v1', async () => ({
   name: 'Fida Marketplace API',
-  milestone: 'customer-merchant-driver-flow',
+  milestone: 'push-notifications',
 }));
 
 const port = Number(process.env.PORT ?? 3001);
