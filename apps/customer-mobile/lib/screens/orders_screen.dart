@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
@@ -138,19 +141,22 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   Map<String, dynamic>? _order;
   bool _loading = true;
   String? _error;
+  Timer? _trackingTimer;
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final value = await widget.api.order(widget.orderId);
       if (mounted) setState(() => _order = value);
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (!silent && mounted) setState(() => _error = e.message);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (!silent && mounted) setState(() => _loading = false);
     }
   }
 
@@ -158,6 +164,69 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   void initState() {
     super.initState();
     _load();
+    _trackingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      final status = _order?['status']?.toString();
+      if (status != null && !{'COMPLETED', 'CANCELLED', 'REJECTED'}.contains(status)) {
+        _load(silent: true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _trackingTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _cancelOrder(Map<String, dynamic> order) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancel order?'),
+        content: const Text('You can cancel this order because preparation has not started yet.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Keep order')),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Cancel order'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await widget.api.cancelOrder(order['id'].toString());
+      await _load();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order cancelled.')));
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  double? _distanceToCustomerKm(Map<String, dynamic> order, Map<String, dynamic>? driver) {
+    final lat1 = (driver?['latitude'] as num?)?.toDouble();
+    final lon1 = (driver?['longitude'] as num?)?.toDouble();
+    final lat2 = (order['deliveryLatitude'] as num?)?.toDouble();
+    final lon2 = (order['deliveryLongitude'] as num?)?.toDouble();
+    if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
+
+    double radians(double value) => value * math.pi / 180;
+    final dLat = radians(lat2 - lat1);
+    final dLon = radians(lon2 - lon1);
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(radians(lat1)) * math.cos(radians(lat2)) * math.sin(dLon / 2) * math.sin(dLon / 2);
+    return 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
+  String? _lastLocationText(dynamic value) {
+    if (value == null) return null;
+    final parsed = DateTime.tryParse(value.toString());
+    if (parsed == null) return null;
+    final local = parsed.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return 'Last location update $hour:$minute';
   }
 
   @override
@@ -188,6 +257,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final items = order['items'] as List? ?? const [];
     final currency = merchant['currency']?.toString() ?? 'RWF';
     final isPickup = order['fulfillmentType']?.toString() == 'PICKUP';
+    final status = order['status']?.toString() ?? '';
+    final canCancel = status == 'PENDING' || status == 'ACCEPTED';
+    final driverDistanceKm = _distanceToCustomerKm(order, driver);
+    final lastLocation = _lastLocationText(driver?['lastSeenAt']);
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -223,6 +296,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         Text(isPickup ? 'Order progress' : 'Delivery progress', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
         const SizedBox(height: 10),
         _Progress(status: order['status'].toString()),
+        if (canCancel) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _loading ? null : () => _cancelOrder(order),
+              icon: const Icon(Icons.cancel_outlined),
+              label: const Text('Cancel order'),
+            ),
+          ),
+        ],
         if (driver != null) ...[
           const SizedBox(height: 14),
           Card(
@@ -235,10 +319,55 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               ),
               subtitle: Text(
                 driver['latitude'] != null && driver['longitude'] != null
-                    ? 'Driver assigned · location updated'
+                    ? 'Driver assigned · live location available'
                     : 'Driver assigned',
               ),
               trailing: driverUser?['phone'] == null ? null : const Icon(Icons.phone_outlined),
+            ),
+          ),
+        ],
+        if (!isPickup && driver != null && status != 'COMPLETED' && status != 'CANCELLED' && status != 'REJECTED') ...[
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.route_rounded),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Live delivery tracking',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      _StatusBadge(status: delivery?['status']?.toString() ?? status),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (driverDistanceKm != null)
+                    Text(
+                      driverDistanceKm < 1
+                          ? 'Driver is about ${(driverDistanceKm * 1000).round()} m from your delivery point.'
+                          : 'Driver is about ${driverDistanceKm.toStringAsFixed(1)} km from your delivery point.',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    )
+                  else
+                    const Text('Waiting for the driver location update.'),
+                  if (lastLocation != null) ...[
+                    const SizedBox(height: 4),
+                    Text(lastLocation, style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                  const SizedBox(height: 4),
+                  Text(
+                    'This screen refreshes the driver position automatically every 15 seconds.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
             ),
           ),
         ],
