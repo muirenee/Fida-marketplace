@@ -173,6 +173,14 @@ class DriverApiClient {
     return (data as Map).cast<String, dynamic>();
   }
 
+  Future<List<Map<String, dynamic>>> activeDeliveries() async {
+    final response = await _send('GET', '/v1/driver/deliveries/active');
+    if (response.statusCode != 200) throw _error(response);
+    return (_json(response) as List)
+        .map((row) => (row as Map).cast<String, dynamic>())
+        .toList();
+  }
+
   Future<Map<String, dynamic>> claim(String deliveryId) async {
     final response = await _send('POST', '/v1/driver/deliveries/$deliveryId/claim');
     if (response.statusCode != 200) throw _error(response);
