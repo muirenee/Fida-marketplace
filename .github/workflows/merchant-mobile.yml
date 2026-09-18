@@ -43,6 +43,13 @@ jobs:
             sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
           fi
 
+      - name: Ensure release network permission
+        working-directory: apps/merchant-mobile
+        run: |
+          if ! grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml; then
+            sed -i '/<manifest/a\\    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
+          fi
+
       - name: Resolve dependencies
         working-directory: apps/merchant-mobile
         run: flutter pub get
