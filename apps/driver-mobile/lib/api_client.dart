@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import 'push_client.dart';
+
 class DriverApiException implements Exception {
   DriverApiException(this.message);
   final String message;
@@ -90,6 +92,26 @@ class DriverApiClient {
     return response;
   }
 
+  Future<void> _registerPushToken(String token) async {
+    final response = await _send(
+      'POST',
+      '/v1/push/devices',
+      body: {'app': 'DRIVER', 'platform': 'ANDROID', 'token': token},
+    );
+    if (response.statusCode != 200) throw _error(response);
+  }
+
+  Future<void> _unregisterPushToken(String token) async {
+    final response = await _send(
+      'POST',
+      '/v1/push/devices/unregister',
+      body: {'token': token},
+    );
+    if (response.statusCode != 200) throw _error(response);
+  }
+
+  Future<void> _syncPush() => PushClient.sync(_registerPushToken);
+
   Future<Map<String, dynamic>> login(String email, String password) async {
     final response = await _send(
       'POST',
@@ -100,6 +122,7 @@ class DriverApiClient {
     if (response.statusCode != 200) throw _error(response);
     final data = (_json(response) as Map).cast<String, dynamic>();
     await _save(data);
+    await _syncPush();
     return (data['user'] as Map).cast<String, dynamic>();
   }
 
@@ -126,6 +149,7 @@ class DriverApiClient {
     final response = await _send('GET', '/v1/auth/me');
     if (response.statusCode != 200) return null;
     final data = _json(response) as Map;
+    await _syncPush();
     return (data['user'] as Map).cast<String, dynamic>();
   }
 
@@ -198,6 +222,7 @@ class DriverApiClient {
   }
 
   Future<void> logout() async {
+    await PushClient.unregister(_unregisterPushToken);
     final token = _refresh;
     if (token != null) {
       try {
