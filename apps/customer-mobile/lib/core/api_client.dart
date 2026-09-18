@@ -307,7 +307,12 @@ class ApiClient {
   }
 
   Future<void> cancelOrder(String id) async {
-    final response = await _send('POST', '/v1/customer/orders/$id/cancel', authenticated: true);
+    final response = await _send(
+      'POST',
+      '/v1/customer/orders/$id/cancel',
+      authenticated: true,
+      body: const <String, dynamic>{},
+    );
     if (response.statusCode != 200) throw _error(response);
   }
 
