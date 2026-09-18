@@ -99,6 +99,17 @@ export async function orderRoutes(app: FastifyInstance) {
     }
     const fulfillmentType = requestedFulfillment as FulfillmentType;
 
+    const customer = await prisma.user.findUnique({
+      where: { id: request.authUser!.id },
+      select: { phone: true },
+    });
+    if (!customer?.phone) {
+      return reply.code(409).send({
+        error: 'customer_phone_required',
+        message: 'Add a phone number to your Fida account before placing an order.',
+      });
+    }
+
     const tenant = await prisma.tenant.findFirst({
       where: { id: tenantId, status: TenantStatus.ACTIVE, isAcceptingOrders: true },
       select: {
@@ -274,8 +285,13 @@ export async function orderRoutes(app: FastifyInstance) {
     const order = await prisma.order.findFirst({ where: { id: orderId, customerId: request.authUser!.id }, select: { id: true, status: true } });
 
     if (!order) return reply.code(404).send({ error: 'order_not_found' });
-    if (order.status !== OrderStatus.PENDING) {
-      return reply.code(409).send({ error: 'order_cannot_be_cancelled', status: order.status });
+    const cancellable = [OrderStatus.PENDING, OrderStatus.ACCEPTED];
+    if (!cancellable.includes(order.status)) {
+      return reply.code(409).send({
+        error: 'order_cannot_be_cancelled',
+        status: order.status,
+        message: 'Orders can only be cancelled before preparation starts.',
+      });
     }
 
     await prisma.$transaction([
