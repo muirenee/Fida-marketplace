@@ -127,6 +127,7 @@ model User {
   addresses       CustomerAddress[]
   driver          Driver?
   sessions        Session[]
+  pushDevices     PushDevice[]
 }
 
 model Session {
@@ -139,6 +140,33 @@ model Session {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
+}
+
+model PushDevice {
+  id         String   @id @default(cuid())
+  userId     String
+  app        String
+  platform   String   @default("ANDROID")
+  token      String   @unique
+  isActive   Boolean  @default(true)
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, app, isActive])
+  @@index([app, isActive])
+}
+
+model PushOrderState {
+  orderId        String   @id
+  orderStatus    String
+  deliveryStatus String?
+  driverId       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([updatedAt])
 }
 
 model TenantMembership {
@@ -175,7 +203,7 @@ model Branch {
   updatedAt         DateTime      @updatedAt
   tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   memberships       TenantMembership[]
-  orders             Order[]
+  orders            Order[]
   deliveryZones     DeliveryZone[]
   drivers           Driver[]
 
@@ -297,15 +325,15 @@ model OrderItem {
 }
 
 model DeliveryOperator {
-  id        String               @id @default(cuid())
-  type      DeliveryOperatorType
-  name      String
-  tenantId  String?              @unique
-  isActive  Boolean              @default(true)
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
-  tenant    Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  drivers   Driver[]
+  id         String               @id @default(cuid())
+  type       DeliveryOperatorType
+  name       String
+  tenantId   String?              @unique
+  isActive   Boolean              @default(true)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+  tenant     Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  drivers    Driver[]
   deliveries Delivery[]
 
   @@index([type, isActive])
@@ -340,12 +368,15 @@ model Delivery {
   assignedAt  DateTime?
   pickedUpAt  DateTime?
   deliveredAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @default(now()) @updatedAt
   order       Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
   driver      Driver?           @relation(fields: [driverId], references: [id], onDelete: SetNull)
   operator    DeliveryOperator? @relation(fields: [operatorId], references: [id], onDelete: SetNull)
 
   @@index([driverId, status])
   @@index([operatorId, status])
+  @@index([updatedAt])
 }
 
 model AdminAuditEvent {

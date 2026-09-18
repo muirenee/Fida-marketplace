@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import 'push_client.dart';
+
 class MerchantApiException implements Exception {
   MerchantApiException(this.message);
   final String message;
@@ -90,11 +92,32 @@ class MerchantApiClient {
     return response;
   }
 
+  Future<void> _registerPushToken(String token) async {
+    final response = await _send(
+      'POST',
+      '/v1/push/devices',
+      body: {'app': 'MERCHANT', 'platform': 'ANDROID', 'token': token},
+    );
+    if (response.statusCode != 200) throw _error(response);
+  }
+
+  Future<void> _unregisterPushToken(String token) async {
+    final response = await _send(
+      'POST',
+      '/v1/push/devices/unregister',
+      body: {'token': token},
+    );
+    if (response.statusCode != 200) throw _error(response);
+  }
+
+  Future<void> _syncPush() => PushClient.sync(_registerPushToken);
+
   Future<Map<String, dynamic>> login(String email, String password) async {
     final response = await _send('POST', '/v1/auth/login', authenticated: false, body: {'email': email, 'password': password});
     if (response.statusCode != 200) throw _error(response);
     final data = (_json(response) as Map).cast<String, dynamic>();
     await _save(data);
+    await _syncPush();
     return (data['user'] as Map).cast<String, dynamic>();
   }
 
@@ -113,6 +136,7 @@ class MerchantApiClient {
     final response = await _send('GET', '/v1/auth/me');
     if (response.statusCode != 200) return null;
     final data = _json(response) as Map;
+    await _syncPush();
     return (data['user'] as Map).cast<String, dynamic>();
   }
 
@@ -308,6 +332,7 @@ class MerchantApiClient {
   }
 
   Future<void> logout() async {
+    await PushClient.unregister(_unregisterPushToken);
     final refreshToken = _refresh;
     if (refreshToken != null) {
       try {

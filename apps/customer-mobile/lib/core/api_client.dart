@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import 'push_client.dart';
+
 class ApiException implements Exception {
   ApiException(this.message, {this.statusCode, this.code});
 
@@ -111,11 +113,34 @@ class ApiClient {
     return response;
   }
 
+  Future<void> _registerPushToken(String token) async {
+    final response = await _send(
+      'POST',
+      '/v1/push/devices',
+      authenticated: true,
+      body: {'app': 'CUSTOMER', 'platform': 'ANDROID', 'token': token},
+    );
+    if (response.statusCode != 200) throw _error(response);
+  }
+
+  Future<void> _unregisterPushToken(String token) async {
+    final response = await _send(
+      'POST',
+      '/v1/push/devices/unregister',
+      authenticated: true,
+      body: {'token': token},
+    );
+    if (response.statusCode != 200) throw _error(response);
+  }
+
+  Future<void> _syncPush() => PushClient.sync(_registerPushToken);
+
   Future<Map<String, dynamic>> login(String email, String password) async {
     final response = await _send('POST', '/v1/auth/login', body: {'email': email, 'password': password});
     if (response.statusCode != 200) throw _error(response);
     final json = _decode(response) as Map<String, dynamic>;
     await _saveTokens(json);
+    await _syncPush();
     return (json['user'] as Map).cast<String, dynamic>();
   }
 
@@ -134,6 +159,7 @@ class ApiClient {
     if (response.statusCode != 201) throw _error(response);
     final json = _decode(response) as Map<String, dynamic>;
     await _saveTokens(json);
+    await _syncPush();
     return (json['user'] as Map).cast<String, dynamic>();
   }
 
@@ -158,6 +184,7 @@ class ApiClient {
     final response = await _send('GET', '/v1/auth/me', authenticated: true);
     if (response.statusCode != 200) return null;
     final json = _decode(response) as Map<String, dynamic>;
+    await _syncPush();
     return (json['user'] as Map).cast<String, dynamic>();
   }
 
@@ -174,6 +201,7 @@ class ApiClient {
   }
 
   Future<void> logout() async {
+    await PushClient.unregister(_unregisterPushToken);
     final refresh = _refreshToken;
     if (refresh != null) {
       try {
