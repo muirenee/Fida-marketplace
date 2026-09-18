@@ -5,15 +5,22 @@ on:
     branches: [main]
     paths:
       - 'apps/customer-mobile/**'
+      - 'scripts/configure_flutter_android_signing.py'
       - '.github/workflows/customer-mobile.yml'
   pull_request:
     paths:
       - 'apps/customer-mobile/**'
+      - 'scripts/configure_flutter_android_signing.py'
       - '.github/workflows/customer-mobile.yml'
 
 jobs:
-  android-debug:
+  android:
     runs-on: ubuntu-latest
+    env:
+      FIDA_ANDROID_KEYSTORE_BASE64: ${{ secrets.FIDA_ANDROID_KEYSTORE_BASE64 }}
+      FIDA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.FIDA_ANDROID_KEYSTORE_PASSWORD }}
+      FIDA_ANDROID_KEY_ALIAS: ${{ secrets.FIDA_ANDROID_KEY_ALIAS }}
+      FIDA_ANDROID_KEY_PASSWORD: ${{ secrets.FIDA_ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +42,7 @@ jobs:
           elif [ -f android/app/build.gradle ]; then
             sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
           fi
-          sed -i '/<application/i\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' android/app/src/main/AndroidManifest.xml
+          sed -i '/<application/i\\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' android/app/src/main/AndroidManifest.xml
 
       - name: Resolve dependencies
         working-directory: apps/customer-mobile
@@ -45,11 +52,55 @@ jobs:
         working-directory: apps/customer-mobile
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
+      - name: Detect release signing
+        id: signing
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "push" \
+            && -n "${FIDA_ANDROID_KEYSTORE_BASE64}" \
+            && -n "${FIDA_ANDROID_KEYSTORE_PASSWORD}" \
+            && -n "${FIDA_ANDROID_KEY_ALIAS}" \
+            && -n "${FIDA_ANDROID_KEY_PASSWORD}" ]]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Prepare permanent release signing
+        if: steps.signing.outputs.enabled == 'true'
+        working-directory: apps/customer-mobile
+        run: |
+          printf '%s' "${FIDA_ANDROID_KEYSTORE_BASE64}" | base64 --decode > android/app/fida-release.jks
+          cat > android/key.properties <<EOF
+          storePassword=${FIDA_ANDROID_KEYSTORE_PASSWORD}
+          keyPassword=${FIDA_ANDROID_KEY_PASSWORD}
+          keyAlias=${FIDA_ANDROID_KEY_ALIAS}
+          storeFile=fida-release.jks
+          EOF
+          python ../../scripts/configure_flutter_android_signing.py android/app
+
+      - name: Build signed release APK
+        if: steps.signing.outputs.enabled == 'true'
+        working-directory: apps/customer-mobile
+        run: |
+          BUILD_NUMBER=$((10000 + GITHUB_RUN_NUMBER))
+          flutter build apk --release --build-number="${BUILD_NUMBER}" --dart-define=FIDA_API_BASE_URL=https://marketplaceadmin.fidalix.com
+
+      - name: Upload signed release APK
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fida-marketplace-customer-release
+          path: apps/customer-mobile/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
+
       - name: Build debug APK
+        if: steps.signing.outputs.enabled != 'true'
         working-directory: apps/customer-mobile
         run: flutter build apk --debug --dart-define=FIDA_API_BASE_URL=https://marketplaceadmin.fidalix.com
 
       - name: Upload debug APK
+        if: steps.signing.outputs.enabled != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: fida-marketplace-customer-debug
