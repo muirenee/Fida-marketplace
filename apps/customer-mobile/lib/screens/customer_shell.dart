@@ -61,7 +61,7 @@ class _AccountScreen extends StatefulWidget {
 
 class _AccountScreenState extends State<_AccountScreen> {
   Future<void> _editPhone() async {
-    final controller = TextEditingController(text: widget.session.user?['phone']?.toString() ?? '');
+    String phoneValue = widget.session.user?['phone']?.toString() ?? '';
     final formKey = GlobalKey<FormState>();
     final value = await showDialog<String>(
       context: context,
@@ -70,9 +70,10 @@ class _AccountScreenState extends State<_AccountScreen> {
         content: Form(
           key: formKey,
           child: TextFormField(
-            controller: controller,
+            initialValue: phoneValue,
             autofocus: true,
             keyboardType: TextInputType.phone,
+            onChanged: (value) => phoneValue = value.trim(),
             decoration: const InputDecoration(
               labelText: 'Phone number',
               hintText: '+250 7xx xxx xxx',
@@ -88,14 +89,13 @@ class _AccountScreenState extends State<_AccountScreen> {
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
           FilledButton(
             onPressed: () {
-              if (formKey.currentState?.validate() == true) Navigator.pop(dialogContext, controller.text.trim());
+              if (formKey.currentState?.validate() == true) Navigator.pop(dialogContext, phoneValue);
             },
             child: const Text('Save'),
           ),
         ],
       ),
     );
-    controller.dispose();
     if (value == null || value.isEmpty) return;
 
     final ok = await widget.session.updatePhone(value);
