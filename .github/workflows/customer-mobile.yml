@@ -44,6 +44,13 @@ jobs:
           fi
           sed -i '/<application/i\\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' android/app/src/main/AndroidManifest.xml
 
+      - name: Ensure release network permission
+        working-directory: apps/customer-mobile
+        run: |
+          if ! grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml; then
+            sed -i '/<manifest/a\\    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
+          fi
+
       - name: Resolve dependencies
         working-directory: apps/customer-mobile
         run: flutter pub get
