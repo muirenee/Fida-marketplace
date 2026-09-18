@@ -1,44 +1,84 @@
-# Initial Roadmap
+# Fida Marketplace Roadmap
+
+Updated: September 2026
 
 ## M0 — Foundation
 - [x] Monorepo structure
 - [x] Multi-tenant core schema
-- [x] Customer / merchant / driver mobile shells
-- [x] Admin web shell
-- [x] PostgreSQL + Redis local infrastructure
-- [ ] Authentication and session management
-- [ ] Tenant-context middleware
-- [ ] Database migrations and seed data
+- [x] Customer / merchant / driver mobile apps
+- [x] Admin web control center
+- [x] PostgreSQL + Redis infrastructure
+- [x] Authentication and refresh sessions
+- [x] Tenant-context authorization
+- [x] Production Docker deployment
+- [x] Permanent Android release signing
 
 ## M1 — Marketplace catalog
-- [ ] Merchant onboarding
-- [ ] Branches and opening hours
-- [ ] Categories and products
-- [ ] Product variants/add-ons
-- [ ] Customer browse/search
+- [x] Merchant activation and commercial settings
+- [x] Branches
+- [x] Categories and products
+- [x] Customer browse and merchant detail
+- [x] Pickup / delivery per branch
+- [x] Distance-based delivery pricing
+- [ ] Branch opening hours and temporary closures
+- [ ] Product variants and add-ons
+- [ ] Product images and richer catalog media
+- [ ] Search, favourites and merchant discovery improvements
 
 ## M2 — Ordering
-- [ ] Cart
-- [ ] Checkout
-- [ ] Taxes and configurable fees
-- [ ] Merchant accept/reject
-- [ ] Order state machine
-- [ ] Push notifications
+- [x] Cart and checkout
+- [x] Cash checkout
+- [x] Merchant accept / reject
+- [x] Order state machine
+- [x] Pickup workflow
+- [x] Customer cancellation before preparation
+- [x] Required customer phone number
+- [x] Merchandise commission snapshot
+- [ ] Push notifications for order status changes
+- [ ] Scheduled orders
+- [ ] Promo codes and controlled discounts
+- [ ] Taxes where required
 
 ## M3 — Delivery
-- [ ] Driver onboarding
-- [ ] Driver online/offline
-- [ ] Dispatch engine
-- [ ] GPS updates
-- [ ] Pickup workflow
-- [ ] Live customer tracking
-- [ ] Proof of delivery
+- [x] Merchant-managed driver enrollment
+- [x] Driver online / offline and availability
+- [x] Delivery offer queue
+- [x] Multiple simultaneous deliveries per driver
+- [x] GPS location updates
+- [x] Pickup and drop-off workflow
+- [x] Customer live delivery tracking
+- [x] Merchant distance bands including free delivery
+- [x] Architecture for merchant, Fida and hybrid logistics
+- [ ] Configurable driver capacity / maximum concurrent orders
+- [ ] Route ordering and multi-stop optimization
+- [ ] Proof of delivery (PIN, signature or photo)
+- [ ] Fida fleet operations and dispatch controls
 
 ## M4 — Money
-- [ ] Cash payments
+- [x] Cash payment completion
+- [x] Platform merchandise commission
 - [ ] Mobile Money adapter
 - [ ] Card adapter
-- [ ] Platform commissions
-- [ ] Merchant settlements
-- [ ] Driver earnings
-- [ ] Refunds
+- [ ] Merchant settlement and commission remittance ledger
+- [ ] Refund workflow
+- [ ] Driver / logistics earnings where Fida logistics is used
+- [ ] Finance reconciliation and payout reporting
+
+## M5 — Operations and growth
+- [x] Admin operations overview
+- [x] Finance / reports / insights foundation
+- [x] Audit events
+- [ ] Customer and merchant push notifications
+- [ ] Support cases and order issue handling
+- [ ] Ratings and reviews
+- [ ] Merchant promotions
+- [ ] Fraud / abuse controls
+- [ ] Analytics for conversion, retention and delivery performance
+
+## Next implementation sequence
+1. Push notifications for customer, merchant and driver status changes.
+2. Branch opening hours, temporary closure controls and catalog availability schedules.
+3. Proof of delivery and delivery issue handling.
+4. Mobile Money payment adapter.
+5. Merchant settlement / commission remittance ledger.
+6. Configurable driver capacity and route optimization for multi-order delivery.

@@ -123,12 +123,13 @@ class ApiClient {
     required String firstName,
     required String lastName,
     required String email,
+    required String phone,
     required String password,
   }) async {
     final response = await _send(
       'POST',
       '/v1/auth/register',
-      body: {'firstName': firstName, 'lastName': lastName, 'email': email, 'password': password},
+      body: {'firstName': firstName, 'lastName': lastName, 'email': email, 'phone': phone, 'password': password},
     );
     if (response.statusCode != 201) throw _error(response);
     final json = _decode(response) as Map<String, dynamic>;
@@ -156,6 +157,18 @@ class ApiClient {
     if (!hasSession) return null;
     final response = await _send('GET', '/v1/auth/me', authenticated: true);
     if (response.statusCode != 200) return null;
+    final json = _decode(response) as Map<String, dynamic>;
+    return (json['user'] as Map).cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> updatePhone(String phone) async {
+    final response = await _send(
+      'PATCH',
+      '/v1/auth/me',
+      authenticated: true,
+      body: {'phone': phone},
+    );
+    if (response.statusCode != 200) throw _error(response);
     final json = _decode(response) as Map<String, dynamic>;
     return (json['user'] as Map).cast<String, dynamic>();
   }
@@ -291,6 +304,11 @@ class ApiClient {
     final response = await _send('GET', '/v1/customer/orders/$id', authenticated: true);
     if (response.statusCode != 200) throw _error(response);
     return (_decode(response) as Map).cast<String, dynamic>();
+  }
+
+  Future<void> cancelOrder(String id) async {
+    final response = await _send('POST', '/v1/customer/orders/$id/cancel', authenticated: true);
+    if (response.statusCode != 200) throw _error(response);
   }
 
   void close() => _client.close();

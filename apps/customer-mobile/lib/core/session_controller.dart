@@ -49,6 +49,7 @@ class SessionController extends ChangeNotifier {
     required String firstName,
     required String lastName,
     required String email,
+    required String phone,
     required String password,
   }) async {
     busy = true;
@@ -59,6 +60,7 @@ class SessionController extends ChangeNotifier {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
+        phone: phone.trim(),
         password: password,
       );
       return true;
@@ -67,6 +69,25 @@ class SessionController extends ChangeNotifier {
       return false;
     } catch (_) {
       error = 'Unable to connect to Fida Marketplace.';
+      return false;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> updatePhone(String phone) async {
+    busy = true;
+    error = null;
+    notifyListeners();
+    try {
+      user = await api.updatePhone(phone.trim());
+      return true;
+    } on ApiException catch (e) {
+      error = e.message;
+      return false;
+    } catch (_) {
+      error = 'Unable to update your phone number.';
       return false;
     } finally {
       busy = false;

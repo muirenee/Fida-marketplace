@@ -16,6 +16,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _firstName = TextEditingController();
   final _lastName = TextEditingController();
   final _email = TextEditingController();
+  final _phone = TextEditingController();
   final _password = TextEditingController();
   bool _register = false;
   bool _obscure = true;
@@ -25,6 +26,7 @@ class _AuthScreenState extends State<AuthScreen> {
     _firstName.dispose();
     _lastName.dispose();
     _email.dispose();
+    _phone.dispose();
     _password.dispose();
     super.dispose();
   }
@@ -38,6 +40,7 @@ class _AuthScreenState extends State<AuthScreen> {
         firstName: _firstName.text,
         lastName: _lastName.text,
         email: _email.text,
+        phone: _phone.text,
         password: _password.text,
       );
     } else {
@@ -96,6 +99,22 @@ class _AuthScreenState extends State<AuthScreen> {
                                 ),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: _phone,
+                            keyboardType: TextInputType.phone,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'Phone number',
+                              hintText: '+250 7xx xxx xxx',
+                              prefixIcon: Icon(Icons.phone_outlined),
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (value) {
+                              final digits = (value ?? '').replaceAll(RegExp(r'\D'), '');
+                              return digits.length >= 7 && digits.length <= 15 ? null : 'Enter a valid phone number';
+                            },
                           ),
                           const SizedBox(height: 14),
                         ],

@@ -16,6 +16,16 @@ function normalizeEmail(value: unknown): string | null {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 }
 
+function normalizePhone(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  const hasPlus = raw.startsWith('+');
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return null;
+  return `${hasPlus ? '+' : ''}${digits}`;
+}
+
 function publicUser(user: {
   id: string;
   email: string | null;
@@ -38,10 +48,15 @@ export async function authRoutes(app: FastifyInstance) {
   app.post('/v1/auth/register', async (request, reply) => {
     const body = (request.body ?? {}) as Record<string, unknown>;
     const email = normalizeEmail(body.email);
+    const phone = normalizePhone(body.phone);
     const password = typeof body.password === 'string' ? body.password : '';
 
     if (!email) {
       return reply.code(400).send({ error: 'invalid_email', message: 'A valid email address is required.' });
+    }
+
+    if (!phone) {
+      return reply.code(400).send({ error: 'invalid_phone', message: 'A valid customer phone number is required.' });
     }
 
     if (password.length < 8 || password.length > 128) {
@@ -51,14 +66,21 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
+    const existing = await prisma.user.findFirst({
+      where: { OR: [{ email }, { phone }] },
+      select: { email: true, phone: true },
+    });
+    if (existing?.email === email) {
       return reply.code(409).send({ error: 'email_in_use', message: 'An account already exists for this email.' });
+    }
+    if (existing?.phone === phone) {
+      return reply.code(409).send({ error: 'phone_in_use', message: 'An account already exists for this phone number.' });
     }
 
     const user = await prisma.user.create({
       data: {
         email,
+        phone,
         passwordHash: await hashPassword(password),
         firstName: typeof body.firstName === 'string' ? body.firstName.trim() || null : null,
         lastName: typeof body.lastName === 'string' ? body.lastName.trim() || null : null,
@@ -161,6 +183,28 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     return reply.code(204).send();
+  });
+
+  app.patch('/v1/auth/me', { preHandler: authenticate }, async (request, reply) => {
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const phone = normalizePhone(body.phone);
+    if (!phone) {
+      return reply.code(400).send({ error: 'invalid_phone', message: 'A valid customer phone number is required.' });
+    }
+
+    const existing = await prisma.user.findFirst({
+      where: { phone, NOT: { id: request.authUser!.id } },
+      select: { id: true },
+    });
+    if (existing) {
+      return reply.code(409).send({ error: 'phone_in_use', message: 'This phone number is already used by another account.' });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: request.authUser!.id },
+      data: { phone },
+    });
+    return { user: publicUser(user) };
   });
 
   app.get('/v1/auth/me', { preHandler: authenticate }, async (request) => {
