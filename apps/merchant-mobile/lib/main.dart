@@ -539,6 +539,8 @@ class _OrdersPageState extends State<_OrdersPage> {
                             ],
                           ),
                           Text([customer['firstName'], customer['lastName']].where((v) => v != null && '$v'.isNotEmpty).join(' ')),
+                          if ((customer['phone'] ?? '').toString().isNotEmpty)
+                            Text(customer['phone'].toString(), style: Theme.of(context).textTheme.bodySmall),
                           const SizedBox(height: 8),
                           ...items.take(4).map((raw) {
                             final item = raw as Map;
