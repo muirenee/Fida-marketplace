@@ -11,14 +11,14 @@ mkdir -p \
   "${RES_DIR}/mipmap-anydpi" \
   "${RES_DIR}/mipmap-anydpi-v26"
 
-# flutter create installs Flutter's default launcher artwork. Remove it so every
-# generated Android scaffold uses Fida's own brand mark instead.
+# flutter create installs Flutter's default launcher artwork. Remove only that
+# generated artwork and replace it with the previous Fida shopping-bag icon.
 find "${RES_DIR}" -type f \( -name 'ic_launcher.png' -o -name 'ic_launcher.webp' -o -name 'ic_launcher_round.png' -o -name 'ic_launcher_round.webp' \) -delete
 
 cat > "${RES_DIR}/values/fida_launcher_colors.xml" <<'EOF'
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="fida_launcher_background">#0B0B0B</color>
+    <color name="fida_launcher_background">#FFFFFF</color>
 </resources>
 EOF
 
@@ -30,8 +30,20 @@ cat > "${RES_DIR}/drawable/fida_launcher_foreground.xml" <<'EOF'
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M34,25 H75 V38 H49 V49 H70 V62 H49 V83 H34 Z" />
+        android:fillColor="#00865F"
+        android:pathData="M27,27 H81 V81 H27 Z" />
+    <path
+        android:fillColor="#A8EF78"
+        android:pathData="M40,49 H68 L66,73 H42 Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M44,51 C44,40 49,35 54,35 C59,35 64,40 64,51" />
+    <path
+        android:fillColor="#00865F"
+        android:pathData="M48,54 H61 V58 H53 V61 H60 V65 H53 V70 H48 Z" />
 </vector>
 EOF
 
@@ -43,11 +55,23 @@ cat > "${RES_DIR}/drawable/fida_launcher_legacy.xml" <<'EOF'
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#0B0B0B"
-        android:pathData="M24,8 H84 C92.8,8 100,15.2 100,24 V84 C100,92.8 92.8,100 84,100 H24 C15.2,100 8,92.8 8,84 V24 C8,15.2 15.2,8 24,8 Z" />
-    <path
         android:fillColor="#FFFFFF"
-        android:pathData="M34,25 H75 V38 H49 V49 H70 V62 H49 V83 H34 Z" />
+        android:pathData="M0,0 H108 V108 H0 Z" />
+    <path
+        android:fillColor="#00865F"
+        android:pathData="M27,27 H81 V81 H27 Z" />
+    <path
+        android:fillColor="#A8EF78"
+        android:pathData="M40,49 H68 L66,73 H42 Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M44,51 C44,40 49,35 54,35 C59,35 64,40 64,51" />
+    <path
+        android:fillColor="#00865F"
+        android:pathData="M48,54 H61 V58 H53 V61 H60 V65 H53 V70 H48 Z" />
 </vector>
 EOF
 
@@ -81,13 +105,14 @@ cat > "${RES_DIR}/mipmap-anydpi-v26/ic_launcher_round.xml" <<'EOF'
 </adaptive-icon>
 EOF
 
+# Keep the existing app label/UI untouched; only ensure Android can use the
+# matching round launcher resource where supported.
 python - "${MANIFEST}" <<'PY'
 from pathlib import Path
 import sys
 
 manifest = Path(sys.argv[1])
 text = manifest.read_text()
-text = text.replace('android:label="customer_mobile"', 'android:label="Fida Marketplace"')
 if 'android:roundIcon=' not in text:
     text = text.replace(
         'android:icon="@mipmap/ic_launcher"',
@@ -97,4 +122,4 @@ if 'android:roundIcon=' not in text:
 manifest.write_text(text)
 PY
 
-echo "Applied Fida Marketplace launcher icon and app label."
+echo "Applied previous Fida shopping-bag launcher icon."
