@@ -39,6 +39,20 @@ const request=async(method:string,url:string,user=owner,payload?:unknown,expecte
 const checkout={tenantId:tenant.id,branchId:branch.id,paymentMethod:'CASH',fulfillmentType:'DELIVERY',deliveryAddress:'Kigali test address',deliveryLatitude:-1.951,deliveryLongitude:30.051,items:[{productId:product.id,quantity:1,options:['Avocado']}]};
 let driver:any,driverUser:any,order:any;
 try {
+ await test('public marketplace lists merchants and opens their catalog with active delivery zones',async()=>{
+  await prisma.deliveryZone.create({data:{branchId:branch.id,minDistanceKm:10,maxDistanceKm:20,fee:900,isActive:false}});
+  const listed=await app.inject({method:'GET',url:'/v1/marketplace/merchants'});
+  assert.equal(listed.statusCode,200,listed.body);
+  assert.deepEqual(listed.json().map((m:any)=>m.id),[tenant.id]);
+  assert.equal(listed.json()[0].branches[0].deliveryZones.length,1);
+  const catalog=await app.inject({method:'GET',url:`/v1/marketplace/merchants/${tenant.slug}`});
+  assert.equal(catalog.statusCode,200,catalog.body);
+  assert.equal(catalog.json().categories[0].products[0].id,product.id);
+  assert.equal(catalog.json().branches[0].deliveryZones.length,1);
+  const search=await app.inject({method:'GET',url:'/v1/marketplace/merchants?q=Rice'});
+  assert.equal(search.statusCode,200,search.body);
+  assert.equal(search.json()[0].id,tenant.id);
+ });
  await test('tenant isolation and staff write restrictions',async()=>{
   await request('PATCH',`/v1/merchant/products/${otherProduct.id}`,owner,{price:1},404);
   await request('PATCH',`/v1/merchant/products/${product.id}`,outsider,{price:1},403);

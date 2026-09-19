@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { hasTrustedOrigin } from '../../../../lib/request-origin';
 import {
   backendBaseUrl,
 } from '../../../../lib/backend';
@@ -6,9 +7,7 @@ const accessCookieName = 'fida_merchant_access';
 const refreshCookieName = 'fida_merchant_refresh';
 
 export async function POST(request: NextRequest) {
-  const origin = request.headers.get('origin');
-  const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
-  if (!origin || new URL(origin).host !== host) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 });
+  if (!hasTrustedOrigin(request)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 });
   const refreshToken = request.cookies.get(refreshCookieName)?.value;
 
   if (refreshToken) {

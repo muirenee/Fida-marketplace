@@ -59,6 +59,7 @@ services:
     environment:
       NODE_ENV: production
       FIDA_API_BASE_URL: http://api:3001
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://marketplaceadmin.fidalix.com}
     depends_on:
       api:
         condition: service_started

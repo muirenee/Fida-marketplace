@@ -14,11 +14,11 @@ const branchSelect = {
   openingHours: true,
   closedUntil: true,
   deliveryZones: {
-    where: { isActive: true, deletedAt: null },
+    where: { isActive: true },
     orderBy: [{ minDistanceKm: 'asc' as const }, { maxDistanceKm: 'asc' as const }],
     select: { id: true, minDistanceKm: true, maxDistanceKm: true, fee: true },
   },
-};
+} satisfies Prisma.BranchSelect;
 
 export async function marketplaceRoutes(app: FastifyInstance) {
   app.get('/v1/marketplace/merchants', async (request) => {

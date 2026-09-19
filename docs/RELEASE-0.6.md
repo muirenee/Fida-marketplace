@@ -1,7 +1,15 @@
 # Fida 0.6 implementation and release handoff
 
 Updated 19 September 2026. Source branch: `feature/marketplace-business-delivery`.
-This is an implementation candidate, not a deployed or device-certified release.
+This is an implementation candidate. Deployment has begun; device acceptance is still in progress.
+
+## Merchant listing and portal save fix
+
+The marketplace query incorrectly filtered delivery zones by `deletedAt`, which does not exist on that model. This caused both merchant listing and catalog requests to return HTTP 500. The filter now uses `isActive`, and the shared selection is checked against the Prisma type. Regression tests cover public listing, product search and catalog retrieval with inactive delivery zones excluded.
+
+Merchant browser writes compared the external HTTPS origin with the internal Docker request URL. Login, logout and merchant writes now share an exact origin check using `PUBLIC_BASE_URL`, which Compose passes to the admin service. Cross-origin requests remain rejected. Set `PUBLIC_BASE_URL=https://marketplaceadmin.fidalix.com` for the current deployment; direct local deployments should use their actual public URL.
+
+For servers already upgraded to 0.6, pull `feature/marketplace-business-delivery` and rebuild/recreate both `api` and `admin`. These fixes require neither a new database migration nor new APKs. Verify `/v1/marketplace/merchants` returns HTTP 200, then refresh Customer and retry a merchant product save.
 
 ## Implemented in this branch
 
@@ -18,15 +26,15 @@ This is an implementation candidate, not a deployed or device-certified release.
 ## Validation actually completed
 
 - API TypeScript check passed.
-- Seven database-backed integration test groups passed using temporary PGlite PostgreSQL-compatible storage: tenant/role isolation, driver account privacy, checkout availability restrictions, options/promotion/tax calculation and retry behavior, delivery capacity/PIN/transitions, refund authorization, and payment tampering/replay protection.
+- Eight database-backed integration test groups passed using temporary PGlite PostgreSQL-compatible storage, including public marketplace listing/catalog/search, tenant/role isolation, driver account privacy, checkout availability restrictions, options/promotion/tax calculation and retry behavior, delivery capacity/PIN/transitions, refund authorization, and payment tampering/replay protection. Four origin-check regression tests passed for the portal.
 - PGlite uses one database connection. These tests do not prove concurrent behavior on production PostgreSQL; exercise contention in staging before release.
-- Standalone Dart formatter parsed the mobile source. Full Flutter analysis, Android build, device permissions and notification/navigation behavior are pending CI/device testing.
+- Flutter analysis and signed Android builds passed in GitHub Actions for all three apps, including their Firebase configuration. Device permissions and notification/navigation behavior still require physical-device testing.
 - Merchant/admin Next.js production build passed, including the merchant and business-operations routes. Browser visual QA was attempted but the environment has no installed Chromium; visual and device QA remain pending.
 
 ## Release steps
 
-1. Publish this feature branch and create a pull request in `muirenee/Fida-marketplace` after destination approval. Automatic approval review blocked the attempted push because the repository destination had not been explicitly authorized. No new APK has been produced for this branch.
-2. Run the Validate and three mobile pull-request workflows. Fix all analyzer/build failures before merging. Existing mobile workflows produce debug APKs for PRs; signed release builds run on main pushes or manual workflow dispatch with the existing signing secrets.
+1. The user authorized publication to `muirenee/Fida-marketplace`; the feature branch and signed APKs have been published. Continue deploying from `feature/marketplace-business-delivery` until it is merged.
+2. Keep Validate passing for new changes. Mobile workflows produce debug APKs for PRs and signed release builds for configured branch pushes or manual runs with the existing signing secrets. Server-only fixes do not require APK rebuilds.
 3. Back up the production database and uploaded media. Apply `packages/database/prisma/upgrades/20260919-business-delivery.sql` to a staging copy of the current main schema first. This is a one-time additive upgrade script, not a Prisma migrate history directory. Do not reset a production database. Existing cash orders remain valid; existing delivery orders without a PIN retain the original completion behavior.
 4. Deploy API and web together with the updated schema and persistent `fida_media` volume. Keep `/v1/*` routed to the API, including uploaded media. The existing public host should route `/merchant` and `/business-operations` to the Next.js service.
 5. Configure the following secrets through repository/deployment settings; do not commit credentials or paste a private key into chat.
