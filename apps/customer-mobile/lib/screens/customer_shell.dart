@@ -25,7 +25,10 @@ class _CustomerShellState extends State<CustomerShell> {
       appBar: _index == 0
           ? null
           : AppBar(
-              title: Text(_index == 1 ? 'Orders' : 'Account', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 28)),
+              title: Text(
+                _index == 1 ? 'Orders' : 'Account',
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 28),
+              ),
             ),
       body: IndexedStack(
         index: _index,
@@ -35,24 +38,51 @@ class _CustomerShellState extends State<CustomerShell> {
           _AccountScreen(session: widget.session),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(18, 4, 18, 12),
-          height: 68,
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(35),
-            border: Border.all(color: const Color(0xFFE7E7E7)),
-            boxShadow: const [BoxShadow(blurRadius: 18, color: Color(0x18000000), offset: Offset(0, 5))],
-          ),
-          child: Row(
-            children: [
-              Expanded(child: _NavItem(icon: Icons.home_outlined, selectedIcon: Icons.home_rounded, label: 'Home', selected: _index == 0, onTap: () => setState(() => _index = 0))),
-              Expanded(child: _NavItem(icon: Icons.receipt_long_outlined, selectedIcon: Icons.receipt_long_rounded, label: 'Orders', selected: _index == 1, onTap: () => setState(() => _index = 1))),
-              Expanded(child: _NavItem(icon: Icons.person_outline_rounded, selectedIcon: Icons.person_rounded, label: 'Account', selected: _index == 2, onTap: () => setState(() => _index = 2))),
-            ],
+      bottomNavigationBar: ColoredBox(
+        color: Colors.white,
+        child: SafeArea(
+          top: false,
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(18, 4, 18, 12),
+            height: 68,
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(35),
+              border: Border.all(color: const Color(0xFFE7E7E7)),
+              boxShadow: const [BoxShadow(blurRadius: 18, color: Color(0x18000000), offset: Offset(0, 5))],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _NavItem(
+                    icon: Icons.home_outlined,
+                    selectedIcon: Icons.home_rounded,
+                    label: 'Home',
+                    selected: _index == 0,
+                    onTap: () => setState(() => _index = 0),
+                  ),
+                ),
+                Expanded(
+                  child: _NavItem(
+                    icon: Icons.receipt_long_outlined,
+                    selectedIcon: Icons.receipt_long_rounded,
+                    label: 'Orders',
+                    selected: _index == 1,
+                    onTap: () => setState(() => _index = 1),
+                  ),
+                ),
+                Expanded(
+                  child: _NavItem(
+                    icon: Icons.person_outline_rounded,
+                    selectedIcon: Icons.person_rounded,
+                    label: 'Account',
+                    selected: _index == 2,
+                    onTap: () => setState(() => _index = 2),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -62,6 +92,7 @@ class _CustomerShellState extends State<CustomerShell> {
 
 class _NavItem extends StatelessWidget {
   const _NavItem({required this.icon, required this.selectedIcon, required this.label, required this.selected, required this.onTap});
+
   final IconData icon;
   final IconData selectedIcon;
   final String label;
@@ -130,7 +161,9 @@ class _AccountScreenState extends State<_AccountScreen> {
     if (value == null || value.isEmpty) return;
     final ok = await widget.session.updatePhone(value);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ok ? 'Phone number updated.' : (widget.session.error ?? 'Unable to update phone number.'))));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? 'Phone number updated.' : (widget.session.error ?? 'Unable to update phone number.'))),
+    );
     setState(() {});
   }
 
@@ -148,7 +181,10 @@ class _AccountScreenState extends State<_AccountScreen> {
               radius: 36,
               backgroundColor: Colors.black,
               foregroundColor: Colors.white,
-              child: Text(name.isEmpty ? 'F' : name.substring(0, 1).toUpperCase(), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
+              child: Text(
+                name.isEmpty ? 'F' : name.substring(0, 1).toUpperCase(),
+                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -163,7 +199,13 @@ class _AccountScreenState extends State<_AccountScreen> {
           ],
         ),
         const SizedBox(height: 28),
-        _AccountTile(icon: Icons.phone_outlined, title: 'Phone number', subtitle: phone == null || phone.isEmpty ? 'Required before placing an order' : phone, onTap: widget.session.busy ? null : _editPhone, warning: phone == null || phone.isEmpty),
+        _AccountTile(
+          icon: Icons.phone_outlined,
+          title: 'Phone number',
+          subtitle: phone == null || phone.isEmpty ? 'Required before placing an order' : phone,
+          onTap: widget.session.busy ? null : _editPhone,
+          warning: phone == null || phone.isEmpty,
+        ),
         const _AccountTile(icon: Icons.location_on_outlined, title: 'Addresses', subtitle: 'Manage delivery locations'),
         const _AccountTile(icon: Icons.payments_outlined, title: 'Payments', subtitle: 'Payment methods and receipts'),
         const _AccountTile(icon: Icons.local_offer_outlined, title: 'Promotions', subtitle: 'Promo codes and offers'),
@@ -185,6 +227,7 @@ class _AccountScreenState extends State<_AccountScreen> {
 
 class _AccountTile extends StatelessWidget {
   const _AccountTile({required this.icon, required this.title, required this.subtitle, this.onTap, this.warning = false});
+
   final IconData icon;
   final String title;
   final String subtitle;
