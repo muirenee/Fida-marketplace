@@ -18,6 +18,29 @@ const branchSelect = {
   },
 };
 
+const productSelect = {
+  id: true,
+  name: true,
+  description: true,
+  imageUrl: true,
+  price: true,
+  modifierGroups: {
+    orderBy: [{ sortOrder: 'asc' as const }, { name: 'asc' as const }],
+    select: {
+      id: true,
+      name: true,
+      minSelections: true,
+      maxSelections: true,
+      isRequired: true,
+      options: {
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' as const }, { name: 'asc' as const }],
+        select: { id: true, name: true, priceDelta: true },
+      },
+    },
+  },
+};
+
 export async function marketplaceRoutes(app: FastifyInstance) {
   app.get('/v1/marketplace/merchants', async (request) => {
     const query = (request.query ?? {}) as Record<string, unknown>;
@@ -48,6 +71,8 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         slug: true,
         merchantType: true,
         currency: true,
+        logoUrl: true,
+        coverImageUrl: true,
         minimumOrder: true,
         branches: {
           where: { isActive: true, isAcceptingOrders: true },
@@ -72,6 +97,8 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         slug: true,
         merchantType: true,
         currency: true,
+        logoUrl: true,
+        coverImageUrl: true,
         minimumOrder: true,
         branches: {
           where: { isActive: true, isAcceptingOrders: true },
@@ -87,7 +114,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
             slug: true,
             products: {
               where: { isActive: true, isAvailable: true },
-              select: { id: true, name: true, description: true, price: true },
+              select: productSelect,
               orderBy: { name: 'asc' },
             },
           },
