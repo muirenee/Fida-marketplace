@@ -54,6 +54,22 @@ class _AuthScreenState extends State<AuthScreen> {
     });
   }
 
+  InputDecoration _fieldDecoration({
+    required String hintText,
+    IconData? prefixIcon,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      hintText: hintText,
+      prefixIcon: prefixIcon == null ? null : Icon(prefixIcon, size: 22),
+      suffixIcon: suffixIcon,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      prefixIconConstraints: const BoxConstraints(minWidth: 50, minHeight: 50),
+      suffixIconConstraints: const BoxConstraints(minWidth: 50, minHeight: 50),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -63,11 +79,12 @@ class _AuthScreenState extends State<AuthScreen> {
           backgroundColor: Colors.white,
           body: SafeArea(
             child: CustomScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               slivers: [
                 const SliverToBoxAdapter(child: _FoodHero()),
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 34),
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
                     child: Form(
                       key: _formKey,
                       child: Column(
@@ -75,14 +92,25 @@ class _AuthScreenState extends State<AuthScreen> {
                         children: [
                           Text(
                             _register ? 'Create your Fida account' : 'Welcome to Fida',
-                            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: -1.05),
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.9,
+                              height: 1.08,
+                            ),
                           ),
-                          const SizedBox(height: 7),
+                          const SizedBox(height: 6),
                           Text(
-                            _register ? 'One account for food, groceries and local shopping.' : 'Sign in to order from merchants near you.',
-                            style: const TextStyle(fontSize: 16, color: Colors.black54, height: 1.35),
+                            _register
+                                ? 'One account for food, groceries and local shopping.'
+                                : 'Sign in to order from merchants near you.',
+                            style: const TextStyle(
+                              fontSize: 15.5,
+                              color: Colors.black54,
+                              height: 1.35,
+                            ),
                           ),
-                          const SizedBox(height: 22),
+                          const SizedBox(height: 18),
                           if (_register) ...[
                             Row(
                               children: [
@@ -90,8 +118,11 @@ class _AuthScreenState extends State<AuthScreen> {
                                   child: TextFormField(
                                     controller: _firstName,
                                     textInputAction: TextInputAction.next,
-                                    decoration: const InputDecoration(hintText: 'First name'),
-                                    validator: (value) => (value ?? '').trim().isEmpty ? 'Required' : null,
+                                    textCapitalization: TextCapitalization.words,
+                                    autofillHints: const [AutofillHints.givenName],
+                                    decoration: _fieldDecoration(hintText: 'First name'),
+                                    validator: (value) =>
+                                        (value ?? '').trim().isEmpty ? 'Required' : null,
                                   ),
                                 ),
                                 const SizedBox(width: 10),
@@ -99,91 +130,162 @@ class _AuthScreenState extends State<AuthScreen> {
                                   child: TextFormField(
                                     controller: _lastName,
                                     textInputAction: TextInputAction.next,
-                                    decoration: const InputDecoration(hintText: 'Last name'),
+                                    textCapitalization: TextCapitalization.words,
+                                    autofillHints: const [AutofillHints.familyName],
+                                    decoration: _fieldDecoration(hintText: 'Last name'),
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 10),
                             TextFormField(
                               controller: _phone,
                               keyboardType: TextInputType.phone,
                               textInputAction: TextInputAction.next,
-                              decoration: const InputDecoration(prefixIcon: Icon(Icons.phone_outlined), hintText: '+250 Mobile number'),
+                              autofillHints: const [AutofillHints.telephoneNumber],
+                              decoration: _fieldDecoration(
+                                prefixIcon: Icons.phone_outlined,
+                                hintText: '+250 Mobile number',
+                              ),
                               validator: (value) {
-                                final digits = (value ?? '').replaceAll(RegExp(r'\D'), '');
-                                return digits.length >= 7 && digits.length <= 15 ? null : 'Enter a valid phone number';
+                                final digits =
+                                    (value ?? '').replaceAll(RegExp(r'\D'), '');
+                                return digits.length >= 7 && digits.length <= 15
+                                    ? null
+                                    : 'Enter a valid phone number';
                               },
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 10),
                           ],
                           TextFormField(
                             controller: _email,
                             keyboardType: TextInputType.emailAddress,
                             textInputAction: TextInputAction.next,
                             autocorrect: false,
-                            decoration: const InputDecoration(prefixIcon: Icon(Icons.email_outlined), hintText: 'Email address'),
+                            autofillHints: const [AutofillHints.email],
+                            decoration: _fieldDecoration(
+                              prefixIcon: Icons.email_outlined,
+                              hintText: 'Email address',
+                            ),
                             validator: (value) {
                               final text = (value ?? '').trim();
-                              return text.contains('@') && text.contains('.') ? null : 'Enter a valid email';
+                              return text.contains('@') && text.contains('.')
+                                  ? null
+                                  : 'Enter a valid email';
                             },
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
                           TextFormField(
                             controller: _password,
                             obscureText: _obscure,
                             textInputAction: TextInputAction.done,
+                            autofillHints: _register
+                                ? const [AutofillHints.newPassword]
+                                : const [AutofillHints.password],
                             onFieldSubmitted: (_) => _submit(),
-                            decoration: InputDecoration(
-                              prefixIcon: const Icon(Icons.lock_outline_rounded),
+                            decoration: _fieldDecoration(
+                              prefixIcon: Icons.lock_outline_rounded,
                               hintText: 'Password',
                               suffixIcon: IconButton(
-                                onPressed: () => setState(() => _obscure = !_obscure),
-                                icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                                tooltip: _obscure ? 'Show password' : 'Hide password',
+                                onPressed: () =>
+                                    setState(() => _obscure = !_obscure),
+                                icon: Icon(
+                                  _obscure
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined,
+                                  size: 23,
+                                ),
                               ),
                             ),
-                            validator: (value) => (value ?? '').length < 8 ? 'Use at least 8 characters' : null,
+                            validator: (value) => (value ?? '').length < 8
+                                ? 'Use at least 8 characters'
+                                : null,
                           ),
                           if (widget.session.error != null) ...[
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 10),
                             Container(
                               padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(color: const Color(0xFFFFECEC), borderRadius: BorderRadius.circular(12)),
-                              child: Text(widget.session.error!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w600)),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFECEC),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                widget.session.error!,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
                           ],
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 14),
                           SizedBox(
-                            height: 58,
+                            height: 54,
                             child: FilledButton(
                               onPressed: widget.session.busy ? null : _submit,
                               child: widget.session.busy
-                                  ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                  : Text(_register ? 'Create account' : 'Continue', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                                  ? const SizedBox.square(
+                                      dimension: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : Text(
+                                      _register ? 'Create account' : 'Continue',
+                                      style: const TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
                             ),
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 15),
                           Row(
                             children: [
                               const Expanded(child: Divider()),
-                              Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text(_register ? 'already registered?' : 'or', style: const TextStyle(color: Colors.black54))),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
+                                child: Text(
+                                  _register ? 'already registered?' : 'or',
+                                  style: const TextStyle(color: Colors.black54),
+                                ),
+                              ),
                               const Expanded(child: Divider()),
                             ],
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 12),
                           SizedBox(
-                            height: 56,
+                            height: 52,
                             child: FilledButton.tonal(
-                              onPressed: widget.session.busy ? null : _toggleMode,
-                              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFF1F1F1), foregroundColor: Colors.black),
-                              child: Text(_register ? 'Sign in instead' : 'Create a Fida account', style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800)),
+                              onPressed:
+                                  widget.session.busy ? null : _toggleMode,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFF2F2F2),
+                                foregroundColor: Colors.black,
+                              ),
+                              child: Text(
+                                _register
+                                    ? 'Sign in instead'
+                                    : 'Create a Fida account',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 16),
                           const Text(
                             'By continuing, you agree to Fida Marketplace terms and privacy policy.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 12.5, color: Colors.black54, height: 1.4),
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.black54,
+                              height: 1.35,
+                            ),
                           ),
                         ],
                       ),
@@ -205,33 +307,52 @@ class _FoodHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 270,
+      height: 220,
       child: Stack(
+        clipBehavior: Clip.hardEdge,
         children: [
           Positioned.fill(
             child: Container(
               decoration: const BoxDecoration(
-                gradient: LinearGradient(colors: [Color(0xFFF8F7F2), Color(0xFFF0F7F2)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
+                gradient: LinearGradient(
+                  colors: [Color(0xFFFBFAF6), Color(0xFFF1F7F2)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
               ),
             ),
           ),
-          const Positioned(left: -14, top: 54, child: _FoodBubble(emoji: '🍕', size: 90, angle: -.18)),
-          const Positioned(left: 152, top: 56, child: _FoodBubble(emoji: '🍔', size: 112)),
-          const Positioned(right: -14, top: 74, child: _FoodBubble(emoji: '🥑', size: 94, angle: .15)),
-          const Positioned(left: 20, bottom: 26, child: _FoodBubble(emoji: '🥗', size: 98, angle: -.08)),
-          const Positioned(right: 36, bottom: 12, child: _FoodBubble(emoji: '🌮', size: 102, angle: .1)),
-          const Positioned(left: 118, top: 88, child: _OfferBadge()),
-          const Positioned(right: 78, top: 42, child: _OfferBadge()),
-          Positioned(
-            top: 18,
+          const Positioned(
+            left: -16,
+            top: 74,
+            child: _FoodBubble(emoji: '🍕', size: 76, angle: -.16),
+          ),
+          const Positioned(
+            left: 144,
+            top: 58,
+            child: _FoodBubble(emoji: '🍔', size: 92),
+          ),
+          const Positioned(
+            right: -10,
+            top: 74,
+            child: _FoodBubble(emoji: '🥑', size: 78, angle: .12),
+          ),
+          const Positioned(
+            left: 26,
+            bottom: 16,
+            child: _FoodBubble(emoji: '🥗', size: 82, angle: -.07),
+          ),
+          const Positioned(
+            right: 38,
+            bottom: 8,
+            child: _FoodBubble(emoji: '🌮', size: 84, angle: .08),
+          ),
+          const Positioned(left: 116, top: 101, child: _OfferBadge()),
+          const Positioned(right: 82, top: 39, child: _OfferBadge()),
+          const Positioned(
             left: 20,
-            child: Container(
-              width: 46,
-              height: 46,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(13)),
-              child: const Text('F', style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900)),
-            ),
+            top: 16,
+            child: _BrandLockup(),
           ),
         ],
       ),
@@ -239,8 +360,64 @@ class _FoodHero extends StatelessWidget {
   }
 }
 
+class _BrandLockup extends StatelessWidget {
+  const _BrandLockup();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: const Text(
+            'F',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 23,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const SizedBox(width: 9),
+        const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'FIDA',
+              style: TextStyle(
+                fontSize: 14,
+                height: 1,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.5,
+              ),
+            ),
+            SizedBox(height: 3),
+            Text(
+              'Marketplace',
+              style: TextStyle(
+                fontSize: 10.5,
+                height: 1,
+                color: Colors.black54,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class _FoodBubble extends StatelessWidget {
   const _FoodBubble({required this.emoji, required this.size, this.angle = 0});
+
   final String emoji;
   final double size;
   final double angle;
@@ -253,8 +430,19 @@ class _FoodBubble extends StatelessWidget {
         width: size,
         height: size,
         alignment: Alignment.center,
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(size * .34), boxShadow: const [BoxShadow(blurRadius: 15, color: Color(0x11000000))]),
-        child: Text(emoji, style: TextStyle(fontSize: size * .55)),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .96),
+          borderRadius: BorderRadius.circular(size * .32),
+          border: Border.all(color: const Color(0x0D000000)),
+          boxShadow: const [
+            BoxShadow(
+              blurRadius: 18,
+              offset: Offset(0, 6),
+              color: Color(0x12000000),
+            ),
+          ],
+        ),
+        child: Text(emoji, style: TextStyle(fontSize: size * .52)),
       ),
     );
   }
@@ -266,11 +454,28 @@ class _OfferBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 34,
-      height: 34,
+      width: 30,
+      height: 30,
       alignment: Alignment.center,
-      decoration: BoxDecoration(color: const Color(0xFFE31C46), borderRadius: BorderRadius.circular(9)),
-      child: const Text('%', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE31C46),
+        borderRadius: BorderRadius.circular(9),
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 10,
+            offset: Offset(0, 4),
+            color: Color(0x1FE31C46),
+          ),
+        ],
+      ),
+      child: const Text(
+        '%',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
     );
   }
 }
