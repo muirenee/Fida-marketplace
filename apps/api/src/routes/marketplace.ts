@@ -46,6 +46,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     const query = (request.query ?? {}) as Record<string, unknown>;
     const city = typeof query.city === 'string' ? query.city.trim() : '';
     const requestedType = typeof query.type === 'string' ? query.type.toUpperCase() : '';
+    const now = new Date();
 
     const where: Prisma.TenantWhereInput = {
       status: TenantStatus.ACTIVE,
@@ -74,9 +75,34 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         logoUrl: true,
         coverImageUrl: true,
         minimumOrder: true,
+        defaultDeliveryFee: true,
         branches: {
-          where: { isActive: true, isAcceptingOrders: true },
+          where: {
+            isActive: true,
+            isAcceptingOrders: true,
+            ...(city ? { city: { equals: city, mode: 'insensitive' } } : {}),
+          },
           select: branchSelect,
+        },
+        promotions: {
+          where: {
+            isActive: true,
+            AND: [
+              { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+              { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
+            ],
+          },
+          select: {
+            code: true,
+            type: true,
+            value: true,
+            minimumOrder: true,
+            maxDiscount: true,
+            usageLimit: true,
+            usageCount: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 3,
         },
       },
       orderBy: { name: 'asc' },
@@ -100,6 +126,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         logoUrl: true,
         coverImageUrl: true,
         minimumOrder: true,
+        defaultDeliveryFee: true,
         branches: {
           where: { isActive: true, isAcceptingOrders: true },
           select: branchSelect,
