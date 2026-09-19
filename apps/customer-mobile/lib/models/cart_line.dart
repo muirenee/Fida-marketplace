@@ -33,7 +33,7 @@ class CartLine {
   int quantity;
   final List<CartModifierSelection> modifiers;
 
-  double get modifierUnitTotal => modifiers.fold(0, (sum, item) => sum + item.priceDelta);
+  double get modifierUnitTotal => modifiers.fold<double>(0, (sum, item) => sum + item.priceDelta);
   double get unitPrice => basePrice + modifierUnitTotal;
   double get lineTotal => unitPrice * quantity;
 
