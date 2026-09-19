@@ -81,7 +81,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       });
       if (_nearbyOnly) await _load();
     } catch (_) {
-      // The marketplace remains usable even if saved locations cannot be loaded.
+      // Marketplace remains usable when saved locations cannot be loaded.
     }
   }
 
@@ -110,9 +110,12 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     final query = _query.trim().toLowerCase();
     final rows = _merchants.where((merchant) {
       final branches = merchant['branches'] as List? ?? const [];
-      if (_pickupOnly && !branches.any((branch) => branch is Map && branch['pickupEnabled'] == true)) return false;
+      if (_pickupOnly && !branches.any((branch) => branch is Map && branch['pickupEnabled'] == true)) {
+        return false;
+      }
       if (_offersOnly && _eligiblePromotions(merchant).isEmpty) return false;
       if (query.isEmpty) return true;
+
       final searchable = <Object?>[
         merchant['name'],
         merchant['merchantType'],
@@ -132,6 +135,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   }
 
   Future<void> _selectType(String? value) async {
+    if (_type == value) return;
     setState(() => _type = value);
     await _load();
   }
@@ -235,18 +239,18 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       ..sort((a, b) => _eligiblePromotions(b).length.compareTo(_eligiblePromotions(a).length));
     final featuredRows = featured.take(8).toList();
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        await Future.wait([_load(), _loadAddresses()]);
-      },
-      child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverToBoxAdapter(
-            child: SafeArea(
-              bottom: false,
+    return SafeArea(
+      bottom: false,
+      child: RefreshIndicator(
+        onRefresh: () async {
+          await Future.wait([_load(), _loadAddresses()]);
+        },
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -321,140 +325,177 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                               ),
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    SizedBox(
-                      height: 86,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          _CategoryButton(
-                            label: 'All',
-                            icon: Icons.apps_rounded,
-                            selected: _type == null,
-                            onTap: () => _selectType(null),
-                          ),
-                          for (final entry in _categories.entries)
-                            _CategoryButton(
-                              label: entry.value.label,
-                              icon: entry.value.icon,
-                              selected: _type == entry.key,
-                              onTap: () => _selectType(entry.key),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      height: 42,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          _FilterChip(
-                            label: 'Offers',
-                            icon: Icons.local_offer_outlined,
-                            selected: _offersOnly,
-                            onTap: () => setState(() => _offersOnly = !_offersOnly),
-                          ),
-                          if (!_pickupOnly)
-                            _FilterChip(
-                              label: 'Lowest fee',
-                              icon: Icons.delivery_dining_outlined,
-                              selected: _sortByDeliveryFee,
-                              onTap: () => setState(() => _sortByDeliveryFee = !_sortByDeliveryFee),
-                            ),
-                          _FilterChip(
-                            label: 'Nearby',
-                            icon: Icons.near_me_outlined,
-                            selected: _nearbyOnly,
-                            onTap: _toggleNearby,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
                   ],
                 ),
               ),
             ),
-          ),
-          if (_loading)
-            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator()))
-          else if (_error != null)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.cloud_off_outlined, size: 48),
-                      const SizedBox(height: 12),
-                      Text(_error!, textAlign: TextAlign.center),
-                      const SizedBox(height: 14),
-                      FilledButton(onPressed: _load, child: const Text('Retry')),
-                    ],
-                  ),
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _StickyCategoryHeaderDelegate(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    _CategoryButton(
+                      label: 'All',
+                      icon: Icons.apps_rounded,
+                      selected: _type == null,
+                      onTap: () => _selectType(null),
+                    ),
+                    for (final entry in _categories.entries)
+                      _CategoryButton(
+                        label: entry.value.label,
+                        icon: entry.value.icon,
+                        selected: _type == entry.key,
+                        onTap: () => _selectType(entry.key),
+                      ),
+                  ],
                 ),
               ),
-            )
-          else if (merchants.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(28, 28, 28, 140),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                child: SizedBox(
+                  height: 42,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
                     children: [
-                      const Icon(Icons.storefront_outlined, size: 52),
-                      const SizedBox(height: 12),
-                      Text(
-                        _query.isEmpty ? 'No merchants are available for these filters yet.' : 'No merchants match “$_query”.',
-                        textAlign: TextAlign.center,
+                      _FilterChip(
+                        label: 'Offers',
+                        icon: Icons.local_offer_outlined,
+                        selected: _offersOnly,
+                        onTap: () => setState(() => _offersOnly = !_offersOnly),
+                      ),
+                      if (!_pickupOnly)
+                        _FilterChip(
+                          label: 'Lowest fee',
+                          icon: Icons.delivery_dining_outlined,
+                          selected: _sortByDeliveryFee,
+                          onTap: () => setState(() => _sortByDeliveryFee = !_sortByDeliveryFee),
+                        ),
+                      _FilterChip(
+                        label: 'Nearby',
+                        icon: Icons.near_me_outlined,
+                        selected: _nearbyOnly,
+                        onTap: _toggleNearby,
                       ),
                     ],
                   ),
                 ),
               ),
-            )
-          else ...[
-            const SliverToBoxAdapter(child: _SectionHeader(title: 'Featured on Fida')),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 232,
-                child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  scrollDirection: Axis.horizontal,
-                  itemCount: featuredRows.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
-                  itemBuilder: (context, index) => _FeaturedMerchantCard(
-                    merchant: featuredRows[index],
-                    onTap: () => _openMerchant(featuredRows[index]),
+            ),
+            if (_loading)
+              const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator()))
+            else if (_error != null)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.cloud_off_outlined, size: 48),
+                        const SizedBox(height: 12),
+                        Text(_error!, textAlign: TextAlign.center),
+                        const SizedBox(height: 14),
+                        FilledButton(onPressed: _load, child: const Text('Retry')),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else if (merchants.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(28, 28, 28, 140),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.storefront_outlined, size: 52),
+                        const SizedBox(height: 12),
+                        Text(
+                          _query.isEmpty ? 'No merchants are available for these filters yet.' : 'No merchants match “$_query”.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else ...[
+              const SliverToBoxAdapter(child: _SectionHeader(title: 'Featured on Fida')),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 232,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: featuredRows.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) => _FeaturedMerchantCard(
+                      merchant: featuredRows[index],
+                      onTap: () => _openMerchant(featuredRows[index]),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 22)),
-            SliverToBoxAdapter(
-              child: _SectionHeader(title: _pickupOnly ? 'Popular for pickup' : (_nearbyOnly ? 'Nearby merchants' : 'Popular near you')),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 160),
-              sliver: SliverList.separated(
-                itemCount: merchants.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 24),
-                itemBuilder: (context, index) => _MerchantCard(
-                  merchant: merchants[index],
-                  onTap: () => _openMerchant(merchants[index]),
+              const SliverToBoxAdapter(child: SizedBox(height: 22)),
+              SliverToBoxAdapter(
+                child: _SectionHeader(
+                  title: _pickupOnly ? 'Popular for pickup' : (_nearbyOnly ? 'Nearby merchants' : 'Popular near you'),
                 ),
               ),
-            ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 180),
+                sliver: SliverList.separated(
+                  itemCount: merchants.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 24),
+                  itemBuilder: (context, index) => _MerchantCard(
+                    merchant: merchants[index],
+                    onTap: () => _openMerchant(merchants[index]),
+                  ),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
+}
+
+class _StickyCategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
+  const _StickyCategoryHeaderDelegate({required this.child});
+
+  final Widget child;
+
+  @override
+  double get minExtent => 98;
+
+  @override
+  double get maxExtent => 98;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: overlapsContent
+            ? const [BoxShadow(color: Color(0x14000000), blurRadius: 8, offset: Offset(0, 3))]
+            : const [],
+      ),
+      child: child,
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _StickyCategoryHeaderDelegate oldDelegate) => oldDelegate.child != child;
 }
 
 class _ModeTab extends StatelessWidget {
@@ -637,6 +678,7 @@ class _MerchantCard extends StatelessWidget {
     final location = [branch?['name'], branch?['city']]
         .where((value) => value != null && '$value'.trim().isNotEmpty)
         .join(' · ');
+
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: onTap,
@@ -751,7 +793,9 @@ class _FallbackMerchantImage extends StatelessWidget {
               child: Image.network(
                 logo,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Center(child: Text(initial, style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w900))),
+                errorBuilder: (_, __, ___) => Center(
+                  child: Text(initial, style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w900)),
+                ),
               ),
             )
           : Column(
@@ -844,7 +888,9 @@ double _merchantDeliveryFee(Map<String, dynamic> merchant) {
 }
 
 String _deliverySummary(Map<String, dynamic>? branch, Map<String, dynamic> merchant) {
-  if (branch == null) return merchant['merchantType']?.toString().replaceAll('_', ' ').toLowerCase() ?? 'Merchant';
+  if (branch == null) {
+    return merchant['merchantType']?.toString().replaceAll('_', ' ').toLowerCase() ?? 'Merchant';
+  }
   final pickup = branch['pickupEnabled'] == true;
   final delivery = branch['deliveryEnabled'] == true;
   if (delivery) {
