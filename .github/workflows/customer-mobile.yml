@@ -6,11 +6,13 @@ on:
     paths:
       - 'apps/customer-mobile/**'
       - 'scripts/configure_flutter_android_signing.py'
+      - 'scripts/configure_fida_android_branding.sh'
       - '.github/workflows/customer-mobile.yml'
   pull_request:
     paths:
       - 'apps/customer-mobile/**'
       - 'scripts/configure_flutter_android_signing.py'
+      - 'scripts/configure_fida_android_branding.sh'
       - '.github/workflows/customer-mobile.yml'
 
 jobs:
@@ -43,6 +45,10 @@ jobs:
             sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
           fi
           sed -i '/<application/i\\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' android/app/src/main/AndroidManifest.xml
+
+      - name: Apply Fida Android branding
+        working-directory: apps/customer-mobile
+        run: bash ../../scripts/configure_fida_android_branding.sh android/app
 
       - name: Ensure release network permission
         working-directory: apps/customer-mobile
