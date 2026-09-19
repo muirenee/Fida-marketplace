@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'api_client.dart';
@@ -17,6 +19,7 @@ class SessionController extends ChangeNotifier {
     try {
       await api.restoreSession();
       user = await api.me();
+      if (user != null) unawaited(api.startPush());
       if (user == null && api.hasSession) await api.clearSession();
     } catch (_) {
       user = null;
@@ -32,6 +35,8 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
     try {
       user = await api.login(email.trim(), password);
+      unawaited(api.startPush());
+      unawaited(api.startPush());
       return true;
     } on ApiException catch (e) {
       error = e.message;
@@ -63,6 +68,7 @@ class SessionController extends ChangeNotifier {
         phone: phone.trim(),
         password: password,
       );
+      unawaited(api.startPush());
       return true;
     } on ApiException catch (e) {
       error = e.message;
@@ -82,6 +88,7 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
     try {
       user = await api.updatePhone(phone.trim());
+      unawaited(api.startPush());
       return true;
     } on ApiException catch (e) {
       error = e.message;

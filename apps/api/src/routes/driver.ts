@@ -1,3 +1,6 @@
+import { planStops, type Stop } from '../lib/route-plan.js';
+import { enqueueOrder } from '../lib/notifications.js';
+import { recordCompletion } from '../lib/finance.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   DeliveryOperatorType,
@@ -21,12 +24,12 @@ async function requireDriver(request: FastifyRequest, reply: FastifyReply) {
     where: { userId: request.authUser!.id },
     include: {
       user: { select: { firstName: true, lastName: true, phone: true, email: true } },
-      operator: true,
+      operator: { include: { tenant: { select: { status: true } } } },
       branch: { select: { id: true, name: true, city: true } },
     },
   });
 
-  if (!driver || !driver.isActive || !driver.operatorId || !driver.operator?.isActive) {
+  if (!driver || !driver.isActive || !driver.operatorId || !driver.operator?.isActive || (driver.operator.tenant && driver.operator.tenant.status !== 'ACTIVE')) {
     reply.code(403).send({
       error: 'driver_not_enrolled',
       message: 'This account is not enrolled by an active merchant delivery operation.',
@@ -83,6 +86,21 @@ const deliveryTransitions: Partial<Record<DeliveryStatus, DeliveryStatus[]>> = {
 };
 
 export async function driverRoutes(app: FastifyInstance) {
+  // PIN is customer-only, including nested order payloads.
+  app.addHook('preSerialization', async (_req, _reply, payload) => JSON.parse(JSON.stringify(payload, (key, value) => key === 'deliveryPin' || key === 'passwordHash' ? undefined : value)));
+
+  app.get('/v1/driver/route', async(request,reply)=>{
+    const driver=await requireDriver(request,reply);if(!driver)return;
+    const deliveries=await prisma.delivery.findMany({where:{driverId:driver.id,status:{in:['ASSIGNED','AT_PICKUP','PICKED_UP','AT_DROPOFF']}},include:{order:{include:{branch:true}}}});
+    const stops:Stop[]=[];
+    for(const d of deliveries){
+      const o=d.order,b=o.branch;
+      if(['ASSIGNED','AT_PICKUP'].includes(d.status))stops.push({deliveryId:d.id,kind:'PICKUP',orderNumber:o.orderNumber,address:[b.addressLine,b.city].filter(Boolean).join(', '),latitude:b.latitude===null?null:Number(b.latitude),longitude:b.longitude===null?null:Number(b.longitude)});
+      stops.push({deliveryId:d.id,kind:'DROPOFF',orderNumber:o.orderNumber,address:o.deliveryAddress??'',latitude:o.deliveryLatitude===null?null:Number(o.deliveryLatitude),longitude:o.deliveryLongitude===null?null:Number(o.deliveryLongitude)});
+    }
+    return {method:'nearest-stop',stops:planStops(stops,driver.latitude===null?null:Number(driver.latitude),driver.longitude===null?null:Number(driver.longitude))};
+  });
+
   app.get('/v1/driver/profile', async (request, reply) => {
     const driver = await requireDriver(request, reply);
     if (!driver) return;
@@ -221,11 +239,19 @@ export async function driverRoutes(app: FastifyInstance) {
     if (!delivery) return reply.code(409).send({ error: 'delivery_unavailable' });
 
     const result = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT 1 FROM "Driver" WHERE id = ${driver.id} FOR UPDATE`;
+      const currentDriver = await tx.driver.findUniqueOrThrow({ where: { id: driver.id } });
+      if (!currentDriver.isActive || !currentDriver.isOnline || !currentDriver.isAvailable) throw Object.assign(new Error('Driver is unavailable.'), { statusCode: 409 });
+      if (currentDriver.branchId !== driver.branchId || currentDriver.operatorId !== driver.operatorId) throw Object.assign(new Error('Driver assignment changed. Refresh and retry.'), { statusCode: 409 });
+      const active = await tx.delivery.count({ where: { driverId: driver.id, status: { in: ['ASSIGNED','AT_PICKUP','PICKED_UP','AT_DROPOFF'] } } });
+      if (active >= currentDriver.maxConcurrentOrders) throw Object.assign(new Error('Delivery capacity reached. Complete a delivery first.'), { statusCode: 409 });
       const claimed = await tx.delivery.updateMany({
         where: { id: delivery.id, driverId: null, status: DeliveryStatus.UNASSIGNED },
         data: { driverId: driver.id, operatorId: driver.operatorId, status: DeliveryStatus.ASSIGNED, assignedAt: new Date() },
       });
       if (claimed.count !== 1) return null;
+      const claimedDelivery = await tx.delivery.findUniqueOrThrow({ where: { id: delivery.id } });
+      await enqueueOrder(tx, claimedDelivery.orderId, 'DRIVER_ASSIGNED');
 
       await tx.driver.update({ where: { id: driver.id }, data: { lastSeenAt: new Date() } });
       return tx.delivery.findUnique({
@@ -251,7 +277,7 @@ export async function driverRoutes(app: FastifyInstance) {
 
     const delivery = await prisma.delivery.findFirst({
       where: { id: deliveryId, driverId: driver.id },
-      select: { id: true, orderId: true, status: true },
+      select: { id: true, orderId: true, status: true, order: { select: { deliveryPin: true } } },
     });
     if (!delivery) return reply.code(404).send({ error: 'delivery_not_found' });
 
@@ -261,6 +287,7 @@ export async function driverRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: 'invalid_delivery_transition', currentStatus: delivery.status, allowed });
     }
 
+    if (nextStatus === DeliveryStatus.DELIVERED && delivery.order.deliveryPin && String(body.pin ?? '') !== delivery.order.deliveryPin) return reply.code(400).send({ error: 'delivery_pin_required', message: 'Ask the customer for their four-digit delivery PIN.' });
     const now = new Date();
     const orderStatus =
       nextStatus === DeliveryStatus.PICKED_UP
@@ -272,8 +299,8 @@ export async function driverRoutes(app: FastifyInstance) {
             : null;
 
     const updated = await prisma.$transaction(async (tx) => {
-      const changed = await tx.delivery.update({
-        where: { id: delivery.id },
+      const changed = await tx.delivery.updateMany({
+        where: { id: delivery.id, driverId: driver.id, status: delivery.status },
         data: {
           status: nextStatus,
           ...(nextStatus === DeliveryStatus.PICKED_UP ? { pickedUpAt: now } : {}),
@@ -281,6 +308,9 @@ export async function driverRoutes(app: FastifyInstance) {
         },
       });
 
+      if (!changed.count) throw Object.assign(new Error('Delivery changed. Refresh and retry.'), { statusCode: 409 });
+      await enqueueOrder(tx, delivery.orderId, nextStatus);
+      if (nextStatus === DeliveryStatus.DELIVERED) await recordCompletion(tx, delivery.orderId);
       if (orderStatus) await tx.order.update({ where: { id: delivery.orderId }, data: { status: orderStatus } });
 
       if (nextStatus === DeliveryStatus.DELIVERED) {
@@ -290,7 +320,7 @@ export async function driverRoutes(app: FastifyInstance) {
         });
         await tx.driver.update({ where: { id: driver.id }, data: { lastSeenAt: now } });
       }
-      return changed;
+      return tx.delivery.findUniqueOrThrow({ where: { id: delivery.id } });
     });
 
     return updated;

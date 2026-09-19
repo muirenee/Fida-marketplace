@@ -100,6 +100,7 @@ model Tenant {
   activatedAt               DateTime?
   createdAt                 DateTime     @default(now())
   updatedAt                 DateTime     @updatedAt
+  taxPercent                Decimal      @default(0) @db.Decimal(5, 2)
   branches                  Branch[]
   memberships               TenantMembership[]
   categories                Category[]
@@ -171,6 +172,8 @@ model Branch {
   pickupEnabled     Boolean       @default(true)
   deliveryEnabled   Boolean       @default(true)
   logisticsMode     LogisticsMode @default(MERCHANT)
+  openingHours      Json?
+  closedUntil       DateTime?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -203,6 +206,7 @@ model Category {
   name      String
   slug      String
   sortOrder Int      @default(0)
+  deletedAt DateTime?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -218,6 +222,9 @@ model Product {
   categoryId  String?
   name        String
   description String?
+  imageUrl    String?
+  options     Json?
+  deletedAt   DateTime?
   sku         String?
   price       Decimal   @db.Decimal(12, 2)
   isActive    Boolean   @default(true)
@@ -252,6 +259,11 @@ model CustomerAddress {
 model Order {
   id                        String          @id @default(cuid())
   orderNumber               String          @unique
+  scheduledFor              DateTime?
+  deliveryPin               String?
+  tax                       Decimal         @default(0) @db.Decimal(12, 2)
+  promoCode                 String?
+  checkoutKey               String?         @unique
   tenantId                  String
   branchId                  String
   customerId                String
@@ -316,6 +328,10 @@ model Driver {
   userId      String            @unique
   operatorId  String?
   branchId    String?
+  displayName String?
+  vehiclePlate String?
+  vehicleType String @default("MOTORCYCLE")
+  maxConcurrentOrders Int @default(3)
   isActive    Boolean           @default(true)
   isOnline    Boolean           @default(false)
   isAvailable Boolean           @default(false)
@@ -372,4 +388,114 @@ model AdminAuditEvent {
   @@index([targetType, targetId, createdAt])
   @@index([tenantId, createdAt])
   @@index([action, createdAt])
+}
+
+
+model DeviceToken {
+  id        String @id @default(cuid())
+  userId    String
+  token     String @unique
+  app       String
+  updatedAt DateTime @updatedAt
+  @@index([userId, app])
+}
+
+model NotificationEvent {
+  id        String @id @default(cuid())
+  eventKey  String @unique
+  orderId   String
+  status    String
+  attempts  Int @default(0)
+  sentAt    DateTime?
+  nextAttemptAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  @@index([sentAt, nextAttemptAt])
+}
+
+model Favorite {
+  userId String
+  tenantId String
+  createdAt DateTime @default(now())
+  @@id([userId, tenantId])
+}
+
+model Review {
+  id String @id @default(cuid())
+  orderId String @unique
+  customerId String
+  tenantId String
+  rating Int
+  comment String?
+  createdAt DateTime @default(now())
+  @@index([tenantId, createdAt])
+}
+
+model SupportCase {
+  id String @id @default(cuid())
+  orderId String
+  tenantId String
+  userId String
+  subject String
+  description String
+  status String @default("OPEN")
+  resolution String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([tenantId, status])
+  @@index([userId, createdAt])
+}
+
+model Promotion {
+  id String @id @default(cuid())
+  tenantId String
+  code String
+  percent Int
+  minimumOrder Decimal @default(0) @db.Decimal(12, 2)
+  maxDiscount Decimal @db.Decimal(12, 2)
+  maxUses Int @default(100)
+  usedCount Int @default(0)
+  isActive Boolean @default(true)
+  expiresAt DateTime
+  @@unique([tenantId, code])
+}
+
+model PaymentAttempt {
+  id String @id @default(cuid())
+  orderId String @unique
+  customerId String
+  reference String @unique
+  provider String
+  status String @default("PENDING")
+  checkoutUrl String?
+  providerTransactionId String? @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FinanceEntry {
+  id String @id @default(cuid())
+  tenantId String
+  orderId String?
+  kind String
+  amount Decimal @db.Decimal(12, 2)
+  reference String @unique
+  note String?
+  actorId String?
+  createdAt DateTime @default(now())
+  @@index([tenantId, createdAt])
+}
+
+model RefundRequest {
+ id String @id @default(cuid())
+ orderId String @unique
+ tenantId String
+ customerId String
+ amount Decimal @db.Decimal(12, 2)
+ reason String
+ status String @default("REQUESTED")
+ resolution String?
+ externalReference String? @unique
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ @@index([tenantId, status])
 }

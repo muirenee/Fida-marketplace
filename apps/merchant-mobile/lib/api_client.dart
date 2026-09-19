@@ -1,3 +1,5 @@
+import 'package:fida_mobile_common/fida_mobile_common.dart';
+
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -12,6 +14,7 @@ class MerchantApiException implements Exception {
 }
 
 class MerchantApiClient {
+  final push = FidaPush();
   MerchantApiClient();
 
   static const baseUrl = String.fromEnvironment(
@@ -27,17 +30,22 @@ class MerchantApiClient {
   String? _refresh;
 
   Uri _uri(String path, [Map<String, String>? query]) {
-    final root = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final root = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
     return Uri.parse('$root$path').replace(queryParameters: query);
   }
 
-  dynamic _json(http.Response response) => response.body.isEmpty ? null : jsonDecode(response.body);
+  dynamic _json(http.Response response) =>
+      response.body.isEmpty ? null : jsonDecode(response.body);
 
   MerchantApiException _error(http.Response response) {
     try {
       final data = _json(response);
       if (data is Map) {
-        return MerchantApiException((data['message'] ?? data['error'] ?? 'Request failed').toString());
+        return MerchantApiException(
+          (data['message'] ?? data['error'] ?? 'Request failed').toString(),
+        );
       }
     } catch (_) {}
     return MerchantApiException('Request failed (${response.statusCode})');
@@ -80,27 +88,56 @@ class MerchantApiClient {
     final request = http.Request(method, _uri(path, query));
     request.headers['accept'] = 'application/json';
     request.headers['content-type'] = 'application/json';
-    if (authenticated && _access != null) request.headers['authorization'] = 'Bearer $_access';
+    if (authenticated && _access != null)
+      request.headers['authorization'] = 'Bearer $_access';
     if (tenantId != null) request.headers['x-tenant-id'] = tenantId;
     if (body != null) request.body = jsonEncode(body);
-    final response = await http.Response.fromStream(await _client.send(request));
-    if (response.statusCode == 401 && authenticated && retry && await refresh()) {
-      return _send(method, path, body: body, tenantId: tenantId, query: query, authenticated: authenticated, retry: false);
+    final response = await http.Response.fromStream(
+      await _client.send(request),
+    );
+    if (response.statusCode == 401 &&
+        authenticated &&
+        retry &&
+        await refresh()) {
+      return _send(
+        method,
+        path,
+        body: body,
+        tenantId: tenantId,
+        query: query,
+        authenticated: authenticated,
+        retry: false,
+      );
     }
     return response;
   }
 
   Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await _send('POST', '/v1/auth/login', authenticated: false, body: {'email': email, 'password': password});
+    final response = await _send(
+      'POST',
+      '/v1/auth/login',
+      authenticated: false,
+      body: {'email': email, 'password': password},
+    );
     if (response.statusCode != 200) throw _error(response);
     final data = (_json(response) as Map).cast<String, dynamic>();
     await _save(data);
     return (data['user'] as Map).cast<String, dynamic>();
   }
 
-  Future<bool> refresh() async {
+  Future<bool>? _refreshing;
+  Future<bool> refresh() =>
+      _refreshing ??= _doRefresh().whenComplete(() => _refreshing = null);
+
+  Future<bool> _doRefresh() async {
     if (_refresh == null) return false;
-    final response = await _send('POST', '/v1/auth/refresh', authenticated: false, retry: false, body: {'refreshToken': _refresh});
+    final response = await _send(
+      'POST',
+      '/v1/auth/refresh',
+      authenticated: false,
+      retry: false,
+      body: {'refreshToken': _refresh},
+    );
     if (response.statusCode != 200) {
       await clear();
       return false;
@@ -119,7 +156,9 @@ class MerchantApiClient {
   Future<List<Map<String, dynamic>>> tenants() async {
     final response = await _send('GET', '/v1/tenants');
     if (response.statusCode != 200) throw _error(response);
-    return (_json(response) as List).map((row) => (row as Map).cast<String, dynamic>()).toList();
+    return (_json(response) as List)
+        .map((row) => (row as Map).cast<String, dynamic>())
+        .toList();
   }
 
   Future<Map<String, dynamic>> createTenant({
@@ -139,7 +178,8 @@ class MerchantApiClient {
         'merchantType': merchantType,
         'branchName': branchName,
         if (city != null && city.trim().isNotEmpty) 'city': city.trim(),
-        if (addressLine != null && addressLine.trim().isNotEmpty) 'addressLine': addressLine.trim(),
+        if (addressLine != null && addressLine.trim().isNotEmpty)
+          'addressLine': addressLine.trim(),
         'currency': currency,
         'timezone': timezone,
       },
@@ -150,15 +190,25 @@ class MerchantApiClient {
   }
 
   Future<Map<String, dynamic>> context(String tenantId) async {
-    final response = await _send('GET', '/v1/merchant/context', tenantId: tenantId);
+    final response = await _send(
+      'GET',
+      '/v1/merchant/context',
+      tenantId: tenantId,
+    );
     if (response.statusCode != 200) throw _error(response);
     return (_json(response) as Map).cast<String, dynamic>();
   }
 
   Future<List<Map<String, dynamic>>> fulfillment(String tenantId) async {
-    final response = await _send('GET', '/v1/merchant/fulfillment', tenantId: tenantId);
+    final response = await _send(
+      'GET',
+      '/v1/merchant/fulfillment',
+      tenantId: tenantId,
+    );
     if (response.statusCode != 200) throw _error(response);
-    return (_json(response) as List).map((row) => (row as Map).cast<String, dynamic>()).toList();
+    return (_json(response) as List)
+        .map((row) => (row as Map).cast<String, dynamic>())
+        .toList();
   }
 
   Future<Map<String, dynamic>> updateBranchFulfillment(
@@ -198,13 +248,21 @@ class MerchantApiClient {
       body: {'zones': zones},
     );
     if (response.statusCode != 200) throw _error(response);
-    return (_json(response) as List).map((row) => (row as Map).cast<String, dynamic>()).toList();
+    return (_json(response) as List)
+        .map((row) => (row as Map).cast<String, dynamic>())
+        .toList();
   }
 
   Future<List<Map<String, dynamic>>> drivers(String tenantId) async {
-    final response = await _send('GET', '/v1/merchant/drivers', tenantId: tenantId);
+    final response = await _send(
+      'GET',
+      '/v1/merchant/drivers',
+      tenantId: tenantId,
+    );
     if (response.statusCode != 200) throw _error(response);
-    return (_json(response) as List).map((row) => (row as Map).cast<String, dynamic>()).toList();
+    return (_json(response) as List)
+        .map((row) => (row as Map).cast<String, dynamic>())
+        .toList();
   }
 
   Future<Map<String, dynamic>> enrollDriver(
@@ -221,7 +279,8 @@ class MerchantApiClient {
         if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
       },
     );
-    if (response.statusCode != 200 && response.statusCode != 201) throw _error(response);
+    if (response.statusCode != 200 && response.statusCode != 201)
+      throw _error(response);
     return (_json(response) as Map).cast<String, dynamic>();
   }
 
@@ -238,14 +297,20 @@ class MerchantApiClient {
       tenantId: tenantId,
       body: {
         if (isActive != null) 'isActive': isActive,
-        if (clearBranch) 'branchId': null else if (branchId != null) 'branchId': branchId,
+        if (clearBranch)
+          'branchId': null
+        else if (branchId != null)
+          'branchId': branchId,
       },
     );
     if (response.statusCode != 200) throw _error(response);
     return (_json(response) as Map).cast<String, dynamic>();
   }
 
-  Future<List<Map<String, dynamic>>> orders(String tenantId, {String? status}) async {
+  Future<List<Map<String, dynamic>>> orders(
+    String tenantId, {
+    String? status,
+  }) async {
     final response = await _send(
       'GET',
       '/v1/merchant/orders',
@@ -253,10 +318,16 @@ class MerchantApiClient {
       query: {if (status != null) 'status': status},
     );
     if (response.statusCode != 200) throw _error(response);
-    return (_json(response) as List).map((row) => (row as Map).cast<String, dynamic>()).toList();
+    return (_json(response) as List)
+        .map((row) => (row as Map).cast<String, dynamic>())
+        .toList();
   }
 
-  Future<Map<String, dynamic>> updateOrderStatus(String tenantId, String orderId, String status) async {
+  Future<Map<String, dynamic>> updateOrderStatus(
+    String tenantId,
+    String orderId,
+    String status,
+  ) async {
     final response = await _send(
       'PATCH',
       '/v1/merchant/orders/$orderId/status',
@@ -268,19 +339,39 @@ class MerchantApiClient {
   }
 
   Future<List<Map<String, dynamic>>> categories(String tenantId) async {
-    final response = await _send('GET', '/v1/merchant/categories', tenantId: tenantId);
+    final response = await _send(
+      'GET',
+      '/v1/merchant/categories',
+      tenantId: tenantId,
+    );
     if (response.statusCode != 200) throw _error(response);
-    return (_json(response) as List).map((row) => (row as Map).cast<String, dynamic>()).toList();
+    return (_json(response) as List)
+        .map((row) => (row as Map).cast<String, dynamic>())
+        .toList();
   }
 
   Future<List<Map<String, dynamic>>> products(String tenantId) async {
-    final response = await _send('GET', '/v1/merchant/products', tenantId: tenantId);
+    final response = await _send(
+      'GET',
+      '/v1/merchant/products',
+      tenantId: tenantId,
+    );
     if (response.statusCode != 200) throw _error(response);
-    return (_json(response) as List).map((row) => (row as Map).cast<String, dynamic>()).toList();
+    return (_json(response) as List)
+        .map((row) => (row as Map).cast<String, dynamic>())
+        .toList();
   }
 
-  Future<Map<String, dynamic>> createCategory(String tenantId, String name) async {
-    final response = await _send('POST', '/v1/merchant/categories', tenantId: tenantId, body: {'name': name});
+  Future<Map<String, dynamic>> createCategory(
+    String tenantId,
+    String name,
+  ) async {
+    final response = await _send(
+      'POST',
+      '/v1/merchant/categories',
+      tenantId: tenantId,
+      body: {'name': name},
+    );
     if (response.statusCode != 201) throw _error(response);
     return (_json(response) as Map).cast<String, dynamic>();
   }
@@ -300,7 +391,8 @@ class MerchantApiClient {
         'name': name,
         'price': price,
         if (categoryId != null) 'categoryId': categoryId,
-        if (description != null && description.isNotEmpty) 'description': description,
+        if (description != null && description.isNotEmpty)
+          'description': description,
       },
     );
     if (response.statusCode != 201) throw _error(response);
@@ -308,14 +400,46 @@ class MerchantApiClient {
   }
 
   Future<void> logout() async {
+    await push.stop();
     final refreshToken = _refresh;
     if (refreshToken != null) {
       try {
-        await _send('POST', '/v1/auth/logout', authenticated: false, body: {'refreshToken': refreshToken});
+        await _send(
+          'POST',
+          '/v1/auth/logout',
+          authenticated: false,
+          body: {'refreshToken': refreshToken},
+        );
       } catch (_) {}
     }
     await clear();
   }
+
+  Future<dynamic> request(
+    String method,
+    String path, {
+    Object? body,
+    String? tenantId,
+  }) async {
+    final response = await _send(
+      method,
+      path,
+      body: body,
+      authenticated: true,
+      tenantId: tenantId,
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300)
+      throw _error(response);
+    return _json(response);
+  }
+
+  Future<void> startPush() => push.start('merchant', (method, token) async {
+    await request(
+      method,
+      '/v1/notifications/devices',
+      body: {'token': token, 'app': 'merchant'},
+    );
+  });
 
   void close() => _client.close();
 }

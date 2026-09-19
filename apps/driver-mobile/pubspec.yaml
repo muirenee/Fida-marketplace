@@ -1,10 +1,12 @@
 name: driver_mobile
 description: Fida Marketplace driver application
 publish_to: none
-version: 0.4.0+4
+version: 0.6.0+6
 environment:
   sdk: '>=3.8.0 <4.0.0'
 dependencies:
+  fida_mobile_common:
+    path: ../../packages/mobile_common
   flutter:
     sdk: flutter
   flutter_secure_storage: ^11.1.1

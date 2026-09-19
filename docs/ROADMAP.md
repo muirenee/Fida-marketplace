@@ -1,6 +1,12 @@
 # Fida Marketplace Roadmap
 
-Updated: September 2026
+Updated: 19 September 2026
+
+## Candidate implementation status
+
+The `feature/marketplace-business-delivery` branch implements a substantial 0.6 candidate; it has not been deployed or built into new APKs. See [release handoff](RELEASE-0.6.md) for exact implemented features, validation, configuration and remaining work. Existing milestone checkboxes below describe the previously released baseline and are deliberately not marked complete until the candidate passes release gates.
+
+Implemented candidate work includes branch hours, product images and optional add-ons, favorites/search, scheduled orders/promos/tax, Firebase push infrastructure, driver creation/editing/capacity, PIN delivery proof, external turn-by-turn navigation, nearest-stop ordering, Fida fleet dispatch, payment adapter, finance/refund records, reviews and support. Required variant groups, traffic-aware optimization, driver earnings/payouts and full conversion analytics remain open.
 
 ## M0 — Foundation
 - [x] Monorepo structure

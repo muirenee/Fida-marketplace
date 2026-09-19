@@ -65,14 +65,19 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     if (query.isEmpty) return _merchants;
     return _merchants.where((merchant) {
       final branches = merchant['branches'] as List? ?? const [];
-      final searchable = <Object?>[
-        merchant['name'],
-        merchant['merchantType'],
-        for (final branch in branches) ...[
-          if (branch is Map) branch['name'],
-          if (branch is Map) branch['city'],
-        ],
-      ].whereType<Object>().map((value) => value.toString()).join(' ').toLowerCase();
+      final searchable =
+          <Object?>[
+                merchant['name'],
+                merchant['merchantType'],
+                for (final branch in branches) ...[
+                  if (branch is Map) branch['name'],
+                  if (branch is Map) branch['city'],
+                ],
+              ]
+              .whereType<Object>()
+              .map((value) => value.toString())
+              .join(' ')
+              .toLowerCase();
       return searchable.contains(query);
     }).toList();
   }
@@ -108,14 +113,31 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                               padding: EdgeInsets.symmetric(vertical: 4),
                               child: Row(
                                 children: [
-                                  Icon(Icons.location_on_rounded, color: Color(0xFF176B55)),
+                                  Icon(
+                                    Icons.location_on_rounded,
+                                    color: Color(0xFF176B55),
+                                  ),
                                   SizedBox(width: 7),
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Text('Order near you', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.black54)),
-                                        Text('Pickup or delivery', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+                                        Text(
+                                          'Order near you',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Pickup or delivery',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -129,7 +151,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                         Container(
                           width: 42,
                           height: 42,
-                          decoration: const BoxDecoration(color: Color(0xFFF2F3F2), shape: BoxShape.circle),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFF2F3F2),
+                            shape: BoxShape.circle,
+                          ),
                           child: const Icon(Icons.person_rounded),
                         ),
                       ],
@@ -189,14 +214,26 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Local ordering, simplified', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                                Text(
+                                  'Local ordering, simplified',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
                                 SizedBox(height: 4),
-                                Text('Choose pickup or merchant-priced delivery when you check out.'),
+                                Text(
+                                  'Choose pickup or merchant-priced delivery when you check out.',
+                                ),
                               ],
                             ),
                           ),
                           SizedBox(width: 12),
-                          Icon(Icons.delivery_dining_rounded, size: 42, color: Color(0xFF176B55)),
+                          Icon(
+                            Icons.delivery_dining_rounded,
+                            size: 42,
+                            color: Color(0xFF176B55),
+                          ),
                         ],
                       ),
                     ),
@@ -205,12 +242,19 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            _type == null ? 'Popular near you' : _types[_type]?.label ?? 'Merchants',
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                            _type == null
+                                ? 'Popular near you'
+                                : _types[_type]?.label ?? 'Merchants',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w900),
                           ),
                         ),
                         if (!_loading)
-                          Text('${merchants.length} available', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54)),
+                          Text(
+                            '${merchants.length} available',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: Colors.black54),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -220,7 +264,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             ),
           ),
           if (_loading)
-            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator()))
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: CircularProgressIndicator()),
+            )
           else if (_error != null)
             SliverFillRemaining(
               hasScrollBody: false,
@@ -234,7 +281,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                       const SizedBox(height: 12),
                       Text(_error!, textAlign: TextAlign.center),
                       const SizedBox(height: 12),
-                      FilledButton(onPressed: _load, child: const Text('Retry')),
+                      FilledButton(
+                        onPressed: _load,
+                        child: const Text('Retry'),
+                      ),
                     ],
                   ),
                 ),
@@ -247,7 +297,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Text(
-                    _query.isEmpty ? 'No merchants are available in this category yet.' : 'No merchants match “$_query”.',
+                    _query.isEmpty
+                        ? 'No merchants are available in this category yet.'
+                        : 'No merchants match “$_query”.',
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -262,7 +314,12 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 itemBuilder: (context, index) => _MerchantCard(
                   merchant: merchants[index],
                   onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => MerchantScreen(api: widget.api, slug: merchants[index]['slug'].toString())),
+                    MaterialPageRoute(
+                      builder: (_) => MerchantScreen(
+                        api: widget.api,
+                        slug: merchants[index]['slug'].toString(),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -274,7 +331,12 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
 }
 
 class _CategoryButton extends StatelessWidget {
-  const _CategoryButton({required this.label, required this.icon, required this.selected, required this.onTap});
+  const _CategoryButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
 
   final String label;
   final IconData icon;
@@ -297,13 +359,26 @@ class _CategoryButton extends StatelessWidget {
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: selected ? const Color(0xFF111111) : const Color(0xFFF2F3F2),
+                  color: selected
+                      ? const Color(0xFF111111)
+                      : const Color(0xFFF2F3F2),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, color: selected ? Colors.white : Colors.black87),
+                child: Icon(
+                  icon,
+                  color: selected ? Colors.white : Colors.black87,
+                ),
               ),
               const SizedBox(height: 7),
-              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: selected ? FontWeight.w900 : FontWeight.w700)),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+                ),
+              ),
             ],
           ),
         ),
@@ -319,25 +394,31 @@ class _MerchantCard extends StatelessWidget {
   final VoidCallback onTap;
 
   IconData get _icon => switch (merchant['merchantType']) {
-        'RESTAURANT' => Icons.restaurant_rounded,
-        'SUPERMARKET' => Icons.shopping_basket_rounded,
-        'PHARMACY' => Icons.local_pharmacy_rounded,
-        _ => Icons.storefront_rounded,
-      };
+    'RESTAURANT' => Icons.restaurant_rounded,
+    'SUPERMARKET' => Icons.shopping_basket_rounded,
+    'PHARMACY' => Icons.local_pharmacy_rounded,
+    _ => Icons.storefront_rounded,
+  };
 
   @override
   Widget build(BuildContext context) {
     final branches = merchant['branches'] as List? ?? const [];
-    final branch = branches.isNotEmpty && branches.first is Map ? branches.first as Map : null;
+    final branch = branches.isNotEmpty && branches.first is Map
+        ? branches.first as Map
+        : null;
     final currency = (merchant['currency'] ?? 'RWF').toString();
     final minimum = asDouble(merchant['minimumOrder']);
     final pickupEnabled = branch?['pickupEnabled'] == true;
     final deliveryEnabled = branch?['deliveryEnabled'] == true;
     final zones = branch?['deliveryZones'] as List? ?? const [];
-    final hasFreeZone = zones.any((zone) => zone is Map && asDouble(zone['fee']) == 0);
+    final hasFreeZone = zones.any(
+      (zone) => zone is Map && asDouble(zone['fee']) == 0,
+    );
     final location = branch == null
         ? merchant['merchantType'].toString().replaceAll('_', ' ').toLowerCase()
-        : [branch['name'], branch['city']].where((value) => value != null && '$value'.trim().isNotEmpty).join(' · ');
+        : [branch['name'], branch['city']]
+              .where((value) => value != null && '$value'.trim().isNotEmpty)
+              .join(' · ');
 
     return InkWell(
       borderRadius: BorderRadius.circular(18),
@@ -360,7 +441,10 @@ class _MerchantCard extends StatelessWidget {
               child: Container(
                 width: 82,
                 height: 82,
-                decoration: BoxDecoration(color: Colors.white.withValues(alpha: .9), shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .9),
+                  shape: BoxShape.circle,
+                ),
                 child: Icon(_icon, size: 42, color: const Color(0xFF176B55)),
               ),
             ),
@@ -373,22 +457,42 @@ class _MerchantCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(merchant['name'].toString(), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+                    Text(
+                      merchant['name'].toString(),
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w900),
+                    ),
                     const SizedBox(height: 2),
-                    Text(location.isEmpty ? 'Local merchant' : location, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.black54)),
+                    Text(
+                      location.isEmpty ? 'Local merchant' : location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium
+                          ?.copyWith(color: Colors.black54),
+                    ),
                     const SizedBox(height: 5),
                     Wrap(
                       spacing: 10,
                       runSpacing: 4,
                       children: [
-                        if (pickupEnabled) const _MetaText(icon: Icons.shopping_bag_outlined, text: 'Pickup'),
+                        if (pickupEnabled)
+                          const _MetaText(
+                            icon: Icons.shopping_bag_outlined,
+                            text: 'Pickup',
+                          ),
                         if (deliveryEnabled)
                           _MetaText(
                             icon: Icons.delivery_dining_rounded,
-                            text: hasFreeZone ? 'Free delivery nearby' : 'Delivery by distance',
+                            text: hasFreeZone
+                                ? 'Free delivery nearby'
+                                : 'Delivery by distance',
                           ),
                         if (minimum > 0)
-                          _MetaText(icon: Icons.receipt_long_outlined, text: 'Min ${money(merchant['minimumOrder'], currency: currency)}'),
+                          _MetaText(
+                            icon: Icons.receipt_long_outlined,
+                            text:
+                                'Min ${money(merchant['minimumOrder'], currency: currency)}',
+                          ),
                       ],
                     ),
                   ],
@@ -417,7 +521,11 @@ class _MetaText extends StatelessWidget {
       children: [
         Icon(icon, size: 15, color: Colors.black54),
         const SizedBox(width: 4),
-        Text(text, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+        Text(
+          text,
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(fontWeight: FontWeight.w600),
+        ),
       ],
     );
   }

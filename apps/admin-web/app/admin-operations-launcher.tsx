@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 
 const tools = [
+  { href: '/business-operations', label: 'Business operations' },
   { href: '/operations', label: 'Operations' },
   { href: '/insights', label: 'Insights' },
   { href: '/provisioning', label: 'Provisioning' },
@@ -33,7 +34,7 @@ export default function AdminOperationsLauncher() {
     };
   }, [pathname]);
 
-  if (!visible) return null;
+  if (pathname.startsWith('/merchant') || !visible) return null;
 
   const availableTools = tools.filter((tool) => tool.href !== pathname);
   if (availableTools.length === 0) return null;

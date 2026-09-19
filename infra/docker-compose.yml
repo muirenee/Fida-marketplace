@@ -36,6 +36,13 @@ services:
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-30}
       CORS_ORIGIN: ${CORS_ORIGIN}
+      MEDIA_DIRECTORY: /data/media
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
+      FLUTTERWAVE_SECRET_KEY: ${FLUTTERWAVE_SECRET_KEY:-}
+      FLUTTERWAVE_WEBHOOK_SECRET: ${FLUTTERWAVE_WEBHOOK_SECRET:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://marketplaceadmin.fidalix.com}
+    volumes:
+      - fida_media:/data/media
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,5 +66,6 @@ services:
       - "${ADMIN_BIND_ADDRESS:-127.0.0.1}:3000:3000"
 
 volumes:
+  fida_media:
   fida_postgres:
   fida_redis:

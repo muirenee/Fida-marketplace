@@ -1,3 +1,5 @@
+import 'package:fida_mobile_common/fida_mobile_common.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -40,6 +42,7 @@ class _FidaDriverAppState extends State<FidaDriverApp> {
   Future<void> _loadDriver() async {
     try {
       driver = await api.profile();
+      unawaited(api.startPush());
       error = null;
     } on DriverApiException catch (e) {
       error = e.message;
@@ -88,29 +91,31 @@ class _FidaDriverAppState extends State<FidaDriverApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Fida Marketplace Driver',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF176B55),
-        scaffoldBackgroundColor: const Color(0xFFF8FAF9),
-      ),
+      theme: fidaTheme(),
+      builder: (context, child) =>
+          PushMessageBanner(child: child ?? const SizedBox.shrink()),
       home: loading && user == null
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
           : user == null
-              ? _LoginScreen(onLogin: _login, error: error, loading: loading)
-              : driver == null
-                  ? _NotEnrolledScreen(message: error, onLogout: _logout)
-                  : _DriverHome(
-                      api: api,
-                      initialDriver: driver!,
-                      onDriverChanged: (value) => driver = value,
-                      onLogout: _logout,
-                    ),
+          ? _LoginScreen(onLogin: _login, error: error, loading: loading)
+          : driver == null
+          ? _NotEnrolledScreen(message: error, onLogout: _logout)
+          : _DriverHome(
+              api: api,
+              initialDriver: driver!,
+              onDriverChanged: (value) => driver = value,
+              onLogout: _logout,
+            ),
     );
   }
 }
 
 class _LoginScreen extends StatefulWidget {
-  const _LoginScreen({required this.onLogin, required this.error, required this.loading});
+  const _LoginScreen({
+    required this.onLogin,
+    required this.error,
+    required this.loading,
+  });
 
   final Future<bool> Function(String, String) onLogin;
   final String? error;
@@ -149,7 +154,8 @@ class _LoginScreenState extends State<_LoginScreen> {
                   Text(
                     'Fida Marketplace',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.headlineMedium
+                        ?.copyWith(fontWeight: FontWeight.w900),
                   ),
                   const Text('Driver', textAlign: TextAlign.center),
                   const SizedBox(height: 8),
@@ -161,33 +167,55 @@ class _LoginScreenState extends State<_LoginScreen> {
                   TextField(
                     controller: email,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 14),
                   TextField(
                     controller: password,
                     obscureText: obscure,
-                    onSubmitted: (_) => widget.onLogin(email.text, password.text),
+                    onSubmitted: (_) =>
+                        widget.onLogin(email.text, password.text),
                     decoration: InputDecoration(
                       labelText: 'Password',
                       border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         onPressed: () => setState(() => obscure = !obscure),
-                        icon: Icon(obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                        icon: Icon(
+                          obscure
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
                       ),
                     ),
                   ),
                   if (widget.error != null) ...[
                     const SizedBox(height: 12),
-                    Text(widget.error!, textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    Text(
+                      widget.error!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 20),
                   FilledButton.icon(
-                    onPressed: widget.loading ? null : () => widget.onLogin(email.text, password.text),
+                    onPressed: widget.loading
+                        ? null
+                        : () => widget.onLogin(email.text, password.text),
                     icon: widget.loading
-                        ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Icon(Icons.login_rounded),
-                    label: const Padding(padding: EdgeInsets.symmetric(vertical: 14), child: Text('Sign in')),
+                    label: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 14),
+                      child: Text('Sign in'),
+                    ),
                   ),
                 ],
               ),
@@ -208,7 +236,14 @@ class _NotEnrolledScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(actions: [IconButton(onPressed: onLogout, icon: const Icon(Icons.logout_rounded))]),
+      appBar: AppBar(
+        actions: [
+          IconButton(
+            onPressed: onLogout,
+            icon: const Icon(Icons.logout_rounded),
+          ),
+        ],
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -217,7 +252,10 @@ class _NotEnrolledScreen extends StatelessWidget {
             children: [
               const Icon(Icons.storefront_outlined, size: 64),
               const SizedBox(height: 14),
-              const Text('Merchant enrollment required', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+              const Text(
+                'Merchant enrollment required',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+              ),
               const SizedBox(height: 8),
               Text(
                 message ?? 'Ask the merchant you deliver for to enroll this Fida account as one of their drivers.',
@@ -261,18 +299,23 @@ class _DriverHomeState extends State<_DriverHome> {
   bool loading = true;
   String? error;
   StreamSubscription<Position>? positionSubscription;
+  StreamSubscription<dynamic>? pushSubscription;
 
   bool get isOnline => driver['isOnline'] == true;
   bool get isAvailable => driver['isAvailable'] == true;
   Map get operator => driver['operator'] as Map? ?? {};
   Map get branch => driver['branch'] as Map? ?? {};
   String get operatorType => (operator['type'] ?? 'MERCHANT').toString();
-  String get operatorName => (operator['name'] ?? 'Merchant delivery').toString();
+  String get operatorName =>
+      (operator['name'] ?? 'Merchant delivery').toString();
 
   @override
   void initState() {
     super.initState();
     driver = Map<String, dynamic>.from(widget.initialDriver);
+    pushSubscription = FidaPush.messages.stream.listen((_) {
+      if (mounted && !loading) _refresh();
+    });
     _refresh();
     if (isOnline) _startLocationUpdates();
   }
@@ -280,6 +323,7 @@ class _DriverHomeState extends State<_DriverHome> {
   @override
   void dispose() {
     positionSubscription?.cancel();
+    pushSubscription?.cancel();
     super.dispose();
   }
 
@@ -290,9 +334,14 @@ class _DriverHomeState extends State<_DriverHome> {
     }
 
     var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
-    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-      setState(() => error = 'Location permission is required while you are delivering.');
+    if (permission == LocationPermission.denied)
+      permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      setState(
+        () =>
+            error = 'Location permission is required while you are delivering.',
+      );
       return false;
     }
     return true;
@@ -302,17 +351,32 @@ class _DriverHomeState extends State<_DriverHome> {
     if (!await _ensureLocationPermission()) return;
     await positionSubscription?.cancel();
 
-    const settings = LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 25);
-    positionSubscription = Geolocator.getPositionStream(locationSettings: settings).listen((position) async {
-      try {
-        await widget.api.updateLocation(position.latitude, position.longitude);
-      } catch (_) {
-        // A later location update retries automatically.
-      }
-    });
+    final settings = AndroidSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 25,
+      foregroundNotificationConfig: const ForegroundNotificationConfig(
+        notificationTitle: 'Fida delivery is active',
+        notificationText: 'Sharing your location while you are online.',
+        enableWakeLock: true,
+      ),
+    );
+    positionSubscription =
+        Geolocator.getPositionStream(locationSettings: settings)
+            .listen((position) async {
+              try {
+                await widget.api.updateLocation(
+                  position.latitude,
+                  position.longitude,
+                );
+              } catch (_) {
+                // A later location update retries automatically.
+              }
+            });
 
     try {
-      final position = await Geolocator.getCurrentPosition(locationSettings: settings);
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: settings,
+      );
       await widget.api.updateLocation(position.latitude, position.longitude);
     } catch (_) {}
   }
@@ -341,7 +405,10 @@ class _DriverHomeState extends State<_DriverHome> {
   Future<void> _setOnline(bool value) async {
     if (value && !await _ensureLocationPermission()) return;
     try {
-      driver = await widget.api.setAvailability(isOnline: value, isAvailable: value);
+      driver = await widget.api.setAvailability(
+        isOnline: value,
+        isAvailable: value,
+      );
       widget.onDriverChanged(driver);
       if (value) {
         await _startLocationUpdates();
@@ -351,17 +418,72 @@ class _DriverHomeState extends State<_DriverHome> {
       }
       await _refresh();
     } on DriverApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
   Future<void> _setAvailable(bool value) async {
     try {
-      driver = await widget.api.setAvailability(isOnline: isOnline, isAvailable: value);
+      driver = await widget.api.setAvailability(
+        isOnline: isOnline,
+        isAvailable: value,
+      );
       widget.onDriverChanged(driver);
       await _refresh();
     } on DriverApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _route() async {
+    try {
+      final plan = await widget.api.request('GET', '/v1/driver/route');
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (c) => SafeArea(
+          child: DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: .7,
+            builder: (ctx, scroll) => ListView(
+              controller: scroll,
+              padding: const EdgeInsets.all(20),
+              children: [
+                const Text(
+                  'Your delivery route',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+                ),
+                const Text(
+                  'Nearest-stop suggestion. Check road conditions before following the route.',
+                ),
+                for (final stop in plan['stops'] as List) ...[
+                  const Divider(height: 28),
+                  Text(
+                    '${stop['kind']} · ${stop['orderNumber']}',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  Text(stop['address'].toString()),
+                  DestinationActions(
+                    latitude: stop['latitude'],
+                    longitude: stop['longitude'],
+                    address: stop['address'].toString(),
+                    label: stop['kind'] == 'PICKUP' ? 'pickup' : 'customer',
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
     }
   }
 
@@ -370,34 +492,77 @@ class _DriverHomeState extends State<_DriverHome> {
       await widget.api.claim(delivery['id'].toString());
       await _refresh();
     } on DriverApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
   Future<void> _advance(Map<String, dynamic> delivery, String status) async {
     try {
-      await widget.api.updateDeliveryStatus(delivery['id'].toString(), status);
+      String? pin;
+      if (status == 'DELIVERED') {
+        String entered = '';
+        pin = await showDialog<String>(
+          context: context,
+          builder: (c) => AlertDialog(
+            title: const Text('Confirm customer delivery'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Ask the customer for the four-digit PIN shown on their order.',
+                ),
+                TextField(
+                  keyboardType: TextInputType.number,
+                  maxLength: 4,
+                  onChanged: (v) => entered = v,
+                  decoration: const InputDecoration(labelText: 'Delivery PIN'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(c),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(c, entered),
+                child: const Text('Confirm'),
+              ),
+            ],
+          ),
+        );
+        if (pin == null) return;
+      }
+      await widget.api.request(
+        'PATCH',
+        '/v1/driver/deliveries/${delivery['id']}/status',
+        body: {'status': status, if (pin != null) 'pin': pin},
+      );
       await _refresh();
     } on DriverApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
   String? _nextStatus(String status) => switch (status) {
-        'ASSIGNED' => 'AT_PICKUP',
-        'AT_PICKUP' => 'PICKED_UP',
-        'PICKED_UP' => 'AT_DROPOFF',
-        'AT_DROPOFF' => 'DELIVERED',
-        _ => null,
-      };
+    'ASSIGNED' => 'AT_PICKUP',
+    'AT_PICKUP' => 'PICKED_UP',
+    'PICKED_UP' => 'AT_DROPOFF',
+    'AT_DROPOFF' => 'DELIVERED',
+    _ => null,
+  };
 
   String _actionLabel(String next) => switch (next) {
-        'AT_PICKUP' => 'Arrived at pickup',
-        'PICKED_UP' => 'Confirm pickup',
-        'AT_DROPOFF' => 'Arrived at customer',
-        'DELIVERED' => 'Confirm delivery',
-        _ => next,
-      };
+    'AT_PICKUP' => 'Arrived at pickup',
+    'PICKED_UP' => 'Confirm pickup',
+    'AT_DROPOFF' => 'Arrived at customer',
+    'DELIVERED' => 'Confirm delivery',
+    _ => next,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -406,13 +571,25 @@ class _DriverHomeState extends State<_DriverHome> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Fida Driver', style: TextStyle(fontWeight: FontWeight.w900)),
-            Text(operatorType == 'FIDA' ? 'Fida fleet' : operatorName, style: Theme.of(context).textTheme.labelSmall),
+            const Text(
+              'Fida Driver',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            Text(
+              operatorType == 'FIDA' ? 'Fida fleet' : operatorName,
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
           ],
         ),
         actions: [
-          IconButton(onPressed: loading ? null : _refresh, icon: const Icon(Icons.refresh_rounded)),
-          IconButton(onPressed: widget.onLogout, icon: const Icon(Icons.logout_rounded)),
+          IconButton(
+            onPressed: loading ? null : _refresh,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+          IconButton(
+            onPressed: widget.onLogout,
+            icon: const Icon(Icons.logout_rounded),
+          ),
         ],
       ),
       body: RefreshIndicator(
@@ -421,6 +598,11 @@ class _DriverHomeState extends State<_DriverHome> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 90),
           children: [
+            const FidaHero(
+              title: 'Every delivery.\nA happy customer.',
+              subtitle: 'Your route, your queue, your next stop.',
+              icon: Icons.delivery_dining_rounded,
+            ),
             _EnrollmentCard(operator: operator, branch: branch),
             const SizedBox(height: 10),
             _StatusCard(
@@ -435,20 +617,34 @@ class _DriverHomeState extends State<_DriverHome> {
               const SizedBox(height: 12),
               Card(
                 color: Theme.of(context).colorScheme.errorContainer,
-                child: ListTile(leading: const Icon(Icons.error_outline_rounded), title: Text(error!)),
+                child: ListTile(
+                  leading: const Icon(Icons.error_outline_rounded),
+                  title: Text(error!),
+                ),
               ),
             ],
             const SizedBox(height: 18),
             if (activeDeliveries.isNotEmpty) ...[
+              FilledButton.icon(
+                onPressed: _route,
+                icon: const Icon(Icons.route_rounded),
+                label: const Text('Plan my delivery route'),
+              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
                     child: Text(
                       'Active deliveries (${activeDeliveries.length})',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                   ),
-                  if (loading) const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                  if (loading)
+                    const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                 ],
               ),
               const SizedBox(height: 8),
@@ -465,9 +661,18 @@ class _DriverHomeState extends State<_DriverHome> {
             ],
             Row(
               children: [
-                Expanded(child: Text('Delivery offers', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900))),
+                Expanded(
+                  child: Text(
+                    'Delivery offers',
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                ),
                 if (loading && activeDeliveries.isEmpty)
-                  const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                  const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
               ],
             ),
             const SizedBox(height: 4),
@@ -475,15 +680,25 @@ class _DriverHomeState extends State<_DriverHome> {
               operatorType == 'FIDA'
                   ? 'Accept more pickup-ready orders while you are available.'
                   : 'Accept more pickup-ready orders from your merchant scope while you are available.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: Colors.black54),
             ),
             const SizedBox(height: 10),
             if (!isOnline)
-              const _EmptyState(icon: Icons.power_settings_new_rounded, text: 'Go online to receive delivery offers.')
+              const _EmptyState(
+                icon: Icons.power_settings_new_rounded,
+                text: 'Go online to receive delivery offers.',
+              )
             else if (!isAvailable)
-              const _EmptyState(icon: Icons.pause_circle_outline_rounded, text: 'You are online but unavailable for new delivery offers.')
+              const _EmptyState(
+                icon: Icons.pause_circle_outline_rounded,
+                text: 'You are online but unavailable for new delivery offers.',
+              )
             else if (!loading && offers.isEmpty)
-              const _EmptyState(icon: Icons.delivery_dining_outlined, text: 'No pickup-ready deliveries are available in your delivery scope right now.')
+              const _EmptyState(
+                icon: Icons.delivery_dining_outlined,
+                text: 'No pickup-ready deliveries are available in your delivery scope right now.',
+              )
             else
               for (final delivery in offers) ...[
                 _OfferCard(delivery: delivery, onClaim: () => _claim(delivery)),
@@ -509,9 +724,22 @@ class _EnrollmentCard extends StatelessWidget {
     final branchName = branch['name']?.toString();
     return Card(
       child: ListTile(
-        leading: CircleAvatar(child: Icon(type == 'FIDA' ? Icons.local_shipping_rounded : Icons.storefront_rounded)),
-        title: Text(type == 'FIDA' ? 'Fida delivery fleet' : operatorName, style: const TextStyle(fontWeight: FontWeight.w800)),
-        subtitle: Text(branchName == null || branchName.isEmpty ? 'Delivery scope: all merchant branches' : 'Delivery scope: $branchName'),
+        leading: CircleAvatar(
+          child: Icon(
+            type == 'FIDA'
+                ? Icons.local_shipping_rounded
+                : Icons.storefront_rounded,
+          ),
+        ),
+        title: Text(
+          type == 'FIDA' ? 'Fida delivery fleet' : operatorName,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(
+          branchName == null || branchName.isEmpty
+              ? 'Delivery scope: all merchant branches'
+              : 'Delivery scope: $branchName',
+        ),
       ),
     );
   }
@@ -545,23 +773,42 @@ class _StatusCard extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
               value: isOnline,
               onChanged: onOnlineChanged,
-              secondary: Icon(isOnline ? Icons.location_on_rounded : Icons.location_off_outlined),
-              title: Text(isOnline ? 'Online' : 'Offline', style: const TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: Text(isOnline ? 'Location sharing is active while you are online.' : 'You will not receive delivery offers.'),
+              secondary: Icon(
+                isOnline
+                    ? Icons.location_on_rounded
+                    : Icons.location_off_outlined,
+              ),
+              title: Text(
+                isOnline ? 'Online' : 'Offline',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: Text(
+                isOnline
+                    ? 'Location sharing is active while you are online.'
+                    : 'You will not receive delivery offers.',
+              ),
             ),
             const Divider(height: 1),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: isAvailable,
               onChanged: onAvailableChanged,
-              secondary: Icon(activeDeliveryCount > 0 ? Icons.route_rounded : Icons.check_circle_outline_rounded),
-              title: Text(isAvailable ? 'Available for deliveries' : 'Not accepting new deliveries'),
+              secondary: Icon(
+                activeDeliveryCount > 0
+                    ? Icons.route_rounded
+                    : Icons.check_circle_outline_rounded,
+              ),
+              title: Text(
+                isAvailable
+                    ? 'Available for deliveries'
+                    : 'Not accepting new deliveries',
+              ),
               subtitle: Text(
                 activeDeliveryCount > 0
                     ? '$activeDeliveryCount active deliver${activeDeliveryCount == 1 ? 'y' : 'ies'} · ${isAvailable ? 'accepting more orders' : 'new offers paused'}'
                     : operatorType == 'FIDA'
-                        ? 'Receive pickup-ready orders from the Fida fleet queue.'
-                        : 'Receive pickup-ready orders from your merchant delivery queue.',
+                    ? 'Receive pickup-ready orders from the Fida fleet queue.'
+                    : 'Receive pickup-ready orders from your merchant delivery queue.',
               ),
             ),
           ],
@@ -597,16 +844,22 @@ class _OfferCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(tenant['name']?.toString() ?? 'Merchant', style: const TextStyle(fontWeight: FontWeight.w900)),
+                      Text(
+                        tenant['name']?.toString() ?? 'Merchant',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
                       Text(branch['name']?.toString() ?? 'Pickup branch'),
                     ],
                   ),
                 ),
-                if (distance != null) Chip(label: Text('$distance km to pickup')),
+                if (distance != null)
+                  Chip(label: Text('$distance km to pickup')),
               ],
             ),
             const SizedBox(height: 10),
-            Text('Pickup: ${[branch['addressLine'], branch['city']].where((v) => v != null && '$v'.isNotEmpty).join(', ')}'),
+            Text(
+              'Pickup: ${[branch['addressLine'], branch['city']].where((v) => v != null && '$v'.isNotEmpty).join(', ')}',
+            ),
             Text('Drop-off: ${order['deliveryAddress'] ?? 'Customer address'}'),
             const SizedBox(height: 12),
             SizedBox(
@@ -625,7 +878,12 @@ class _OfferCard extends StatelessWidget {
 }
 
 class _CurrentDeliveryCard extends StatelessWidget {
-  const _CurrentDeliveryCard({required this.delivery, required this.nextStatus, required this.actionLabel, required this.onAdvance});
+  const _CurrentDeliveryCard({
+    required this.delivery,
+    required this.nextStatus,
+    required this.actionLabel,
+    required this.onAdvance,
+  });
 
   final Map<String, dynamic> delivery;
   final String? nextStatus;
@@ -648,25 +906,86 @@ class _CurrentDeliveryCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(child: Text('Delivery ${order['orderNumber'] ?? ''}', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900))),
-                Chip(label: Text(delivery['status'].toString().replaceAll('_', ' ').toLowerCase())),
+                Expanded(
+                  child: Text(
+                    'Delivery ${order['orderNumber'] ?? ''}',
+                    style: Theme.of(context).textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                Chip(
+                  label: Text(
+                    delivery['status']
+                        .toString()
+                        .replaceAll('_', ' ')
+                        .toLowerCase(),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 14),
-            const Text('PICKUP', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-            Text(tenant['name']?.toString() ?? 'Merchant', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
-            Text([branch['name'], branch['addressLine'], branch['city']].where((v) => v != null && '$v'.isNotEmpty).join(' · ')),
+            const Text(
+              'PICKUP',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+            Text(
+              tenant['name']?.toString() ?? 'Merchant',
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+            ),
+            Text(
+              [
+                branch['name'],
+                branch['addressLine'],
+                branch['city'],
+              ].where((v) => v != null && '$v'.isNotEmpty).join(' · '),
+            ),
+            const SizedBox(height: 8),
+            DestinationActions(
+              latitude: branch['latitude'],
+              longitude: branch['longitude'],
+              address: [
+                branch['addressLine'],
+                branch['city'],
+              ].whereType<String>().join(', '),
+              label: 'pickup',
+            ),
             const SizedBox(height: 14),
-            const Text('DROP-OFF', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-            Text(order['deliveryAddress']?.toString() ?? 'Customer address', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
-            Text([customer['firstName'], customer['lastName']].where((v) => v != null && '$v'.isNotEmpty).join(' ')),
-            if (customer['phone'] != null) Text(customer['phone'].toString()),
-            if ((order['deliveryInstructions'] ?? '').toString().isNotEmpty) ...[
+            const Text(
+              'DROP-OFF',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+            Text(
+              order['deliveryAddress']?.toString() ?? 'Customer address',
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+            ),
+            Text(
+              [
+                customer['firstName'],
+                customer['lastName'],
+              ].where((v) => v != null && '$v'.isNotEmpty).join(' '),
+            ),
+            if (customer['phone'] != null)
+              TextButton.icon(
+                onPressed: () =>
+                    callPhone(context, customer['phone'].toString()),
+                icon: const Icon(Icons.phone_rounded),
+                label: Text(customer['phone'].toString()),
+              ),
+            DestinationActions(
+              latitude: order['deliveryLatitude'],
+              longitude: order['deliveryLongitude'],
+              address: order['deliveryAddress']?.toString() ?? '',
+            ),
+            if ((order['deliveryInstructions'] ?? '')
+                .toString()
+                .isNotEmpty) ...[
               const SizedBox(height: 6),
               Text('Instructions: ${order['deliveryInstructions']}'),
             ],
             const SizedBox(height: 14),
-            Text('${items.length} item type${items.length == 1 ? '' : 's'} · Order ${order['orderNumber']}'),
+            Text(
+              '${items.length} item type${items.length == 1 ? '' : 's'} · Order ${order['orderNumber']}',
+            ),
             if (nextStatus != null) ...[
               const SizedBox(height: 18),
               SizedBox(
@@ -674,7 +993,10 @@ class _CurrentDeliveryCard extends StatelessWidget {
                 child: FilledButton.icon(
                   onPressed: () => onAdvance(nextStatus!),
                   icon: const Icon(Icons.arrow_forward_rounded),
-                  label: Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(actionLabel(nextStatus!))),
+                  label: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(actionLabel(nextStatus!)),
+                  ),
                 ),
               ),
             ],

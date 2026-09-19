@@ -13,3 +13,14 @@ coverage/
 *.iml
 .idea/
 .vscode/
+
+uploads/
+firebase-defines.json
+android/key.properties
+*.jks
+packages/database/generated/
+
+*.tsbuildinfo
+
+__pycache__/
+*.pyc

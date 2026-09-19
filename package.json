@@ -11,9 +11,12 @@
     "db:migrate": "prisma migrate dev --config prisma.config.ts",
     "db:seed": "tsx packages/database/prisma/seed.ts",
     "db:backfill-logistics": "tsx packages/database/prisma/backfill-logistics.ts",
-    "typecheck:api": "tsc -p apps/api/tsconfig.json --noEmit"
+    "typecheck:api": "tsc -p apps/api/tsconfig.json --noEmit",
+    "test:integration": "node --import tsx tests/business-integration.mts"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-socket": "^0.2.11",
     "@types/node": "^24.3.0",
     "prisma": "^7.10.0",
     "tsx": "^4.20.0",

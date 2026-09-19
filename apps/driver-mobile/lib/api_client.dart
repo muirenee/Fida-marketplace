@@ -1,3 +1,5 @@
+import 'package:fida_mobile_common/fida_mobile_common.dart';
+
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -12,6 +14,7 @@ class DriverApiException implements Exception {
 }
 
 class DriverApiClient {
+  final push = FidaPush();
   DriverApiClient();
 
   static const baseUrl = String.fromEnvironment(
@@ -27,17 +30,22 @@ class DriverApiClient {
   String? _refresh;
 
   Uri _uri(String path) {
-    final root = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final root = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
     return Uri.parse('$root$path');
   }
 
-  dynamic _json(http.Response response) => response.body.isEmpty ? null : jsonDecode(response.body);
+  dynamic _json(http.Response response) =>
+      response.body.isEmpty ? null : jsonDecode(response.body);
 
   DriverApiException _error(http.Response response) {
     try {
       final data = _json(response);
       if (data is Map) {
-        return DriverApiException((data['message'] ?? data['error'] ?? 'Request failed').toString());
+        return DriverApiException(
+          (data['message'] ?? data['error'] ?? 'Request failed').toString(),
+        );
       }
     } catch (_) {}
     return DriverApiException('Request failed (${response.statusCode})');
@@ -77,15 +85,27 @@ class DriverApiClient {
   }) async {
     final request = http.Request(method, _uri(path));
     request.headers['accept'] = 'application/json';
-    if (authenticated && _access != null) request.headers['authorization'] = 'Bearer $_access';
+    if (authenticated && _access != null)
+      request.headers['authorization'] = 'Bearer $_access';
     if (body != null) {
       request.headers['content-type'] = 'application/json';
       request.body = jsonEncode(body);
     }
 
-    final response = await http.Response.fromStream(await _client.send(request));
-    if (response.statusCode == 401 && authenticated && retry && await refresh()) {
-      return _send(method, path, body: body, authenticated: authenticated, retry: false);
+    final response = await http.Response.fromStream(
+      await _client.send(request),
+    );
+    if (response.statusCode == 401 &&
+        authenticated &&
+        retry &&
+        await refresh()) {
+      return _send(
+        method,
+        path,
+        body: body,
+        authenticated: authenticated,
+        retry: false,
+      );
     }
     return response;
   }
@@ -103,7 +123,11 @@ class DriverApiClient {
     return (data['user'] as Map).cast<String, dynamic>();
   }
 
-  Future<bool> refresh() async {
+  Future<bool>? _refreshing;
+  Future<bool> refresh() =>
+      _refreshing ??= _doRefresh().whenComplete(() => _refreshing = null);
+
+  Future<bool> _doRefresh() async {
     final token = _refresh;
     if (token == null) return false;
     final response = await _send(
@@ -182,12 +206,18 @@ class DriverApiClient {
   }
 
   Future<Map<String, dynamic>> claim(String deliveryId) async {
-    final response = await _send('POST', '/v1/driver/deliveries/$deliveryId/claim');
+    final response = await _send(
+      'POST',
+      '/v1/driver/deliveries/$deliveryId/claim',
+    );
     if (response.statusCode != 200) throw _error(response);
     return (_json(response) as Map).cast<String, dynamic>();
   }
 
-  Future<Map<String, dynamic>> updateDeliveryStatus(String deliveryId, String status) async {
+  Future<Map<String, dynamic>> updateDeliveryStatus(
+    String deliveryId,
+    String status,
+  ) async {
     final response = await _send(
       'PATCH',
       '/v1/driver/deliveries/$deliveryId/status',
@@ -198,6 +228,7 @@ class DriverApiClient {
   }
 
   Future<void> logout() async {
+    await push.stop();
     final token = _refresh;
     if (token != null) {
       try {
@@ -211,6 +242,21 @@ class DriverApiClient {
     }
     await clear();
   }
+
+  Future<dynamic> request(String method, String path, {Object? body}) async {
+    final response = await _send(method, path, body: body, authenticated: true);
+    if (response.statusCode < 200 || response.statusCode >= 300)
+      throw _error(response);
+    return _json(response);
+  }
+
+  Future<void> startPush() => push.start('driver', (method, token) async {
+    await request(
+      method,
+      '/v1/notifications/devices',
+      body: {'token': token, 'app': 'driver'},
+    );
+  });
 
   void close() => _client.close();
 }

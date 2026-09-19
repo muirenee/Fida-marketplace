@@ -14,5 +14,7 @@ String customerName(Map<String, dynamic>? user) {
   final first = (user['firstName'] ?? '').toString().trim();
   final last = (user['lastName'] ?? '').toString().trim();
   final name = '$first $last'.trim();
-  return name.isNotEmpty ? name : (user['email'] ?? user['phone'] ?? 'Customer').toString();
+  return name.isNotEmpty
+      ? name
+      : (user['email'] ?? user['phone'] ?? 'Customer').toString();
 }

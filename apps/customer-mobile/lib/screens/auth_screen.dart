@@ -70,11 +70,14 @@ class _AuthScreenState extends State<AuthScreen> {
                         Text(
                           'Fida Marketplace',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          _register ? 'Create your customer account' : 'Food, groceries and more — delivered.',
+                          _register
+                              ? 'Create your customer account'
+                              : 'Food, groceries and more — delivered.',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodyLarge,
                         ),
@@ -86,8 +89,14 @@ class _AuthScreenState extends State<AuthScreen> {
                                 child: TextFormField(
                                   controller: _firstName,
                                   textInputAction: TextInputAction.next,
-                                  decoration: const InputDecoration(labelText: 'First name', border: OutlineInputBorder()),
-                                  validator: (value) => (value ?? '').trim().isEmpty ? 'Required' : null,
+                                  decoration: const InputDecoration(
+                                    labelText: 'First name',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  validator: (value) =>
+                                      (value ?? '').trim().isEmpty
+                                      ? 'Required'
+                                      : null,
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -95,7 +104,10 @@ class _AuthScreenState extends State<AuthScreen> {
                                 child: TextFormField(
                                   controller: _lastName,
                                   textInputAction: TextInputAction.next,
-                                  decoration: const InputDecoration(labelText: 'Last name', border: OutlineInputBorder()),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Last name',
+                                    border: OutlineInputBorder(),
+                                  ),
                                 ),
                               ),
                             ],
@@ -112,8 +124,13 @@ class _AuthScreenState extends State<AuthScreen> {
                               border: OutlineInputBorder(),
                             ),
                             validator: (value) {
-                              final digits = (value ?? '').replaceAll(RegExp(r'\D'), '');
-                              return digits.length >= 7 && digits.length <= 15 ? null : 'Enter a valid phone number';
+                              final digits = (value ?? '').replaceAll(
+                                RegExp(r'\D'),
+                                '',
+                              );
+                              return digits.length >= 7 && digits.length <= 15
+                                  ? null
+                                  : 'Enter a valid phone number';
                             },
                           ),
                           const SizedBox(height: 14),
@@ -130,7 +147,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                           validator: (value) {
                             final text = (value ?? '').trim();
-                            return text.contains('@') && text.contains('.') ? null : 'Enter a valid email';
+                            return text.contains('@') && text.contains('.')
+                                ? null
+                                : 'Enter a valid email';
                           },
                         ),
                         const SizedBox(height: 14),
@@ -144,18 +163,27 @@ class _AuthScreenState extends State<AuthScreen> {
                             prefixIcon: const Icon(Icons.lock_outline_rounded),
                             border: const OutlineInputBorder(),
                             suffixIcon: IconButton(
-                              onPressed: () => setState(() => _obscure = !_obscure),
-                              icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                              onPressed: () =>
+                                  setState(() => _obscure = !_obscure),
+                              icon: Icon(
+                                _obscure
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
                             ),
                           ),
-                          validator: (value) => (value ?? '').length < 8 ? 'Use at least 8 characters' : null,
+                          validator: (value) => (value ?? '').length < 8
+                              ? 'Use at least 8 characters'
+                              : null,
                         ),
                         if (widget.session.error != null) ...[
                           const SizedBox(height: 14),
                           Text(
                             widget.session.error!,
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Theme.of(context).colorScheme.error),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
                           ),
                         ],
                         const SizedBox(height: 22),
@@ -164,12 +192,20 @@ class _AuthScreenState extends State<AuthScreen> {
                           icon: widget.session.busy
                               ? const SizedBox.square(
                                   dimension: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
-                              : Icon(_register ? Icons.person_add_alt_1 : Icons.login_rounded),
+                              : Icon(
+                                  _register
+                                      ? Icons.person_add_alt_1
+                                      : Icons.login_rounded,
+                                ),
                           label: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            child: Text(_register ? 'Create account' : 'Sign in'),
+                            child: Text(
+                              _register ? 'Create account' : 'Sign in',
+                            ),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -177,10 +213,14 @@ class _AuthScreenState extends State<AuthScreen> {
                           onPressed: widget.session.busy
                               ? null
                               : () => setState(() {
-                                    _register = !_register;
-                                    widget.session.error = null;
-                                  }),
-                          child: Text(_register ? 'Already have an account? Sign in' : 'New to Fida Marketplace? Create account'),
+                                  _register = !_register;
+                                  widget.session.error = null;
+                                }),
+                          child: Text(
+                            _register
+                                ? 'Already have an account? Sign in'
+                                : 'New to Fida Marketplace? Create account',
+                          ),
                         ),
                       ],
                     ),

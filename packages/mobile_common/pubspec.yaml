@@ -1,0 +1,12 @@
+name: fida_mobile_common
+description: Shared Fida Marketplace design, navigation and notification integration
+publish_to: none
+version: 1.0.0
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  url_launcher: ^6.3.2
+  firebase_core: ^4.0.0
+  firebase_messaging: ^16.0.0

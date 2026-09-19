@@ -1,3 +1,5 @@
+import 'saved_screen.dart';
+
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
@@ -26,7 +28,10 @@ class _CustomerShellState extends State<CustomerShell> {
       appBar: _index == 0
           ? null
           : AppBar(
-              title: Text(titles[_index], style: const TextStyle(fontWeight: FontWeight.w900)),
+              title: Text(
+                titles[_index],
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
             ),
       body: IndexedStack(
         index: _index,
@@ -41,9 +46,21 @@ class _CustomerShellState extends State<CustomerShell> {
         selectedIndex: _index,
         onDestinationSelected: (value) => setState(() => _index = value),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long_rounded), label: 'Orders'),
-          NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: 'Account'),
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long_rounded),
+            label: 'Orders',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
+            label: 'Account',
+          ),
         ],
       ),
     );
@@ -81,15 +98,21 @@ class _AccountScreenState extends State<_AccountScreen> {
             ),
             validator: (value) {
               final digits = (value ?? '').replaceAll(RegExp(r'\D'), '');
-              return digits.length >= 7 && digits.length <= 15 ? null : 'Enter a valid phone number';
+              return digits.length >= 7 && digits.length <= 15
+                  ? null
+                  : 'Enter a valid phone number';
             },
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () {
-              if (formKey.currentState?.validate() == true) Navigator.pop(dialogContext, phoneValue);
+              if (formKey.currentState?.validate() == true)
+                Navigator.pop(dialogContext, phoneValue);
             },
             child: const Text('Save'),
           ),
@@ -101,7 +124,13 @@ class _AccountScreenState extends State<_AccountScreen> {
     final ok = await widget.session.updatePhone(value);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(ok ? 'Phone number updated.' : (widget.session.error ?? 'Unable to update phone number.'))),
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Phone number updated.'
+              : (widget.session.error ?? 'Unable to update phone number.'),
+        ),
+      ),
     );
     setState(() {});
   }
@@ -123,7 +152,8 @@ class _AccountScreenState extends State<_AccountScreen> {
               foregroundColor: const Color(0xFF176B55),
               child: Text(
                 name.isEmpty ? 'F' : name.substring(0, 1).toUpperCase(),
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(context).textTheme.headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w900),
               ),
             ),
             const SizedBox(width: 14),
@@ -133,10 +163,14 @@ class _AccountScreenState extends State<_AccountScreen> {
                 children: [
                   Text(
                     name.isEmpty ? 'Fida customer' : name,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900),
                   ),
                   if (user['email'] != null)
-                    Text(user['email'].toString(), style: Theme.of(context).textTheme.bodyMedium),
+                    Text(
+                      user['email'].toString(),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   if (phone != null && phone.isNotEmpty)
                     Text(phone, style: Theme.of(context).textTheme.bodyMedium),
                 ],
@@ -148,7 +182,9 @@ class _AccountScreenState extends State<_AccountScreen> {
         _AccountTile(
           icon: Icons.phone_outlined,
           title: 'Phone number',
-          subtitle: phone == null || phone.isEmpty ? 'Required before placing an order' : phone,
+          subtitle: phone == null || phone.isEmpty
+              ? 'Required before placing an order'
+              : phone,
           onTap: widget.session.busy ? null : _editPhone,
           warning: phone == null || phone.isEmpty,
         ),
@@ -159,16 +195,35 @@ class _AccountScreenState extends State<_AccountScreen> {
           subtitle: 'Saved addresses are available during checkout',
         ),
         const SizedBox(height: 10),
-        const _AccountTile(
+        _AccountTile(
           icon: Icons.support_agent_rounded,
           title: 'Support',
-          subtitle: 'Help and order support will appear here',
+          subtitle: 'View your order support cases',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  SavedScreen(api: widget.session.api, support: true),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _AccountTile(
+          icon: Icons.favorite_outline,
+          title: 'Favourites',
+          subtitle: 'Your saved merchants',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => SavedScreen(api: widget.session.api),
+            ),
+          ),
         ),
         const SizedBox(height: 10),
         const _AccountTile(
           icon: Icons.payments_outlined,
           title: 'Payments',
-          subtitle: 'Cash today; more payment methods can be added later',
+          subtitle: 'Available payment methods are shown at checkout',
         ),
         const SizedBox(height: 26),
         FilledButton.tonalIcon(
@@ -183,7 +238,8 @@ class _AccountScreenState extends State<_AccountScreen> {
         Text(
           'Fida Marketplace',
           textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54),
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Colors.black54),
         ),
       ],
     );
@@ -214,10 +270,17 @@ class _AccountTile extends StatelessWidget {
       ),
       child: ListTile(
         onTap: onTap,
-        leading: Icon(icon, color: warning ? Theme.of(context).colorScheme.error : const Color(0xFF176B55)),
+        leading: Icon(
+          icon,
+          color: warning
+              ? Theme.of(context).colorScheme.error
+              : const Color(0xFF176B55),
+        ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
         subtitle: Text(subtitle),
-        trailing: onTap == null ? null : const Icon(Icons.chevron_right_rounded),
+        trailing: onTap == null
+            ? null
+            : const Icon(Icons.chevron_right_rounded),
       ),
     );
   }

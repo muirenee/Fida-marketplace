@@ -1,3 +1,4 @@
+import 'package:fida_mobile_common/fida_mobile_common.dart';
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
@@ -18,6 +19,8 @@ class _MerchantScreenState extends State<MerchantScreen> {
   Map<String, dynamic>? _merchant;
   final Map<String, int> _cart = {};
   final Map<String, Map<String, dynamic>> _products = {};
+  bool _favorite = false;
+  bool _savingFavorite = false;
   bool _loading = true;
   String? _error;
 
@@ -34,11 +37,18 @@ class _MerchantScreenState extends State<MerchantScreen> {
     });
     try {
       final merchant = await widget.api.merchant(widget.slug);
+      try {
+        final favorites =
+            await widget.api.request('GET', '/v1/customer/favorites') as List;
+        _favorite = favorites.any((f) => f['id'] == merchant['id']);
+      } catch (_) {}
       final products = <String, Map<String, dynamic>>{};
       for (final rawCategory in merchant['categories'] as List? ?? const []) {
         final category = (rawCategory as Map).cast<String, dynamic>();
         for (final rawProduct in category['products'] as List? ?? const []) {
           final product = (rawProduct as Map).cast<String, dynamic>();
+          product['basePrice'] = product['price'];
+          product['baseName'] = product['name'];
           products[product['id'].toString()] = product;
         }
       }
@@ -79,13 +89,74 @@ class _MerchantScreenState extends State<MerchantScreen> {
     });
   }
 
+  Future<void> _configure(String id) async {
+    final product = _products[id]!;
+    final options = product['options'] as List? ?? [];
+    final selected = Set<String>.from(
+      product['selectedOptions'] as List? ?? [],
+    );
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (ctx, update) => AlertDialog(
+          title: Text(product['baseName'].toString()),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final option in options)
+                  CheckboxListTile(
+                    value: selected.contains(option['name']),
+                    title: Text(option['name'].toString()),
+                    subtitle: Text('+ ${money(option['price'])}'),
+                    onChanged: (v) => update(() {
+                      if (v == true) {
+                        selected.add(option['name'].toString());
+                      } else {
+                        selected.remove(option['name']);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('Apply choices'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (save == true && mounted)
+      setState(() {
+        product['selectedOptions'] = selected.toList();
+        product['price'] =
+            asDouble(product['basePrice']) +
+            options
+                .where((o) => selected.contains(o['name']))
+                .fold<double>(0, (sum, o) => sum + asDouble(o['price']));
+        product['name'] =
+            '${product['baseName']}${selected.isEmpty ? '' : ' (${selected.join(', ')})'}';
+      });
+  }
+
   Future<void> _checkout() async {
     final merchant = _merchant;
     if (merchant == null || _cart.isEmpty) return;
     final minimum = asDouble(merchant['minimumOrder']);
     if (_subtotal < minimum) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Minimum order is ${money(minimum, currency: merchant['currency']?.toString() ?? 'RWF')}.')),
+        SnackBar(
+          content: Text(
+            'Minimum order is ${money(minimum, currency: merchant['currency']?.toString() ?? 'RWF')}.',
+          ),
+        ),
       );
       return;
     }
@@ -102,7 +173,9 @@ class _MerchantScreenState extends State<MerchantScreen> {
     );
     if (placed == true && mounted) {
       setState(() => _cart.clear());
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order sent to the merchant.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order sent to the merchant.')),
+      );
     }
   }
 
@@ -122,7 +195,10 @@ class _MerchantScreenState extends State<MerchantScreen> {
               children: [
                 const Icon(Icons.store_mall_directory_outlined, size: 50),
                 const SizedBox(height: 12),
-                Text(_error ?? 'Merchant unavailable', textAlign: TextAlign.center),
+                Text(
+                  _error ?? 'Merchant unavailable',
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 12),
                 FilledButton(onPressed: _load, child: const Text('Retry')),
               ],
@@ -136,14 +212,47 @@ class _MerchantScreenState extends State<MerchantScreen> {
     final currency = merchant['currency']?.toString() ?? 'RWF';
     final categories = merchant['categories'] as List? ?? const [];
     final branches = merchant['branches'] as List? ?? const [];
-    final firstBranch = branches.isNotEmpty && branches.first is Map ? branches.first as Map : null;
+    final firstBranch = branches.isNotEmpty && branches.first is Map
+        ? branches.first as Map
+        : null;
     final pickupEnabled = firstBranch?['pickupEnabled'] == true;
     final deliveryEnabled = firstBranch?['deliveryEnabled'] == true;
     final zones = firstBranch?['deliveryZones'] as List? ?? const [];
-    final hasFreeZone = zones.any((zone) => zone is Map && asDouble(zone['fee']) == 0);
+    final hasFreeZone = zones.any(
+      (zone) => zone is Map && asDouble(zone['fee']) == 0,
+    );
 
     return Scaffold(
-      appBar: AppBar(title: Text(merchant['name'].toString())),
+      appBar: AppBar(
+        title: Text(merchant['name'].toString()),
+        actions: [
+          IconButton(
+            tooltip: _favorite ? 'Remove favourite' : 'Save favourite',
+            onPressed: _savingFavorite
+                ? null
+                : () async {
+                    setState(() => _savingFavorite = true);
+                    try {
+                      await widget.api.request(
+                        _favorite ? 'DELETE' : 'PUT',
+                        '/v1/customer/favorites/${merchant['id']}',
+                      );
+                      if (mounted) setState(() => _favorite = !_favorite);
+                    } catch (e) {
+                      if (mounted)
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text('$e')));
+                    } finally {
+                      if (mounted) setState(() => _savingFavorite = false);
+                    }
+                  },
+            icon: Icon(
+              _favorite ? Icons.favorite : Icons.favorite_border,
+              color: const Color(0xFF07855A),
+            ),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: CustomScrollView(
@@ -171,9 +280,15 @@ class _MerchantScreenState extends State<MerchantScreen> {
                               children: [
                                 Text(
                                   merchant['name'].toString(),
-                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                                  style: Theme.of(context).textTheme.titleLarge
+                                      ?.copyWith(fontWeight: FontWeight.w900),
                                 ),
-                                Text(merchant['merchantType'].toString().replaceAll('_', ' ').toLowerCase()),
+                                Text(
+                                  merchant['merchantType']
+                                      .toString()
+                                      .replaceAll('_', ' ')
+                                      .toLowerCase(),
+                                ),
                               ],
                             ),
                           ),
@@ -185,16 +300,30 @@ class _MerchantScreenState extends State<MerchantScreen> {
                         runSpacing: 8,
                         children: [
                           if (pickupEnabled)
-                            const _Info(icon: Icons.shopping_bag_outlined, text: 'Pickup'),
+                            const _Info(
+                              icon: Icons.shopping_bag_outlined,
+                              text: 'Pickup',
+                            ),
                           if (deliveryEnabled)
                             _Info(
                               icon: Icons.delivery_dining_rounded,
-                              text: hasFreeZone ? 'Free delivery nearby' : 'Delivery by distance',
+                              text: hasFreeZone
+                                  ? 'Free delivery nearby'
+                                  : 'Delivery by distance',
                             ),
                           if (asDouble(merchant['minimumOrder']) > 0)
-                            _Info(icon: Icons.receipt_long_outlined, text: 'Min ${money(merchant['minimumOrder'], currency: currency)}'),
+                            _Info(
+                              icon: Icons.receipt_long_outlined,
+                              text:
+                                  'Min ${money(merchant['minimumOrder'], currency: currency)}',
+                            ),
                           if (firstBranch != null)
-                            _Info(icon: Icons.location_on_outlined, text: firstBranch['city']?.toString() ?? firstBranch['name'].toString()),
+                            _Info(
+                              icon: Icons.location_on_outlined,
+                              text:
+                                  firstBranch['city']?.toString() ??
+                                  firstBranch['name'].toString(),
+                            ),
                         ],
                       ),
                     ],
@@ -214,17 +343,22 @@ class _MerchantScreenState extends State<MerchantScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                     child: Text(
                       (rawCategory as Map)['name'].toString(),
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w800),
                     ),
                   ),
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   sliver: SliverList.separated(
-                    itemCount: ((rawCategory as Map)['products'] as List? ?? const []).length,
+                    itemCount:
+                        ((rawCategory as Map)['products'] as List? ?? const [])
+                            .length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
-                      final product = (((rawCategory)['products'] as List)[index] as Map).cast<String, dynamic>();
+                      final product =
+                          (((rawCategory)['products'] as List)[index] as Map)
+                              .cast<String, dynamic>();
                       final id = product['id'].toString();
                       final quantity = _cart[id] ?? 0;
                       return Card(
@@ -232,27 +366,51 @@ class _MerchantScreenState extends State<MerchantScreen> {
                           padding: const EdgeInsets.all(14),
                           child: Row(
                             children: [
-                              Container(
-                                width: 58,
-                                height: 58,
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: const Icon(Icons.fastfood_outlined),
+                              ProductPhoto(
+                                url: product['imageUrl']?.toString(),
+                                baseUrl: ApiClient.baseUrl,
+                                size: 88,
                               ),
                               const SizedBox(width: 14),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(product['name'].toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
-                                    if ((product['description'] ?? '').toString().isNotEmpty) ...[
+                                    Text(
+                                      product['name'].toString(),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    if ((product['options'] as List? ?? [])
+                                        .isNotEmpty)
+                                      TextButton(
+                                        onPressed: () => _configure(id),
+                                        child: const Text('Choose options'),
+                                      ),
+                                    if ((product['description'] ?? '')
+                                        .toString()
+                                        .isNotEmpty) ...[
                                       const SizedBox(height: 3),
-                                      Text(product['description'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis),
+                                      Text(
+                                        product['description'].toString(),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ],
                                     const SizedBox(height: 5),
-                                    Text(money(product['price'], currency: currency), style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w800)),
+                                    Text(
+                                      money(
+                                        product['price'],
+                                        currency: currency,
+                                      ),
+                                      style: TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -265,9 +423,24 @@ class _MerchantScreenState extends State<MerchantScreen> {
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    IconButton(onPressed: () => _changeQuantity(id, -1), icon: const Icon(Icons.remove_circle_outline)),
-                                    Text('$quantity', style: const TextStyle(fontWeight: FontWeight.w800)),
-                                    IconButton(onPressed: () => _changeQuantity(id, 1), icon: const Icon(Icons.add_circle_outline)),
+                                    IconButton(
+                                      onPressed: () => _changeQuantity(id, -1),
+                                      icon: const Icon(
+                                        Icons.remove_circle_outline,
+                                      ),
+                                    ),
+                                    Text(
+                                      '$quantity',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      onPressed: () => _changeQuantity(id, 1),
+                                      icon: const Icon(
+                                        Icons.add_circle_outline,
+                                      ),
+                                    ),
                                   ],
                                 ),
                             ],
@@ -294,14 +467,28 @@ class _MerchantScreenState extends State<MerchantScreen> {
                     children: [
                       CircleAvatar(
                         radius: 14,
-                        backgroundColor: Theme.of(context).colorScheme.onPrimary,
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .onPrimary,
                         foregroundColor: Theme.of(context).colorScheme.primary,
-                        child: Text('$_cartCount', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                        child: Text(
+                          '$_cartCount',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                       ),
                       const SizedBox(width: 12),
-                      const Text('View cart', style: TextStyle(fontWeight: FontWeight.w800)),
+                      const Text(
+                        'View cart',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
                       const Spacer(),
-                      Text(money(_subtotal, currency: currency), style: const TextStyle(fontWeight: FontWeight.w800)),
+                      Text(
+                        money(_subtotal, currency: currency),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
                     ],
                   ),
                 ),
@@ -321,11 +508,7 @@ class _Info extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 18),
-        const SizedBox(width: 5),
-        Text(text),
-      ],
+      children: [Icon(icon, size: 18), const SizedBox(width: 5), Text(text)],
     );
   }
 }

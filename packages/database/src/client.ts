@@ -8,7 +8,7 @@ if (!connectionString) {
   throw new Error('DATABASE_URL is required');
 }
 
-const adapter = new PrismaPg({ connectionString });
+const adapter = new PrismaPg({ connectionString, ...(process.env.APP_ENV === 'test' ? { max: 1 } : {}) });
 
 export const prisma = new PrismaClient({ adapter });
 export * from '../generated/client.js';

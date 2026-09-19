@@ -2,7 +2,7 @@ name: Validate
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, feature/marketplace-business-delivery]
   pull_request:
 
 jobs:
@@ -44,6 +44,9 @@ jobs:
 
       - name: Typecheck API
         run: pnpm typecheck:api
+
+      - name: Integration tests
+        run: pnpm test:integration
 
       - name: Typecheck Admin web
         run: pnpm --filter @fida/admin-web typecheck

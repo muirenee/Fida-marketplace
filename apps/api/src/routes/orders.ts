@@ -1,4 +1,8 @@
-import { randomBytes } from 'node:crypto';
+import { selectedOptions } from '../lib/product-options.js';
+import { checkoutTotals } from '../lib/checkout.js';
+import { enqueueOrder } from '../lib/notifications.js';
+import { branchIsOpen } from '../lib/business-hours.js';
+import { randomInt, randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import {
   DeliveryStatus,
@@ -25,7 +29,7 @@ function parseItems(value: unknown) {
     if (!item || typeof item !== 'object') return null;
     const row = item as Record<string, unknown>;
     const productId = typeof row.productId === 'string' ? row.productId.trim() : '';
-    const quantity = typeof row.quantity === 'number' ? Math.trunc(row.quantity) : NaN;
+    const quantity = typeof row.quantity === 'number' ? row.quantity : NaN;
     if (!productId || !Number.isInteger(quantity) || quantity < 1 || quantity > 50) return null;
 
     const nextQuantity = (quantities.get(productId) ?? 0) + quantity;
@@ -36,11 +40,37 @@ function parseItems(value: unknown) {
   return quantities;
 }
 
+function choices(items: unknown, productId: string): unknown {
+  if(!Array.isArray(items))return undefined;
+  const matches=items.filter(i=>i?.productId===productId);
+  if(matches.length>1&&matches.some(i=>i.options?.length))throw Object.assign(new Error('Use one configured line per product.'),{statusCode:400});
+  return matches[0]?.options;
+}
+
 function validCoordinate(latitude: number, longitude: number) {
   return Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
 }
 
 export async function orderRoutes(app: FastifyInstance) {
+  app.post('/v1/customer/checkout-preview', { preHandler: authenticate }, async(request,reply)=>{
+    const b=(request.body??{})as Record<string,unknown>;
+    const quantities=parseItems(b.items),tenantId=typeof b.tenantId==='string'?b.tenantId:'';
+    if(!quantities||!tenantId)return reply.code(400).send({error:'invalid_items'});
+    const products=await prisma.product.findMany({where:{id:{in:[...quantities.keys()]},tenantId,isActive:true,isAvailable:true,deletedAt:null,OR:[{categoryId:null},{category:{isActive:true,deletedAt:null}}]}});
+    if(products.length!==quantities.size)return reply.code(409).send({error:'product_unavailable'});
+    const subtotal=products.reduce((sum,p)=>sum.plus(selectedOptions(p,choices(b.items,p.id)).price.mul(quantities.get(p.id)!)),new Prisma.Decimal(0));
+    const branch=await prisma.branch.findFirst({where:{id:String(b.branchId??''),tenantId,isActive:true}});
+    if(!branch)return reply.code(404).send({error:'branch_not_found'});
+    let fee=new Prisma.Decimal(0);
+    if(b.fulfillmentType==='DELIVERY'){
+      const address=await prisma.customerAddress.findFirst({where:{id:String(b.addressId??''),userId:request.authUser!.id}});
+      const lat=address?.latitude??b.latitude,lon=address?.longitude??b.longitude;
+      if(lat===null||lat===undefined||lon===null||lon===undefined||!validCoordinate(Number(lat),Number(lon)))return reply.code(400).send({error:'location_required'});
+      const quote=await quoteBranchDelivery(branch.id,Number(lat),Number(lon));if(!quote)return reply.code(409).send({error:'outside_delivery_area'});fee=quote.fee;
+    }
+    return checkoutTotals(tenantId,subtotal,fee,typeof b.promoCode==='string'?b.promoCode.trim():null);
+  });
+
   app.get('/v1/customer/delivery-quote', { preHandler: authenticate }, async (request, reply) => {
     const query = (request.query ?? {}) as Record<string, unknown>;
     const branchId = typeof query.branchId === 'string' ? query.branchId : '';
@@ -98,6 +128,13 @@ export async function orderRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'invalid_fulfillment_type', allowed: Object.values(FulfillmentType) });
     }
     const fulfillmentType = requestedFulfillment as FulfillmentType;
+    if (requestedPaymentMethod !== 'CASH' && (!process.env.FLUTTERWAVE_SECRET_KEY || !process.env.FLUTTERWAVE_WEBHOOK_SECRET)) return reply.code(409).send({ error: 'payment_unavailable', message: 'Online payments are not configured. Choose cash.' });
+    if (requestedPaymentMethod === 'WALLET') return reply.code(400).send({ error: 'wallet_unavailable' });
+    const scheduledFor = body.scheduledFor ? new Date(String(body.scheduledFor)) : null;
+    if (scheduledFor && (!Number.isFinite(scheduledFor.getTime()) || scheduledFor.getTime() < Date.now() + 30*60000 || scheduledFor.getTime() > Date.now() + 7*86400000)) return reply.code(400).send({ error: 'invalid_schedule', message: 'Schedule between 30 minutes and 7 days ahead.' });
+    const checkoutKey = typeof body.checkoutKey === 'string' && /^[a-zA-Z0-9-]{16,100}$/.test(body.checkoutKey) ? `${request.authUser!.id}:${body.checkoutKey}` : null;
+    if (checkoutKey) { const existing = await prisma.order.findUnique({where:{checkoutKey}}); if (existing) return reply.code(200).send(existing); }
+
 
     const customer = await prisma.user.findUnique({
       where: { id: request.authUser!.id },
@@ -116,6 +153,8 @@ export async function orderRoutes(app: FastifyInstance) {
         id: true,
         minimumOrder: true,
         platformCommissionPercent: true,
+        timezone: true,
+        taxPercent: true,
       },
     });
 
@@ -129,6 +168,9 @@ export async function orderRoutes(app: FastifyInstance) {
         id: true,
         pickupEnabled: true,
         deliveryEnabled: true,
+        isAcceptingOrders: true,
+        openingHours: true,
+        closedUntil: true,
       },
     });
 
@@ -142,10 +184,12 @@ export async function orderRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: 'delivery_unavailable' });
     }
 
+    if (!branchIsOpen(branch, tenant.timezone, scheduledFor ?? new Date())) return reply.code(409).send({ error: 'branch_closed', message: 'This branch is closed at the requested time.' });
+
     const productIds = [...quantities.keys()];
     const products = await prisma.product.findMany({
-      where: { id: { in: productIds }, tenantId, isActive: true, isAvailable: true },
-      select: { id: true, name: true, price: true },
+      where: { id: { in: productIds }, tenantId, isActive: true, isAvailable: true, deletedAt: null, OR: [{ categoryId: null }, { category: { isActive: true, deletedAt: null } }] },
+      select: { id: true, name: true, price: true, options: true },
     });
 
     if (products.length !== productIds.length) {
@@ -155,13 +199,14 @@ export async function orderRoutes(app: FastifyInstance) {
     let subtotal = new Prisma.Decimal(0);
     const itemData = products.map((product) => {
       const quantity = quantities.get(product.id)!;
-      const lineTotal = product.price.mul(quantity);
+      const configured = selectedOptions(product, choices(body.items, product.id));
+      const lineTotal = configured.price.mul(quantity);
       subtotal = subtotal.plus(lineTotal);
       return {
         productId: product.id,
-        productName: product.name,
+        productName: configured.name,
         quantity,
-        unitPrice: product.price,
+        unitPrice: configured.price,
         totalPrice: lineTotal,
       };
     });
@@ -207,15 +252,25 @@ export async function orderRoutes(app: FastifyInstance) {
     }
 
     const serviceFee = new Prisma.Decimal(0);
-    const discount = new Prisma.Decimal(0);
-    const total = subtotal.plus(deliveryFee).minus(discount);
+    const promoCode = typeof body.promoCode === 'string' ? body.promoCode.trim().toUpperCase() : null;
+    const promotion = promoCode ? await prisma.promotion.findUnique({ where: { tenantId_code: { tenantId, code: promoCode } } }) : null;
+    if (promoCode && (!promotion || !promotion.isActive || promotion.expiresAt <= new Date() || promotion.usedCount >= promotion.maxUses || subtotal.lessThan(promotion.minimumOrder))) return reply.code(409).send({ error: 'invalid_promo', message: 'This code is expired, unavailable or the minimum order is not met.' });
+    const discount = promotion ? Prisma.Decimal.min(subtotal.mul(promotion.percent).div(100), promotion.maxDiscount).toDecimalPlaces(2) : new Prisma.Decimal(0);
+    const tax = subtotal.minus(discount).mul(tenant.taxPercent).div(100).toDecimalPlaces(2);
+    const total = subtotal.plus(deliveryFee).plus(tax).minus(discount);
     const commissionPercent = tenant.platformCommissionPercent;
-    const commissionAmount = subtotal.mul(commissionPercent).div(100).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+    const commissionAmount = subtotal.minus(discount).mul(commissionPercent).div(100).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 
     const order = await prisma.$transaction(async (tx) => {
-      return tx.order.create({
+      if (promotion) {
+        const redeemed = await tx.promotion.updateMany({ where: { id: promotion.id, isActive: true, expiresAt: { gt: new Date() }, usedCount: { lt: promotion.maxUses } }, data: { usedCount: { increment: 1 } } });
+        if (!redeemed.count) throw Object.assign(new Error('This promotion is no longer available.'), { statusCode: 409 });
+      }
+      const created = await tx.order.create({
         data: {
           orderNumber: orderNumber(),
+          checkoutKey, scheduledFor, promoCode, tax,
+          deliveryPin: fulfillmentType === FulfillmentType.DELIVERY ? String(randomInt(1000,10000)) : null,
           tenantId,
           branchId,
           customerId: request.authUser!.id,
@@ -245,6 +300,8 @@ export async function orderRoutes(app: FastifyInstance) {
           delivery: true,
         },
       });
+      await enqueueOrder(tx, created.id, created.status);
+      return created;
     });
 
     return reply.code(201).send(order);
@@ -311,10 +368,12 @@ export async function orderRoutes(app: FastifyInstance) {
       });
     }
 
-    await prisma.$transaction([
-      prisma.order.update({ where: { id: order.id }, data: { status: OrderStatus.CANCELLED } }),
-      prisma.delivery.updateMany({ where: { orderId: order.id }, data: { status: DeliveryStatus.CANCELLED } }),
-    ]);
+    await prisma.$transaction(async tx => {
+      const changed = await tx.order.updateMany({ where: { id: order.id, status: { in: cancellable } }, data: { status: OrderStatus.CANCELLED } });
+      if (!changed.count) throw Object.assign(new Error('Order preparation already started.'), { statusCode: 409 });
+      await tx.delivery.updateMany({ where: { orderId: order.id }, data: { status: DeliveryStatus.CANCELLED } });
+      await enqueueOrder(tx, order.id, 'CANCELLED');
+    });
 
     return { success: true, status: OrderStatus.CANCELLED };
   });

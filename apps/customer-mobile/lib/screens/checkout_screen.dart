@@ -1,3 +1,6 @@
+import 'dart:math';
+
+import 'package:fida_mobile_common/fida_mobile_common.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -23,6 +26,14 @@ class CheckoutScreen extends StatefulWidget {
 }
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
+  String _payment = 'CASH';
+  List<String> _paymentMethods = ['CASH'];
+  DateTime? _scheduledFor;
+  final _promo = TextEditingController();
+  final _checkoutKey = List.generate(
+    24,
+    (_) => Random.secure().nextInt(16).toRadixString(16),
+  ).join();
   final _addressLine = TextEditingController();
   final _city = TextEditingController();
   final _instructions = TextEditingController();
@@ -56,10 +67,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     super.initState();
     if (!_deliveryEnabled && _pickupEnabled) _fulfillment = 'PICKUP';
     _loadAddresses();
+    _loadPaymentMethods();
   }
 
   @override
   void dispose() {
+    _promo.dispose();
     _addressLine.dispose();
     _city.dispose();
     _instructions.dispose();
@@ -74,7 +87,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return value;
   }
 
-  double get _estimatedTotal => _subtotal + (_isDelivery ? (_deliveryPrice ?? 0) : 0);
+  double get _estimatedTotal =>
+      _subtotal + (_isDelivery ? (_deliveryPrice ?? 0) : 0);
+
+  Future<void> _loadPaymentMethods() async {
+    try {
+      final result = await widget.api.request('GET', '/v1/payments/methods');
+      if (mounted)
+        setState(
+          () => _paymentMethods = (result['methods'] as List).cast<String>(),
+        );
+    } catch (_) {}
+  }
+
+  Future<void> _schedule() async {
+    final now = DateTime.now();
+    final day = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 7)),
+    );
+    if (day == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))),
+    );
+    if (time == null || !mounted) return;
+    setState(
+      () => _scheduledFor = DateTime(
+        day.year,
+        day.month,
+        day.day,
+        time.hour,
+        time.minute,
+      ),
+    );
+  }
 
   Future<void> _loadAddresses() async {
     try {
@@ -159,18 +208,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
-        setState(() => _error = 'Turn on location services to calculate delivery.');
+        setState(
+          () => _error = 'Turn on location services to calculate delivery.',
+        );
         return;
       }
       var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-        setState(() => _error = 'Location permission is required to calculate delivery distance.');
+      if (permission == LocationPermission.denied)
+        permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        setState(
+          () => _error =
+              'Location permission is required to calculate delivery distance.',
+        );
         return;
       }
 
       final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       );
       if (!mounted) return;
       setState(() {
@@ -179,7 +237,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       });
       await _refreshQuote();
     } catch (_) {
-      if (mounted) setState(() => _error = 'Could not get your current location.');
+      if (mounted)
+        setState(() => _error = 'Could not get your current location.');
     } finally {
       if (mounted) setState(() => _locating = false);
     }
@@ -193,7 +252,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     if (_isDelivery && _deliveryPrice == null) {
-      setState(() => _error = 'Choose a deliverable location before placing the order.');
+      setState(
+        () =>
+            _error = 'Choose a deliverable location before placing the order.',
+      );
       return;
     }
 
@@ -208,17 +270,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         addressId = _addressId;
         if (_newAddress) {
           if (_addressLine.text.trim().isEmpty) {
-            setState(() => _error = 'Enter the street, building or landmark for the delivery.');
+            setState(
+              () => _error =
+                  'Enter the street, building or landmark for the delivery.',
+            );
             return;
           }
           if (_latitude == null || _longitude == null) {
-            setState(() => _error = 'Use your location so the merchant can price and deliver the order.');
+            setState(
+              () => _error = 'Use your location so the merchant can price and deliver the order.',
+            );
             return;
           }
           final saved = await widget.api.addAddress(
             addressLine: _addressLine.text.trim(),
             city: _city.text.trim().isEmpty ? null : _city.text.trim(),
-            instructions: _instructions.text.trim().isEmpty ? null : _instructions.text.trim(),
+            instructions: _instructions.text.trim().isEmpty
+                ? null
+                : _instructions.text.trim(),
             latitude: _latitude,
             longitude: _longitude,
             isDefault: _addresses.isEmpty,
@@ -231,18 +300,106 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
       }
 
+      final totals = await widget.api.request(
+        'POST',
+        '/v1/customer/checkout-preview',
+        body: {
+          'tenantId': widget.merchant['id'],
+          'branchId': branch['id'],
+          'fulfillmentType': _fulfillment,
+          'addressId': addressId,
+          'items': widget.cart.entries
+              .map(
+                (e) => {
+                  'productId': e.key,
+                  'quantity': e.value,
+                  'options': widget.products[e.key]?['selectedOptions'] ?? [],
+                },
+              )
+              .toList(),
+          'promoCode': _promo.text.trim(),
+        },
+      );
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Confirm your order'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Items: ${money(totals['subtotal'])}'),
+              Text('Delivery: ${money(totals['deliveryFee'])}'),
+              Text('Discount: −${money(totals['discount'])}'),
+              Text('Tax: ${money(totals['tax'])}'),
+              const Divider(),
+              Text(
+                'Total: ${money(totals['total'])}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 22,
+                ),
+              ),
+              if (_scheduledFor != null)
+                Text('Scheduled: ${_scheduledFor!.toLocal()}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('Back'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('Place order'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
       final order = await widget.api.createOrder(
         tenantId: widget.merchant['id'].toString(),
         branchId: branch['id'].toString(),
-        items: widget.cart.entries.map((entry) => {'productId': entry.key, 'quantity': entry.value}).toList(),
-        paymentMethod: 'CASH',
+        items: widget.cart.entries
+            .map(
+              (entry) => {
+                'productId': entry.key,
+                'quantity': entry.value,
+                'options': widget.products[entry.key]?['selectedOptions'] ?? [],
+              },
+            )
+            .toList(),
+        paymentMethod: _payment,
+        promoCode: _promo.text.trim().isEmpty ? null : _promo.text.trim(),
+        scheduledFor: _scheduledFor?.toUtc().toIso8601String(),
+        checkoutKey: _checkoutKey,
         fulfillmentType: _fulfillment,
         addressId: addressId,
-        deliveryInstructions: _isDelivery && _newAddress && _instructions.text.trim().isNotEmpty
+        deliveryInstructions:
+            _isDelivery && _newAddress && _instructions.text.trim().isNotEmpty
             ? _instructions.text.trim()
             : null,
       );
 
+      if (!mounted) return;
+      if (_payment != 'CASH') {
+        try {
+          final payment = await widget.api.request(
+            'POST',
+            '/v1/customer/orders/${order['id']}/payment',
+          );
+          if (mounted)
+            await openFidaLink(context, Uri.parse(payment['url'].toString()));
+        } catch (_) {
+          if (mounted)
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Order saved. Open Orders to retry payment.'),
+              ),
+            );
+        }
+      }
       if (!mounted) return;
       await showDialog<void>(
         context: context,
@@ -254,7 +411,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             'Order ${order['orderNumber']} was sent to ${widget.merchant['name']}.\n\n${_isDelivery ? 'Delivery' : 'Pickup'} · ${money(order['total'], currency: widget.merchant['currency']?.toString() ?? 'RWF')}',
             textAlign: TextAlign.center,
           ),
-          actions: [FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))],
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
+            ),
+          ],
         ),
       );
       if (mounted) Navigator.pop(context, true);
@@ -271,16 +433,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Widget build(BuildContext context) {
     final currency = widget.merchant['currency']?.toString() ?? 'RWF';
     final branch = _branch;
-    final submitEnabled = !_loading && !_submitting && (!_isDelivery || _deliveryPrice != null);
+    final submitEnabled =
+        !_loading && !_submitting && (!_isDelivery || _deliveryPrice != null);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Checkout', style: TextStyle(fontWeight: FontWeight.w900))),
+      appBar: AppBar(
+        title: const Text(
+          'Checkout',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
               children: [
-                Text('How would you like it?', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                Text(
+                  'How would you like it?',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900),
+                ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -302,12 +474,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         subtitle: !_deliveryEnabled
                             ? 'Not available'
                             : _quoteLoading
-                                ? 'Calculating…'
-                                : _deliveryPrice == null
-                                    ? 'Price by distance'
-                                    : _deliveryPrice == 0
-                                        ? 'Free delivery'
-                                        : money(_deliveryPrice!, currency: currency),
+                            ? 'Calculating…'
+                            : _deliveryPrice == null
+                            ? 'Price by distance'
+                            : _deliveryPrice == 0
+                            ? 'Free delivery'
+                            : money(_deliveryPrice!, currency: currency),
                         selected: _fulfillment == 'DELIVERY',
                         enabled: _deliveryEnabled,
                         onTap: () => _setFulfillment('DELIVERY'),
@@ -317,20 +489,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 const SizedBox(height: 24),
                 if (_isDelivery) ...[
-                  Text('Delivery location', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                  Text(
+                    'Delivery location',
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
                   const SizedBox(height: 6),
                   Text(
                     _distanceKm == null
                         ? 'The merchant sets the delivery price according to distance.'
                         : '${_distanceKm!.toStringAsFixed(1)} km from ${branch?['name'] ?? 'the branch'}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.black54),
+                    style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(color: Colors.black54),
                   ),
                   const SizedBox(height: 12),
                   if (_addresses.isNotEmpty)
                     SegmentedButton<bool>(
                       segments: const [
-                        ButtonSegment(value: false, icon: Icon(Icons.bookmark_outline), label: Text('Saved')),
-                        ButtonSegment(value: true, icon: Icon(Icons.add_location_alt_outlined), label: Text('New')),
+                        ButtonSegment(
+                          value: false,
+                          icon: Icon(Icons.bookmark_outline),
+                          label: Text('Saved'),
+                        ),
+                        ButtonSegment(
+                          value: true,
+                          icon: Icon(Icons.add_location_alt_outlined),
+                          label: Text('New'),
+                        ),
                       ],
                       selected: {_newAddress},
                       onSelectionChanged: (selection) async {
@@ -360,12 +545,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               });
                               await _refreshQuote();
                             },
-                            title: Text((address['label'] ?? address['addressLine']).toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
-                            subtitle: Text([
-                              address['addressLine'],
-                              address['city'],
-                              if (address['latitude'] == null || address['longitude'] == null) 'Location pin needed',
-                            ].where((v) => v != null && '$v'.isNotEmpty).join(' · ')),
+                            title: Text(
+                              (address['label'] ?? address['addressLine'])
+                                  .toString(),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            subtitle: Text(
+                              [
+                                    address['addressLine'],
+                                    address['city'],
+                                    if (address['latitude'] == null ||
+                                        address['longitude'] == null)
+                                      'Location pin needed',
+                                  ]
+                                  .where((v) => v != null && '$v'.isNotEmpty)
+                                  .join(' · '),
+                            ),
                           ),
                         ),
                       ),
@@ -380,69 +577,168 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    TextField(controller: _city, decoration: const InputDecoration(labelText: 'City', border: OutlineInputBorder())),
+                    TextField(
+                      controller: _city,
+                      decoration: const InputDecoration(
+                        labelText: 'City',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
                       onPressed: _locating ? null : _useCurrentLocation,
                       icon: _locating
-                          ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : Icon(_latitude == null ? Icons.my_location_rounded : Icons.check_circle_rounded),
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              _latitude == null
+                                  ? Icons.my_location_rounded
+                                  : Icons.check_circle_rounded,
+                            ),
                       label: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 13),
-                        child: Text(_latitude == null ? 'Use my current location' : 'Precise location added'),
+                        child: Text(
+                          _latitude == null
+                              ? 'Use my current location'
+                              : 'Precise location added',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: _instructions,
                       maxLines: 2,
-                      decoration: const InputDecoration(labelText: 'Delivery instructions (optional)', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(
+                        labelText: 'Delivery instructions (optional)',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
                   ],
                 ] else ...[
                   Card(
                     child: ListTile(
                       leading: const Icon(Icons.storefront_rounded),
-                      title: Text(branch?['name']?.toString() ?? 'Pickup at merchant', style: const TextStyle(fontWeight: FontWeight.w800)),
-                      subtitle: Text([branch?['addressLine'], branch?['city']].where((v) => v != null && '$v'.isNotEmpty).join(' · ')),
+                      title: Text(
+                        branch?['name']?.toString() ?? 'Pickup at merchant',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: Text(
+                        [branch?['addressLine'], branch?['city']]
+                            .where((v) => v != null && '$v'.isNotEmpty)
+                            .join(' · '),
+                      ),
                     ),
                   ),
                 ],
                 const SizedBox(height: 26),
-                Text('Payment', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                Text(
+                  'Payment',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900),
+                ),
                 const SizedBox(height: 12),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.payments_outlined),
-                    title: Text(_isDelivery ? 'Cash on delivery' : 'Cash at pickup'),
-                    subtitle: const Text('Mobile Money and card will be added after payment gateway integration.'),
-                    trailing: const Icon(Icons.check_circle_rounded),
+                DropdownButtonFormField<String>(
+                  initialValue: _payment,
+                  decoration: const InputDecoration(
+                    labelText: 'Payment method',
+                  ),
+                  items: _paymentMethods
+                      .map(
+                        (m) => DropdownMenuItem(
+                          value: m,
+                          child: Text(
+                            m == 'CASH'
+                                ? (_isDelivery
+                                      ? 'Cash on delivery'
+                                      : 'Cash at pickup')
+                                : m == 'CARD'
+                                ? 'Card'
+                                : 'Mobile Money',
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => setState(() => _payment = v ?? 'CASH'),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _promo,
+                  decoration: const InputDecoration(
+                    labelText: 'Promo code (optional)',
+                    prefixIcon: Icon(Icons.local_offer_outlined),
                   ),
                 ),
+                const SizedBox(height: 16),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.schedule_rounded),
+                  title: Text(
+                    _scheduledFor == null
+                        ? 'As soon as possible'
+                        : 'Scheduled: ${_scheduledFor!.toLocal()}',
+                  ),
+                  subtitle: const Text(
+                    'You can schedule 30 minutes to 7 days ahead.',
+                  ),
+                  onTap: _schedule,
+                  trailing: _scheduledFor == null
+                      ? const Icon(Icons.chevron_right)
+                      : IconButton(
+                          onPressed: () => setState(() => _scheduledFor = null),
+                          icon: const Icon(Icons.close),
+                        ),
+                ),
                 const SizedBox(height: 26),
-                Text('Your order', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                Text(
+                  'Your order',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900),
+                ),
                 const SizedBox(height: 10),
                 for (final entry in widget.cart.entries)
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: Text(widget.products[entry.key]?['name']?.toString() ?? 'Product'),
-                    subtitle: Text('${entry.value} × ${money(widget.products[entry.key]?['price'], currency: currency)}'),
-                    trailing: Text(money(asDouble(widget.products[entry.key]?['price']) * entry.value, currency: currency)),
+                    title: Text(
+                      widget.products[entry.key]?['name']?.toString() ??
+                          'Product',
+                    ),
+                    subtitle: Text(
+                      '${entry.value} × ${money(widget.products[entry.key]?['price'], currency: currency)}',
+                    ),
+                    trailing: Text(
+                      money(
+                        asDouble(widget.products[entry.key]?['price']) *
+                            entry.value,
+                        currency: currency,
+                      ),
+                    ),
                   ),
                 const Divider(),
-                _PriceLine(label: 'Total', value: money(_estimatedTotal, currency: currency), strong: true),
+                _PriceLine(
+                  label: 'Estimated total before discounts/tax',
+                  value: money(_estimatedTotal, currency: currency),
+                  strong: true,
+                ),
                 if (_isDelivery && _deliveryPrice != null) ...[
                   const SizedBox(height: 5),
                   Text(
                     _deliveryPrice == 0
                         ? 'Free delivery for this location.'
                         : 'The selected delivery option includes ${money(_deliveryPrice!, currency: currency)} based on distance.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54),
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: Colors.black54),
                   ),
                 ],
                 if (_error != null) ...[
                   const SizedBox(height: 14),
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -451,7 +747,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         child: FilledButton.icon(
           onPressed: submitEnabled ? _placeOrder : null,
           icon: _submitting
-              ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Icon(Icons.shopping_bag_rounded),
           label: Padding(
             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -494,7 +793,10 @@ class _FulfillmentCard extends StatelessWidget {
         padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: selected ? const Color(0xFF111111) : const Color(0xFFE3E4E3), width: selected ? 2 : 1),
+          border: Border.all(
+            color: selected ? const Color(0xFF111111) : const Color(0xFFE3E4E3),
+            width: selected ? 2 : 1,
+          ),
           color: enabled ? Colors.white : const Color(0xFFF3F3F3),
         ),
         child: Column(
@@ -504,7 +806,13 @@ class _FulfillmentCard extends StatelessWidget {
             const SizedBox(height: 12),
             Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
             const SizedBox(height: 2),
-            Text(subtitle, style: TextStyle(fontSize: 12, color: enabled ? Colors.black54 : Colors.black38)),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: enabled ? Colors.black54 : Colors.black38,
+              ),
+            ),
           ],
         ),
       ),
@@ -513,7 +821,11 @@ class _FulfillmentCard extends StatelessWidget {
 }
 
 class _PriceLine extends StatelessWidget {
-  const _PriceLine({required this.label, required this.value, this.strong = false});
+  const _PriceLine({
+    required this.label,
+    required this.value,
+    this.strong = false,
+  });
 
   final String label;
   final String value;
@@ -521,12 +833,18 @@ class _PriceLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = strong ? Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900) : null;
+    final style = strong
+        ? Theme.of(context).textTheme.titleLarge
+              ?.copyWith(fontWeight: FontWeight.w900)
+        : null;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [Text(label, style: style), Text(value, style: style)],
+        children: [
+          Text(label, style: style),
+          Text(value, style: style),
+        ],
       ),
     );
   }

@@ -1,3 +1,5 @@
+import 'package:fida_mobile_common/fida_mobile_common.dart';
+
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -15,9 +17,10 @@ class ApiException implements Exception {
 }
 
 class ApiClient {
+  final push = FidaPush();
   ApiClient({http.Client? client, FlutterSecureStorage? storage})
-      : _client = client ?? http.Client(),
-        _storage = storage ?? const FlutterSecureStorage();
+    : _client = client ?? http.Client(),
+      _storage = storage ?? const FlutterSecureStorage();
 
   static const _accessKey = 'fida_access_token';
   static const _refreshKey = 'fida_refresh_token';
@@ -34,7 +37,9 @@ class ApiClient {
   bool get hasSession => _accessToken != null || _refreshToken != null;
 
   Uri _uri(String path, [Map<String, String>? query]) {
-    final root = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final root = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
     return Uri.parse('$root$path').replace(queryParameters: query);
   }
 
@@ -64,10 +69,11 @@ class ApiClient {
   }
 
   Map<String, String> _headers({bool authenticated = false}) => {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-        if (authenticated && _accessToken != null) 'authorization': 'Bearer $_accessToken',
-      };
+    'accept': 'application/json',
+    'content-type': 'application/json',
+    if (authenticated && _accessToken != null)
+      'authorization': 'Bearer $_accessToken',
+  };
 
   dynamic _decode(http.Response response) {
     if (response.body.isEmpty) return null;
@@ -87,7 +93,10 @@ class ApiClient {
         code: decoded['error']?.toString(),
       );
     }
-    return ApiException('Request failed (${response.statusCode})', statusCode: response.statusCode);
+    return ApiException(
+      'Request failed (${response.statusCode})',
+      statusCode: response.statusCode,
+    );
   }
 
   Future<http.Response> _send(
@@ -105,14 +114,28 @@ class ApiClient {
     final streamed = await _client.send(request);
     final response = await http.Response.fromStream(streamed);
 
-    if (response.statusCode == 401 && authenticated && allowRefresh && await refreshSession()) {
-      return _send(method, path, body: body, authenticated: authenticated, query: query, allowRefresh: false);
+    if (response.statusCode == 401 &&
+        authenticated &&
+        allowRefresh &&
+        await refreshSession()) {
+      return _send(
+        method,
+        path,
+        body: body,
+        authenticated: authenticated,
+        query: query,
+        allowRefresh: false,
+      );
     }
     return response;
   }
 
   Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await _send('POST', '/v1/auth/login', body: {'email': email, 'password': password});
+    final response = await _send(
+      'POST',
+      '/v1/auth/login',
+      body: {'email': email, 'password': password},
+    );
     if (response.statusCode != 200) throw _error(response);
     final json = _decode(response) as Map<String, dynamic>;
     await _saveTokens(json);
@@ -129,7 +152,13 @@ class ApiClient {
     final response = await _send(
       'POST',
       '/v1/auth/register',
-      body: {'firstName': firstName, 'lastName': lastName, 'email': email, 'phone': phone, 'password': password},
+      body: {
+        'firstName': firstName,
+        'lastName': lastName,
+        'email': email,
+        'phone': phone,
+        'password': password,
+      },
     );
     if (response.statusCode != 201) throw _error(response);
     final json = _decode(response) as Map<String, dynamic>;
@@ -137,11 +166,20 @@ class ApiClient {
     return (json['user'] as Map).cast<String, dynamic>();
   }
 
-  Future<bool> refreshSession() async {
+  Future<bool>? _refreshing;
+  Future<bool> refreshSession() =>
+      _refreshing ??= _doRefresh().whenComplete(() => _refreshing = null);
+
+  Future<bool> _doRefresh() async {
     final token = _refreshToken;
     if (token == null) return false;
     try {
-      final response = await _send('POST', '/v1/auth/refresh', body: {'refreshToken': token}, allowRefresh: false);
+      final response = await _send(
+        'POST',
+        '/v1/auth/refresh',
+        body: {'refreshToken': token},
+        allowRefresh: false,
+      );
       if (response.statusCode != 200) {
         await clearSession();
         return false;
@@ -174,6 +212,7 @@ class ApiClient {
   }
 
   Future<void> logout() async {
+    await push.stop();
     final refresh = _refreshToken;
     if (refresh != null) {
       try {
@@ -183,7 +222,10 @@ class ApiClient {
     await clearSession();
   }
 
-  Future<List<Map<String, dynamic>>> merchants({String? city, String? type}) async {
+  Future<List<Map<String, dynamic>>> merchants({
+    String? city,
+    String? type,
+  }) async {
     final response = await _send(
       'GET',
       '/v1/marketplace/merchants',
@@ -193,7 +235,9 @@ class ApiClient {
       },
     );
     if (response.statusCode != 200) throw _error(response);
-    return (_decode(response) as List).map((item) => (item as Map).cast<String, dynamic>()).toList();
+    return (_decode(response) as List)
+        .map((item) => (item as Map).cast<String, dynamic>())
+        .toList();
   }
 
   Future<Map<String, dynamic>> merchant(String slug) async {
@@ -203,9 +247,15 @@ class ApiClient {
   }
 
   Future<List<Map<String, dynamic>>> addresses() async {
-    final response = await _send('GET', '/v1/customer/addresses', authenticated: true);
+    final response = await _send(
+      'GET',
+      '/v1/customer/addresses',
+      authenticated: true,
+    );
     if (response.statusCode != 200) throw _error(response);
-    return (_decode(response) as List).map((item) => (item as Map).cast<String, dynamic>()).toList();
+    return (_decode(response) as List)
+        .map((item) => (item as Map).cast<String, dynamic>())
+        .toList();
   }
 
   Future<Map<String, dynamic>> addAddress({
@@ -235,7 +285,10 @@ class ApiClient {
     return (_decode(response) as Map).cast<String, dynamic>();
   }
 
-  Future<Map<String, dynamic>> deliveryQuote({required String branchId, required String addressId}) async {
+  Future<Map<String, dynamic>> deliveryQuote({
+    required String branchId,
+    required String addressId,
+  }) async {
     final response = await _send(
       'GET',
       '/v1/customer/delivery-quote',
@@ -272,6 +325,9 @@ class ApiClient {
     required String paymentMethod,
     required String fulfillmentType,
     String? addressId,
+    String? promoCode,
+    String? scheduledFor,
+    String? checkoutKey,
     String? deliveryAddress,
     String? deliveryInstructions,
   }) async {
@@ -281,27 +337,42 @@ class ApiClient {
       authenticated: true,
       body: {
         'tenantId': tenantId,
+        if (promoCode != null) 'promoCode': promoCode,
+        if (scheduledFor != null) 'scheduledFor': scheduledFor,
+        if (checkoutKey != null) 'checkoutKey': checkoutKey,
         'branchId': branchId,
         'items': items,
         'paymentMethod': paymentMethod,
         'fulfillmentType': fulfillmentType,
         if (addressId != null) 'addressId': addressId,
         if (deliveryAddress != null) 'deliveryAddress': deliveryAddress,
-        if (deliveryInstructions != null) 'deliveryInstructions': deliveryInstructions,
+        if (deliveryInstructions != null)
+          'deliveryInstructions': deliveryInstructions,
       },
     );
-    if (response.statusCode != 201) throw _error(response);
+    if (response.statusCode != 201 && response.statusCode != 200)
+      throw _error(response);
     return (_decode(response) as Map).cast<String, dynamic>();
   }
 
   Future<List<Map<String, dynamic>>> orders() async {
-    final response = await _send('GET', '/v1/customer/orders', authenticated: true);
+    final response = await _send(
+      'GET',
+      '/v1/customer/orders',
+      authenticated: true,
+    );
     if (response.statusCode != 200) throw _error(response);
-    return (_decode(response) as List).map((item) => (item as Map).cast<String, dynamic>()).toList();
+    return (_decode(response) as List)
+        .map((item) => (item as Map).cast<String, dynamic>())
+        .toList();
   }
 
   Future<Map<String, dynamic>> order(String id) async {
-    final response = await _send('GET', '/v1/customer/orders/$id', authenticated: true);
+    final response = await _send(
+      'GET',
+      '/v1/customer/orders/$id',
+      authenticated: true,
+    );
     if (response.statusCode != 200) throw _error(response);
     return (_decode(response) as Map).cast<String, dynamic>();
   }
@@ -315,6 +386,21 @@ class ApiClient {
     );
     if (response.statusCode != 200) throw _error(response);
   }
+
+  Future<dynamic> request(String method, String path, {Object? body}) async {
+    final response = await _send(method, path, body: body, authenticated: true);
+    if (response.statusCode < 200 || response.statusCode >= 300)
+      throw _error(response);
+    return _decode(response);
+  }
+
+  Future<void> startPush() => push.start('customer', (method, token) async {
+    await request(
+      method,
+      '/v1/notifications/devices',
+      body: {'token': token, 'app': 'customer'},
+    );
+  });
 
   void close() => _client.close();
 }

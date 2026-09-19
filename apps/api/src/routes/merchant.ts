@@ -1,3 +1,5 @@
+import { enqueueOrder } from '../lib/notifications.js';
+import { recordCompletion } from '../lib/finance.js';
 import type { FastifyInstance } from 'fastify';
 import {
   DeliveryOperatorType,
@@ -11,6 +13,8 @@ import {
   prisma,
 } from '@fida/database/client';
 import { merchantWriteRoles, requireTenant } from '../lib/tenant.js';
+
+import { driverUserSelect } from './merchant-business.js';
 
 const merchantAdminRoles = [MembershipRole.OWNER, MembershipRole.ADMIN];
 
@@ -44,6 +48,8 @@ async function ownedBranch(tenantId: string, branchId: string) {
 }
 
 export async function merchantRoutes(app: FastifyInstance) {
+  app.addHook('preSerialization', async (_req, _reply, payload) => JSON.parse(JSON.stringify(payload, (key, value) => key === 'deliveryPin' || key === 'passwordHash' ? undefined : value)));
+
   app.get('/v1/merchant/context', { preHandler: requireTenant() }, async (request) => {
     const tenantId = request.tenantContext!.tenantId;
     const [tenant, branches, categories, products, orders, drivers] = await Promise.all([
@@ -108,6 +114,8 @@ export async function merchantRoutes(app: FastifyInstance) {
         pickupEnabled: true,
         deliveryEnabled: true,
         logisticsMode: true,
+        openingHours: true,
+        closedUntil: true,
         deliveryZones: {
           orderBy: [{ minDistanceKm: 'asc' }, { maxDistanceKm: 'asc' }],
         },
@@ -257,9 +265,10 @@ export async function merchantRoutes(app: FastifyInstance) {
       where: userId
         ? { id: userId }
         : { OR: [{ email: { equals: identity, mode: 'insensitive' } }, { phone: identity }] },
-      select: { id: true, isActive: true, driver: { select: { id: true, operatorId: true } } },
+      select: { id: true, isActive: true, isPlatformAdmin: true, driver: { select: { id: true, operatorId: true } } },
     });
     if (!user) return reply.code(404).send({ error: 'user_not_found', message: 'No active Fida user matches that email or phone.' });
+    if (user.isPlatformAdmin) return reply.code(409).send({ error: 'platform_admin_cannot_be_driver' });
     if (!user.isActive) return reply.code(409).send({ error: 'user_inactive' });
 
     const operator = await merchantOperator(tenantId);
@@ -272,11 +281,11 @@ export async function merchantRoutes(app: FastifyInstance) {
       ? await prisma.driver.update({
           where: { id: user.driver.id },
           data: { operatorId: operator.id, branchId, isActive: true },
-          include: { user: true, branch: true, operator: true },
+          include: { user: { select: driverUserSelect }, branch: true, operator: true },
         })
       : await prisma.driver.create({
           data: { userId: user.id, operatorId: operator.id, branchId },
-          include: { user: true, branch: true, operator: true },
+          include: { user: { select: driverUserSelect }, branch: true, operator: true },
         });
 
     return reply.code(user.driver ? 200 : 201).send(driver);
@@ -304,12 +313,16 @@ export async function merchantRoutes(app: FastifyInstance) {
     }
     if (Object.keys(data).length === 0) return reply.code(400).send({ error: 'driver_settings_required' });
 
-    return prisma.driver.update({ where: { id: driver.id }, data, include: { user: true, branch: true, operator: true } });
+    return prisma.$transaction(async tx => {
+      await tx.$executeRaw`SELECT 1 FROM "Driver" WHERE id = ${driver.id} FOR UPDATE`;
+      if ((data.isActive === false || 'branchId' in data) && await tx.delivery.count({ where: { driverId, status: { in: ['ASSIGNED','AT_PICKUP','PICKED_UP','AT_DROPOFF'] } } })) throw Object.assign(new Error('Complete active deliveries before suspending or moving this driver.'), { statusCode: 409 });
+      return tx.driver.update({ where: { id: driver.id }, data, include: { user: { select: driverUserSelect }, branch: true, operator: true } });
+    });
   });
 
   app.get('/v1/merchant/categories', { preHandler: requireTenant() }, async (request) => {
     return prisma.category.findMany({
-      where: { tenantId: request.tenantContext!.tenantId },
+      where: { tenantId: request.tenantContext!.tenantId, deletedAt: null },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
   });
@@ -333,7 +346,7 @@ export async function merchantRoutes(app: FastifyInstance) {
 
   app.get('/v1/merchant/products', { preHandler: requireTenant() }, async (request) => {
     return prisma.product.findMany({
-      where: { tenantId: request.tenantContext!.tenantId },
+      where: { tenantId: request.tenantContext!.tenantId, deletedAt: null },
       include: { category: { select: { id: true, name: true, slug: true } } },
       orderBy: { createdAt: 'desc' },
     });
@@ -345,14 +358,18 @@ export async function merchantRoutes(app: FastifyInstance) {
     const rawPrice = typeof body.price === 'number' || typeof body.price === 'string' ? Number(body.price) : NaN;
     const categoryId = typeof body.categoryId === 'string' && body.categoryId ? body.categoryId : null;
 
-    if (!name || !Number.isFinite(rawPrice) || rawPrice < 0) {
+    if (!name || !Number.isFinite(rawPrice) || rawPrice < 0 || rawPrice > 100000000 || body.price === '') {
       return reply.code(400).send({ error: 'invalid_product', message: 'Product name and a valid price are required.' });
     }
     if (categoryId) {
-      const category = await prisma.category.findFirst({ where: { id: categoryId, tenantId: request.tenantContext!.tenantId }, select: { id: true } });
+      const category = await prisma.category.findFirst({ where: { id: categoryId, tenantId: request.tenantContext!.tenantId, deletedAt: null }, select: { id: true } });
       if (!category) return reply.code(400).send({ error: 'invalid_category', message: 'Category does not belong to this merchant.' });
     }
 
+    const imageUrl = typeof body.imageUrl === 'string' ? body.imageUrl.trim() : null;
+    if (imageUrl && !imageUrl.startsWith(`/v1/media/${request.tenantContext!.tenantId}/`)) return reply.code(400).send({ error: 'upload_image_first' });
+    const options = body.options ?? [];
+    if (!Array.isArray(options) || options.length > 20 || options.some(o => !o || typeof o.name !== 'string' || !o.name.trim() || o.name.trim().length > 160 || !Number.isFinite(Number(o.price)) || Number(o.price) < 0 || Number(o.price) > 1000000) || new Set(options.map(o => o.name.trim())).size !== options.length) return reply.code(400).send({ error: 'invalid_options' });
     const product = await prisma.product.create({
       data: {
         tenantId: request.tenantContext!.tenantId,
@@ -361,6 +378,8 @@ export async function merchantRoutes(app: FastifyInstance) {
         description: typeof body.description === 'string' ? body.description.trim() || null : null,
         sku: typeof body.sku === 'string' ? body.sku.trim() || null : null,
         price: rawPrice.toFixed(2),
+        imageUrl,
+        options: options.map(o => ({ name: o.name.trim(), price: Number(o.price) })),
         isAvailable: typeof body.isAvailable === 'boolean' ? body.isAvailable : true,
       },
     });
@@ -400,10 +419,12 @@ export async function merchantRoutes(app: FastifyInstance) {
 
     const order = await prisma.order.findFirst({
       where: { id: orderId, tenantId: request.tenantContext!.tenantId },
-      select: { id: true, status: true, fulfillmentType: true, paymentMethod: true, paymentStatus: true },
+      select: { id: true, status: true, scheduledFor: true, fulfillmentType: true, paymentMethod: true, paymentStatus: true },
     });
     if (!order) return reply.code(404).send({ error: 'order_not_found' });
 
+    if (requestedStatus === 'ACCEPTED' && order.paymentMethod !== 'CASH' && order.paymentStatus !== 'PAID') return reply.code(409).send({ error: 'payment_pending' });
+    if (requestedStatus === 'PREPARING' && order.scheduledFor && order.scheduledFor.getTime() > Date.now() + 30*60000) return reply.code(409).send({ error: 'scheduled_order', message: 'Preparation can begin 30 minutes before the scheduled time.' });
     const nextStatus = requestedStatus as OrderStatus;
     const allowed = [...(orderTransitions[order.status] ?? [])];
     if (order.status === OrderStatus.READY_FOR_PICKUP && order.fulfillmentType === FulfillmentType.PICKUP) allowed.push(OrderStatus.COMPLETED);
@@ -412,7 +433,10 @@ export async function merchantRoutes(app: FastifyInstance) {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const changed = await tx.order.update({ where: { id: order.id }, data: { status: nextStatus }, include: { items: true, delivery: true } });
+      const moved = await tx.order.updateMany({ where: { id: order.id, status: order.status }, data: { status: nextStatus } });
+      if (!moved.count) throw Object.assign(new Error('Order changed. Refresh and retry.'), { statusCode: 409 });
+      await enqueueOrder(tx, order.id, nextStatus);
+      if (nextStatus === OrderStatus.COMPLETED) await recordCompletion(tx, order.id);
 
       if (nextStatus === OrderStatus.REJECTED) {
         await tx.delivery.updateMany({ where: { orderId: order.id }, data: { status: DeliveryStatus.CANCELLED } });
@@ -425,7 +449,7 @@ export async function merchantRoutes(app: FastifyInstance) {
       ) {
         await tx.order.update({ where: { id: order.id }, data: { paymentStatus: PaymentStatus.PAID } });
       }
-      return changed;
+      return tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: true, delivery: true } });
     });
 
     return updated;

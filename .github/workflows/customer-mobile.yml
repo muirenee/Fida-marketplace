@@ -1,22 +1,28 @@
 name: Customer Mobile
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feature/marketplace-business-delivery]
     paths:
       - 'apps/customer-mobile/**'
       - 'scripts/configure_flutter_android_signing.py'
+      - 'scripts/configure_mobile.py'
+      - 'packages/mobile_common/**'
       - '.github/workflows/customer-mobile.yml'
   pull_request:
     paths:
       - 'apps/customer-mobile/**'
       - 'scripts/configure_flutter_android_signing.py'
+      - 'scripts/configure_mobile.py'
+      - 'packages/mobile_common/**'
       - '.github/workflows/customer-mobile.yml'
 
 jobs:
   android:
     runs-on: ubuntu-latest
     env:
+      FIDA_FIREBASE_CONFIG_JSON: ${{ secrets.FIDA_CUSTOMER_GOOGLE_SERVICES_JSON }}
       FIDA_ANDROID_KEYSTORE_BASE64: ${{ secrets.FIDA_ANDROID_KEYSTORE_BASE64 }}
       FIDA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.FIDA_ANDROID_KEYSTORE_PASSWORD }}
       FIDA_ANDROID_KEY_ALIAS: ${{ secrets.FIDA_ANDROID_KEY_ALIAS }}
@@ -51,6 +57,10 @@ jobs:
             sed -i '/<manifest/a\\    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
           fi
 
+      - name: Configure branding and notifications
+        working-directory: apps/customer-mobile
+        run: python ../../scripts/configure_mobile.py
+
       - name: Resolve dependencies
         working-directory: apps/customer-mobile
         run: flutter pub get
@@ -63,7 +73,7 @@ jobs:
         id: signing
         shell: bash
         run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "push" \
+          if [[ ( "${GITHUB_EVENT_NAME}" == "push" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ) \
             && -n "${FIDA_ANDROID_KEYSTORE_BASE64}" \
             && -n "${FIDA_ANDROID_KEYSTORE_PASSWORD}" \
             && -n "${FIDA_ANDROID_KEY_ALIAS}" \
@@ -91,7 +101,7 @@ jobs:
         working-directory: apps/customer-mobile
         run: |
           BUILD_NUMBER=$((10000 + GITHUB_RUN_NUMBER))
-          flutter build apk --release --build-number="${BUILD_NUMBER}" --dart-define=FIDA_API_BASE_URL=https://marketplaceadmin.fidalix.com
+          flutter build apk --release --build-number="${BUILD_NUMBER}" --dart-define=FIDA_API_BASE_URL=https://marketplaceadmin.fidalix.com --dart-define-from-file=firebase-defines.json
 
       - name: Upload signed release APK
         if: steps.signing.outputs.enabled == 'true'
@@ -104,7 +114,7 @@ jobs:
       - name: Build debug APK
         if: steps.signing.outputs.enabled != 'true'
         working-directory: apps/customer-mobile
-        run: flutter build apk --debug --dart-define=FIDA_API_BASE_URL=https://marketplaceadmin.fidalix.com
+        run: flutter build apk --debug --dart-define=FIDA_API_BASE_URL=https://marketplaceadmin.fidalix.com --dart-define-from-file=firebase-defines.json
 
       - name: Upload debug APK
         if: steps.signing.outputs.enabled != 'true'
