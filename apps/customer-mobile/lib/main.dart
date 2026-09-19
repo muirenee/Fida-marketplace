@@ -33,18 +33,15 @@ class _FidaAppState extends State<FidaApp> {
 
   @override
   Widget build(BuildContext context) {
-    const fidaGreen = Color(0xFF176B55);
     const ink = Color(0xFF111111);
-    final scheme = ColorScheme.fromSeed(
-      seedColor: fidaGreen,
-      brightness: Brightness.light,
-      surface: Colors.white,
-    ).copyWith(
+    const green = Color(0xFF0E7A3D);
+    final scheme = ColorScheme.fromSeed(seedColor: green, brightness: Brightness.light, surface: Colors.white).copyWith(
       primary: ink,
       onPrimary: Colors.white,
-      secondary: fidaGreen,
+      secondary: green,
       onSecondary: Colors.white,
-      surfaceContainerHighest: const Color(0xFFF2F3F2),
+      surface: Colors.white,
+      surfaceContainerHighest: const Color(0xFFF1F1F1),
     );
 
     return MaterialApp(
@@ -55,32 +52,29 @@ class _FidaAppState extends State<FidaApp> {
         colorScheme: scheme,
         scaffoldBackgroundColor: Colors.white,
         fontFamilyFallback: const ['Roboto', 'Arial', 'sans-serif'],
+        visualDensity: VisualDensity.standard,
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.white,
           foregroundColor: ink,
           elevation: 0,
           scrolledUnderElevation: 0,
           centerTitle: false,
+          surfaceTintColor: Colors.transparent,
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: const Color(0xFFF2F3F2),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: ink, width: 1.4),
-          ),
+          fillColor: const Color(0xFFF1F1F1),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: ink, width: 1.5)),
+          labelStyle: const TextStyle(color: Colors.black54),
+          hintStyle: const TextStyle(color: Colors.black45),
         ),
         cardTheme: CardThemeData(
           elevation: 0,
           margin: EdgeInsets.zero,
+          surfaceTintColor: Colors.transparent,
           color: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         ),
@@ -88,31 +82,24 @@ class _FidaAppState extends State<FidaApp> {
           style: FilledButton.styleFrom(
             backgroundColor: ink,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            textStyle: const TextStyle(fontWeight: FontWeight.w800),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            textStyle: const TextStyle(fontWeight: FontWeight.w900),
           ),
         ),
-        navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: Colors.white,
-          elevation: 2,
-          indicatorColor: const Color(0xFFE2F3EC),
-          labelTextStyle: WidgetStateProperty.resolveWith(
-            (states) => TextStyle(
-              fontWeight: states.contains(WidgetState.selected) ? FontWeight.w800 : FontWeight.w600,
-              color: ink,
-            ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: ink,
+            side: const BorderSide(color: Color(0xFFD8D8D8)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         ),
+        dividerTheme: const DividerThemeData(color: Color(0xFFEAEAEA), thickness: 1),
       ),
       home: AnimatedBuilder(
         animation: widget.session,
         builder: (context, _) {
-          if (widget.session.initializing) {
-            return const _SplashScreen();
-          }
-          if (!widget.session.isAuthenticated) {
-            return AuthScreen(session: widget.session);
-          }
+          if (widget.session.initializing) return const _SplashScreen();
+          if (!widget.session.isAuthenticated) return AuthScreen(session: widget.session);
           return CustomerShell(api: widget.api, session: widget.session);
         },
       ),
@@ -131,21 +118,15 @@ class _SplashScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 82,
-              height: 82,
-              decoration: BoxDecoration(
-                color: const Color(0xFF176B55),
-                borderRadius: BorderRadius.circular(22),
-              ),
+              width: 78,
+              height: 78,
+              decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(20)),
               alignment: Alignment.center,
               child: const Text('F', style: TextStyle(color: Colors.white, fontSize: 42, fontWeight: FontWeight.w900)),
             ),
-            const SizedBox(height: 18),
-            Text(
-              'Fida Marketplace',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
+            const Text('Fida Marketplace', style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900, letterSpacing: -.8)),
+            const SizedBox(height: 20),
             const SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2.5)),
           ],
         ),

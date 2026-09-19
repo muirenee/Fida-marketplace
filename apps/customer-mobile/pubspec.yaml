@@ -1,15 +1,17 @@
 name: customer_mobile
 description: Fida Marketplace customer application
 publish_to: none
-version: 0.5.0+5
+version: 0.6.0+6
 environment:
   sdk: '>=3.8.0 <4.0.0'
 dependencies:
   flutter:
     sdk: flutter
+  flutter_map: ^8.2.2
   flutter_secure_storage: ^11.1.1
   geolocator: ^14.0.2
   http: ^1.6.0
+  latlong2: ^0.9.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

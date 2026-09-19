@@ -162,12 +162,7 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> updatePhone(String phone) async {
-    final response = await _send(
-      'PATCH',
-      '/v1/auth/me',
-      authenticated: true,
-      body: {'phone': phone},
-    );
+    final response = await _send('PATCH', '/v1/auth/me', authenticated: true, body: {'phone': phone});
     if (response.statusCode != 200) throw _error(response);
     final json = _decode(response) as Map<String, dynamic>;
     return (json['user'] as Map).cast<String, dynamic>();
@@ -265,6 +260,21 @@ class ApiClient {
     return (_decode(response) as Map).cast<String, dynamic>();
   }
 
+  Future<Map<String, dynamic>> validatePromo({
+    required String tenantId,
+    required String code,
+    required double subtotal,
+  }) async {
+    final response = await _send(
+      'POST',
+      '/v1/customer/promotions/validate',
+      authenticated: true,
+      body: {'tenantId': tenantId, 'code': code.trim(), 'subtotal': subtotal},
+    );
+    if (response.statusCode != 200) throw _error(response);
+    return (_decode(response) as Map).cast<String, dynamic>();
+  }
+
   Future<Map<String, dynamic>> createOrder({
     required String tenantId,
     required String branchId,
@@ -274,6 +284,7 @@ class ApiClient {
     String? addressId,
     String? deliveryAddress,
     String? deliveryInstructions,
+    String? promoCode,
   }) async {
     final response = await _send(
       'POST',
@@ -288,6 +299,7 @@ class ApiClient {
         if (addressId != null) 'addressId': addressId,
         if (deliveryAddress != null) 'deliveryAddress': deliveryAddress,
         if (deliveryInstructions != null) 'deliveryInstructions': deliveryInstructions,
+        if (promoCode != null && promoCode.trim().isNotEmpty) 'promoCode': promoCode.trim(),
       },
     );
     if (response.statusCode != 201) throw _error(response);
@@ -302,6 +314,18 @@ class ApiClient {
 
   Future<Map<String, dynamic>> order(String id) async {
     final response = await _send('GET', '/v1/customer/orders/$id', authenticated: true);
+    if (response.statusCode != 200) throw _error(response);
+    return (_decode(response) as Map).cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> orderTracking(String id) async {
+    final response = await _send('GET', '/v1/customer/orders/$id/tracking', authenticated: true);
+    if (response.statusCode != 200) throw _error(response);
+    return (_decode(response) as Map).cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> orderReceipt(String id) async {
+    final response = await _send('GET', '/v1/customer/orders/$id/receipt', authenticated: true);
     if (response.statusCode != 200) throw _error(response);
     return (_decode(response) as Map).cast<String, dynamic>();
   }
