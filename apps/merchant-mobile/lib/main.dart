@@ -534,7 +534,7 @@ class _MerchantShellState extends State<_MerchantShell> {
 }
 
 class _OrdersPage extends StatefulWidget {
-  const _OrdersPage({required this.api, required this.tenantId});
+  const _OrdersPage({super.key, required this.api, required this.tenantId});
   final MerchantApiClient api;
   final String tenantId;
 
