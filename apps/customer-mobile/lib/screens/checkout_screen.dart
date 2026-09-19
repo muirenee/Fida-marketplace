@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../core/api_client.dart';
+import '../models/cart_line.dart';
 import '../ui/format.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -9,14 +10,16 @@ class CheckoutScreen extends StatefulWidget {
     super.key,
     required this.api,
     required this.merchant,
-    required this.cart,
-    required this.products,
+    required this.cartLines,
+    this.promoCode,
+    this.promoEstimate,
   });
 
   final ApiClient api;
   final Map<String, dynamic> merchant;
-  final Map<String, int> cart;
-  final Map<String, Map<String, dynamic>> products;
+  final List<CartLine> cartLines;
+  final String? promoCode;
+  final Map<String, dynamic>? promoEstimate;
 
   @override
   State<CheckoutScreen> createState() => _CheckoutScreenState();
@@ -50,6 +53,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool get _pickupEnabled => _branch?['pickupEnabled'] == true;
   bool get _deliveryEnabled => _branch?['deliveryEnabled'] == true;
   bool get _isDelivery => _fulfillment == 'DELIVERY';
+  String get _currency => widget.merchant['currency']?.toString() ?? 'RWF';
+  double get _subtotal => widget.cartLines.fold(0, (sum, line) => sum + line.lineTotal);
+  double get _discount => asDouble(widget.promoEstimate?['discount']);
+  double get _estimatedTotal => (_subtotal + (_isDelivery ? (_deliveryPrice ?? 0) : 0) - _discount).clamp(0, double.infinity);
 
   @override
   void initState() {
@@ -65,16 +72,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _instructions.dispose();
     super.dispose();
   }
-
-  double get _subtotal {
-    var value = 0.0;
-    for (final entry in widget.cart.entries) {
-      value += asDouble(widget.products[entry.key]?['price']) * entry.value;
-    }
-    return value;
-  }
-
-  double get _estimatedTotal => _subtotal + (_isDelivery ? (_deliveryPrice ?? 0) : 0);
 
   Future<void> _loadAddresses() async {
     try {
@@ -123,7 +120,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _deliveryPrice = null;
       _distanceKm = null;
     });
-
     try {
       Map<String, dynamic> quote;
       if (_newAddress) {
@@ -135,10 +131,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         );
       } else {
         if (_addressId == null) return;
-        quote = await widget.api.deliveryQuote(
-          branchId: _branch!['id'].toString(),
-          addressId: _addressId!,
-        );
+        quote = await widget.api.deliveryQuote(branchId: _branch!['id'].toString(), addressId: _addressId!);
       }
       if (!mounted) return;
       setState(() {
@@ -168,10 +161,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         setState(() => _error = 'Location permission is required to calculate delivery distance.');
         return;
       }
-
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
+      final position = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
       if (!mounted) return;
       setState(() {
         _latitude = position.latitude;
@@ -191,7 +181,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() => _error = 'This merchant has no branch accepting orders.');
       return;
     }
-
     if (_isDelivery && _deliveryPrice == null) {
       setState(() => _error = 'Choose a deliverable location before placing the order.');
       return;
@@ -201,7 +190,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _submitting = true;
       _error = null;
     });
-
     try {
       String? addressId;
       if (_isDelivery) {
@@ -212,7 +200,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             return;
           }
           if (_latitude == null || _longitude == null) {
-            setState(() => _error = 'Use your location so the merchant can price and deliver the order.');
+            setState(() => _error = 'Use your current location so the merchant can price and deliver the order.');
             return;
           }
           final saved = await widget.api.addAddress(
@@ -234,24 +222,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final order = await widget.api.createOrder(
         tenantId: widget.merchant['id'].toString(),
         branchId: branch['id'].toString(),
-        items: widget.cart.entries.map((entry) => {'productId': entry.key, 'quantity': entry.value}).toList(),
+        items: widget.cartLines.map((line) => line.toOrderItem()).toList(),
         paymentMethod: 'CASH',
         fulfillmentType: _fulfillment,
         addressId: addressId,
-        deliveryInstructions: _isDelivery && _newAddress && _instructions.text.trim().isNotEmpty
-            ? _instructions.text.trim()
-            : null,
+        deliveryInstructions: _isDelivery && _newAddress && _instructions.text.trim().isNotEmpty ? _instructions.text.trim() : null,
+        promoCode: widget.promoCode,
       );
-
       if (!mounted) return;
       await showDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (context) => AlertDialog(
           icon: const Icon(Icons.check_circle_rounded, size: 54),
-          title: const Text('Order placed'),
+          title: const Text('Order placed', style: TextStyle(fontWeight: FontWeight.w900)),
           content: Text(
-            'Order ${order['orderNumber']} was sent to ${widget.merchant['name']}.\n\n${_isDelivery ? 'Delivery' : 'Pickup'} · ${money(order['total'], currency: widget.merchant['currency']?.toString() ?? 'RWF')}',
+            'Order ${order['orderNumber']} was sent to ${widget.merchant['name']}.\n\n${_isDelivery ? 'Delivery' : 'Pickup'} · ${money(order['total'], currency: _currency)}',
             textAlign: TextAlign.center,
           ),
           actions: [FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))],
@@ -269,69 +255,51 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currency = widget.merchant['currency']?.toString() ?? 'RWF';
     final branch = _branch;
     final submitEnabled = !_loading && !_submitting && (!_isDelivery || _deliveryPrice != null);
-
     return Scaffold(
       appBar: AppBar(title: const Text('Checkout', style: TextStyle(fontWeight: FontWeight.w900))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 135),
               children: [
-                Text('How would you like it?', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                const Text('Delivery options', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Expanded(
-                      child: _FulfillmentCard(
-                        icon: Icons.shopping_bag_outlined,
-                        title: 'Pickup',
-                        subtitle: _pickupEnabled ? 'Free' : 'Not available',
-                        selected: _fulfillment == 'PICKUP',
-                        enabled: _pickupEnabled,
-                        onTap: () => _setFulfillment('PICKUP'),
+                    if (_deliveryEnabled)
+                      Expanded(
+                        child: _FulfillmentCard(
+                          icon: Icons.delivery_dining_rounded,
+                          title: 'Delivery',
+                          subtitle: _quoteLoading ? 'Calculating…' : _deliveryPrice == null ? 'Choose address' : _deliveryPrice == 0 ? 'Free' : money(_deliveryPrice!, currency: _currency),
+                          selected: _fulfillment == 'DELIVERY',
+                          onTap: () => _setFulfillment('DELIVERY'),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _FulfillmentCard(
-                        icon: Icons.delivery_dining_rounded,
-                        title: 'Delivery',
-                        subtitle: !_deliveryEnabled
-                            ? 'Not available'
-                            : _quoteLoading
-                                ? 'Calculating…'
-                                : _deliveryPrice == null
-                                    ? 'Price by distance'
-                                    : _deliveryPrice == 0
-                                        ? 'Free delivery'
-                                        : money(_deliveryPrice!, currency: currency),
-                        selected: _fulfillment == 'DELIVERY',
-                        enabled: _deliveryEnabled,
-                        onTap: () => _setFulfillment('DELIVERY'),
+                    if (_deliveryEnabled && _pickupEnabled) const SizedBox(width: 10),
+                    if (_pickupEnabled)
+                      Expanded(
+                        child: _FulfillmentCard(
+                          icon: Icons.directions_walk_rounded,
+                          title: 'Pickup',
+                          subtitle: 'Free',
+                          selected: _fulfillment == 'PICKUP',
+                          onTap: () => _setFulfillment('PICKUP'),
+                        ),
                       ),
-                    ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 28),
                 if (_isDelivery) ...[
-                  Text('Delivery location', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                  const Text('Delivery location', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 6),
-                  Text(
-                    _distanceKm == null
-                        ? 'The merchant sets the delivery price according to distance.'
-                        : '${_distanceKm!.toStringAsFixed(1)} km from ${branch?['name'] ?? 'the branch'}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.black54),
-                  ),
-                  const SizedBox(height: 12),
+                  Text(_distanceKm == null ? 'Choose where you want this order delivered.' : '${_distanceKm!.toStringAsFixed(1)} km from ${branch?['name'] ?? 'the branch'}', style: const TextStyle(color: Colors.black54)),
+                  const SizedBox(height: 14),
                   if (_addresses.isNotEmpty)
                     SegmentedButton<bool>(
-                      segments: const [
-                        ButtonSegment(value: false, icon: Icon(Icons.bookmark_outline), label: Text('Saved')),
-                        ButtonSegment(value: true, icon: Icon(Icons.add_location_alt_outlined), label: Text('New')),
-                      ],
+                      segments: const [ButtonSegment(value: false, label: Text('Saved')), ButtonSegment(value: true, label: Text('New address'))],
                       selected: {_newAddress},
                       onSelectionChanged: (selection) async {
                         setState(() {
@@ -346,120 +314,90 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   const SizedBox(height: 14),
                   if (!_newAddress)
                     ..._addresses.map(
-                      (address) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Card(
-                          child: RadioListTile<String>(
-                            value: address['id'].toString(),
-                            groupValue: _addressId,
-                            onChanged: (value) async {
-                              setState(() {
-                                _addressId = value;
-                                _deliveryPrice = null;
-                                _distanceKm = null;
-                              });
-                              await _refreshQuote();
-                            },
-                            title: Text((address['label'] ?? address['addressLine']).toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
-                            subtitle: Text([
-                              address['addressLine'],
-                              address['city'],
-                              if (address['latitude'] == null || address['longitude'] == null) 'Location pin needed',
-                            ].where((v) => v != null && '$v'.isNotEmpty).join(' · ')),
-                          ),
+                      (address) => Container(
+                        margin: const EdgeInsets.only(bottom: 9),
+                        decoration: BoxDecoration(border: Border.all(color: _addressId == address['id'].toString() ? Colors.black : const Color(0xFFE7E7E7)), borderRadius: BorderRadius.circular(16)),
+                        child: RadioListTile<String>(
+                          value: address['id'].toString(),
+                          groupValue: _addressId,
+                          onChanged: (value) async {
+                            setState(() {
+                              _addressId = value;
+                              _deliveryPrice = null;
+                              _distanceKm = null;
+                            });
+                            await _refreshQuote();
+                          },
+                          title: Text((address['label'] ?? address['addressLine']).toString(), style: const TextStyle(fontWeight: FontWeight.w800)),
+                          subtitle: Text([address['addressLine'], address['city']].where((v) => v != null && '$v'.isNotEmpty).join(' · ')),
                         ),
                       ),
                     )
                   else ...[
-                    TextField(
-                      controller: _addressLine,
-                      decoration: const InputDecoration(
-                        labelText: 'Street / building / landmark',
-                        prefixIcon: Icon(Icons.location_on_outlined),
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
+                    TextField(controller: _addressLine, decoration: const InputDecoration(labelText: 'Street / building / landmark', prefixIcon: Icon(Icons.location_on_outlined))),
                     const SizedBox(height: 12),
-                    TextField(controller: _city, decoration: const InputDecoration(labelText: 'City', border: OutlineInputBorder())),
+                    TextField(controller: _city, decoration: const InputDecoration(labelText: 'City')),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
                       onPressed: _locating ? null : _useCurrentLocation,
-                      icon: _locating
-                          ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : Icon(_latitude == null ? Icons.my_location_rounded : Icons.check_circle_rounded),
-                      label: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        child: Text(_latitude == null ? 'Use my current location' : 'Precise location added'),
-                      ),
+                      icon: _locating ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(_latitude == null ? Icons.my_location_rounded : Icons.check_circle_rounded),
+                      label: Padding(padding: const EdgeInsets.symmetric(vertical: 13), child: Text(_latitude == null ? 'Use my current location' : 'Precise location added')),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: _instructions,
-                      maxLines: 2,
-                      decoration: const InputDecoration(labelText: 'Delivery instructions (optional)', border: OutlineInputBorder()),
-                    ),
+                    TextField(controller: _instructions, maxLines: 2, decoration: const InputDecoration(labelText: 'Delivery instructions (optional)')),
                   ],
                 ] else ...[
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.storefront_rounded),
-                      title: Text(branch?['name']?.toString() ?? 'Pickup at merchant', style: const TextStyle(fontWeight: FontWeight.w800)),
-                      subtitle: Text([branch?['addressLine'], branch?['city']].where((v) => v != null && '$v'.isNotEmpty).join(' · ')),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(color: const Color(0xFFF4F4F4), borderRadius: BorderRadius.circular(16)),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.storefront_rounded),
+                        const SizedBox(width: 12),
+                        Expanded(child: Text([branch?['name'], branch?['addressLine'], branch?['city']].where((v) => v != null && '$v'.isNotEmpty).join(' · '), style: const TextStyle(fontWeight: FontWeight.w700))),
+                      ],
                     ),
                   ),
                 ],
-                const SizedBox(height: 26),
-                Text('Payment', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
-                const SizedBox(height: 12),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.payments_outlined),
-                    title: Text(_isDelivery ? 'Cash on delivery' : 'Cash at pickup'),
-                    subtitle: const Text('Mobile Money and card will be added after payment gateway integration.'),
-                    trailing: const Icon(Icons.check_circle_rounded),
-                  ),
-                ),
-                const SizedBox(height: 26),
-                Text('Your order', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 28),
+                const Text('Payment', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 10),
-                for (final entry in widget.cart.entries)
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  decoration: BoxDecoration(color: const Color(0xFFF4F4F4), borderRadius: BorderRadius.circular(16)),
+                  child: const ListTile(leading: Icon(Icons.payments_outlined), title: Text('Cash', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('Pay when your order arrives'), trailing: Icon(Icons.check_circle_rounded)),
+                ),
+                const SizedBox(height: 28),
+                const Text('Order summary', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 10),
+                for (final line in widget.cartLines)
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: Text(widget.products[entry.key]?['name']?.toString() ?? 'Product'),
-                    subtitle: Text('${entry.value} × ${money(widget.products[entry.key]?['price'], currency: currency)}'),
-                    trailing: Text(money(asDouble(widget.products[entry.key]?['price']) * entry.value, currency: currency)),
+                    title: Text(line.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text([if (line.modifierSummary.isNotEmpty) line.modifierSummary, '${line.quantity} × ${money(line.unitPrice, currency: _currency)}'].join('\n')),
+                    trailing: Text(money(line.lineTotal, currency: _currency)),
                   ),
                 const Divider(),
-                _PriceLine(label: 'Total', value: money(_estimatedTotal, currency: currency), strong: true),
-                if (_isDelivery && _deliveryPrice != null) ...[
-                  const SizedBox(height: 5),
-                  Text(
-                    _deliveryPrice == 0
-                        ? 'Free delivery for this location.'
-                        : 'The selected delivery option includes ${money(_deliveryPrice!, currency: currency)} based on distance.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54),
-                  ),
-                ],
+                _PriceRow(label: 'Subtotal', value: money(_subtotal, currency: _currency)),
+                if (_discount > 0) _PriceRow(label: 'Promotion', value: '-${money(_discount, currency: _currency)}', green: true),
+                _PriceRow(label: _isDelivery ? 'Delivery' : 'Pickup', value: _isDelivery ? (_deliveryPrice == null ? '—' : _deliveryPrice == 0 ? 'Free' : money(_deliveryPrice!, currency: _currency)) : 'Free'),
+                const SizedBox(height: 5),
+                _PriceRow(label: 'Estimated total', value: money(_estimatedTotal, currency: _currency), strong: true),
                 if (_error != null) ...[
-                  const SizedBox(height: 14),
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  const SizedBox(height: 16),
+                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w700)),
                 ],
               ],
             ),
       bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.all(16),
-        child: FilledButton.icon(
-          onPressed: submitEnabled ? _placeOrder : null,
-          icon: _submitting
-              ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.shopping_bag_rounded),
-          label: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Text(
-              _isDelivery && _deliveryPrice == null
-                  ? 'Choose delivery location'
-                  : 'Place order · ${money(_estimatedTotal, currency: currency)}',
-            ),
+        minimum: const EdgeInsets.fromLTRB(20, 8, 20, 18),
+        child: SizedBox(
+          height: 58,
+          child: FilledButton(
+            onPressed: submitEnabled ? _placeOrder : null,
+            child: _submitting
+                ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : Text('Place order · ${money(_estimatedTotal, currency: _currency)}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
           ),
         ),
       ),
@@ -468,66 +406,37 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 }
 
 class _FulfillmentCard extends StatelessWidget {
-  const _FulfillmentCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.selected,
-    required this.enabled,
-    required this.onTap,
-  });
-
+  const _FulfillmentCard({required this.icon, required this.title, required this.subtitle, required this.selected, required this.onTap});
   final IconData icon;
   final String title;
   final String subtitle;
   final bool selected;
-  final bool enabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(16),
-      onTap: enabled ? onTap : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: selected ? const Color(0xFF111111) : const Color(0xFFE3E4E3), width: selected ? 2 : 1),
-          color: enabled ? Colors.white : const Color(0xFFF3F3F3),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: enabled ? Colors.black87 : Colors.black38),
-            const SizedBox(height: 12),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-            const SizedBox(height: 2),
-            Text(subtitle, style: TextStyle(fontSize: 12, color: enabled ? Colors.black54 : Colors.black38)),
-          ],
-        ),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: selected ? Colors.white : const Color(0xFFF3F3F3), border: Border.all(color: selected ? Colors.black : Colors.transparent, width: 1.5), borderRadius: BorderRadius.circular(16)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(icon), const SizedBox(height: 12), Text(title, style: const TextStyle(fontWeight: FontWeight.w900)), Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.black54))]),
       ),
     );
   }
 }
 
-class _PriceLine extends StatelessWidget {
-  const _PriceLine({required this.label, required this.value, this.strong = false});
-
+class _PriceRow extends StatelessWidget {
+  const _PriceRow({required this.label, required this.value, this.strong = false, this.green = false});
   final String label;
   final String value;
   final bool strong;
+  final bool green;
 
   @override
   Widget build(BuildContext context) {
-    final style = strong ? Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900) : null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [Text(label, style: style), Text(value, style: style)],
-      ),
-    );
+    final style = TextStyle(fontSize: strong ? 19 : 16.5, fontWeight: strong ? FontWeight.w900 : FontWeight.w500, color: green ? const Color(0xFF0E7A3D) : null);
+    return Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Row(children: [Expanded(child: Text(label, style: style)), Text(value, style: style)]));
   }
 }
