@@ -168,6 +168,19 @@ class _MerchantScreenState extends State<MerchantScreen> {
             SliverAppBar(
               expandedHeight: 235,
               pinned: true,
+              // This white cap belongs to the menu panel. Painting it in the
+              // app-bar bottom keeps the pinned hero from covering its corners.
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(24),
+                child: Container(
+                  key: const ValueKey('menu-panel-top'),
+                  height: 24,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                  ),
+                ),
+              ),
               leading: Padding(
                 padding: const EdgeInsets.all(5),
                 child: IconButton.filledTonal(
@@ -236,13 +249,10 @@ class _MerchantScreenState extends State<MerchantScreen> {
               ),
             ),
             SliverToBoxAdapter(
-              child: Transform.translate(
-              offset: const Offset(0, -24),
               child: Container(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                 decoration: const BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -439,7 +449,6 @@ class _MerchantScreenState extends State<MerchantScreen> {
                     ),
                   ],
                 ),
-              ),
               ),
             ),
             if (query.isEmpty && category == null && categories.isNotEmpty)

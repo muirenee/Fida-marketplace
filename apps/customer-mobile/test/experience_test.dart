@@ -240,6 +240,7 @@ void main() {
     expect(find.text('Delivery'), findsOneWidget);
     expect(tester.takeException(), isNull);
     expect(tester.getTopLeft(find.byType(CustomScrollView)).dy, greaterThanOrEqualTo(32));
+    expect(find.byKey(const ValueKey('menu-panel-top')), findsOneWidget);
     await capture(tester, key, 'customer-store');
     client.close();
   });
