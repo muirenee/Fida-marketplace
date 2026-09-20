@@ -6,13 +6,13 @@
   "scripts": {
     "dev:infra": "docker compose -f infra/docker-compose.yml up -d",
     "stop:infra": "docker compose -f infra/docker-compose.yml down",
-    "db:generate": "prisma generate --config prisma.config.ts",
+    "db:generate": "prisma generate --config prisma.config.ts && node scripts/generate-admin-catalog.mjs",
     "db:push": "prisma db push --config prisma.config.ts",
     "db:migrate": "prisma migrate dev --config prisma.config.ts",
     "db:seed": "tsx packages/database/prisma/seed.ts",
     "db:backfill-logistics": "tsx packages/database/prisma/backfill-logistics.ts",
     "typecheck:api": "tsc -p apps/api/tsconfig.json --noEmit",
-    "test:integration": "node --import tsx tests/merchant-origin.mts && node --import tsx tests/business-integration.mts && node --import tsx tests/upgrade-08.mts"
+    "test:integration": "node --import tsx tests/merchant-origin.mts && node --import tsx tests/business-integration.mts && node --import tsx tests/upgrade-08.mts && node --import tsx tests/upgrade-09.mts"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",

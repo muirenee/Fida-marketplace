@@ -1,3 +1,4 @@
+import {runtimeSettings,allowedAdminIp} from './runtime-settings.js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '@fida/database/client';
 
@@ -45,6 +46,7 @@ export async function requirePlatformAdmin(request: FastifyRequest, reply: Fasti
   await authenticate(request, reply);
   if (reply.sent) return;
 
+  if(!allowedAdminIp((await runtimeSettings()).ADMIN_ALLOWED_IPS??'',request.ip))return reply.code(403).send({error:'admin_network_denied'});
   if (!request.authUser?.isPlatformAdmin) {
     return reply.code(403).send({ error: 'forbidden', message: 'Platform administrator access is required.' });
   }

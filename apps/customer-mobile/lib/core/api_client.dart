@@ -109,7 +109,11 @@ class ApiClient {
   }) async {
     final request = http.Request(method, _uri(path, query));
     request.headers.addAll(_headers(authenticated: authenticated));
-    if (body != null) request.body = jsonEncode(body);
+    if (body != null || !['GET', 'HEAD'].contains(method)) {
+      request.body = jsonEncode(body ?? <String, dynamic>{});
+    } else {
+      request.headers.remove('content-type');
+    }
 
     final streamed = await _client.send(request);
     final response = await http.Response.fromStream(streamed);

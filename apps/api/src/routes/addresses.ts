@@ -23,6 +23,7 @@ export async function addressRoutes(app: FastifyInstance) {
     const longitude = typeof body.longitude === 'number' && Number.isFinite(body.longitude) ? body.longitude : null;
 
     const address = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id=${request.authUser!.id} FOR UPDATE`;
       if (isDefault) {
         await tx.customerAddress.updateMany({
           where: { userId: request.authUser!.id, isDefault: true },
@@ -50,33 +51,26 @@ export async function addressRoutes(app: FastifyInstance) {
 
   app.patch('/v1/customer/addresses/:addressId/default', { preHandler: authenticate }, async (request, reply) => {
     const { addressId } = request.params as { addressId: string };
-    const owned = await prisma.customerAddress.findFirst({
-      where: { id: addressId, userId: request.authUser!.id },
-      select: { id: true },
+    await prisma.$transaction(async tx=>{
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id=${request.authUser!.id} FOR UPDATE`;
+      const owned=await tx.customerAddress.findFirst({where:{id:addressId,userId:request.authUser!.id}});
+      if(!owned)throw Object.assign(new Error('Address not found.'),{statusCode:404});
+      await tx.customerAddress.updateMany({where:{userId:request.authUser!.id,isDefault:true},data:{isDefault:false}});
+      await tx.customerAddress.update({where:{id:addressId},data:{isDefault:true}});
     });
-
-    if (!owned) return reply.code(404).send({ error: 'address_not_found' });
-
-    await prisma.$transaction([
-      prisma.customerAddress.updateMany({
-        where: { userId: request.authUser!.id, isDefault: true },
-        data: { isDefault: false },
-      }),
-      prisma.customerAddress.update({ where: { id: addressId }, data: { isDefault: true } }),
-    ]);
 
     return { success: true };
   });
 
   app.delete('/v1/customer/addresses/:addressId', { preHandler: authenticate }, async (request, reply) => {
     const { addressId } = request.params as { addressId: string };
-    const owned = await prisma.customerAddress.findFirst({
-      where: { id: addressId, userId: request.authUser!.id },
-      select: { id: true },
+    await prisma.$transaction(async tx=>{
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id=${request.authUser!.id} FOR UPDATE`;
+      const owned=await tx.customerAddress.findFirst({where:{id:addressId,userId:request.authUser!.id}});
+      if(!owned)throw Object.assign(new Error('Address not found.'),{statusCode:404});
+      await tx.customerAddress.delete({where:{id:addressId}});
+      if(owned.isDefault){const next=await tx.customerAddress.findFirst({where:{userId:request.authUser!.id},orderBy:{createdAt:'desc'}});if(next)await tx.customerAddress.update({where:{id:next.id},data:{isDefault:true}});}
     });
-
-    if (!owned) return reply.code(404).send({ error: 'address_not_found' });
-    await prisma.customerAddress.delete({ where: { id: addressId } });
     return reply.code(204).send();
   });
 }

@@ -19,6 +19,7 @@ RUN --mount=type=cache,id=fida-pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --no-frozen-lockfile
 
 COPY prisma.config.ts ./
+COPY scripts/generate-admin-catalog.mjs ./scripts/generate-admin-catalog.mjs
 COPY apps/api ./apps/api
 COPY packages/database ./packages/database
 

@@ -1,3 +1,5 @@
+import 'staff_page.dart';
+import 'store_page.dart';
 import 'business_page.dart';
 import 'dart:async';
 
@@ -202,6 +204,7 @@ class _LoginScreenState extends State<_LoginScreen> {
                     ),
                   ),
                   const Text('Merchant', textAlign: TextAlign.center),
+                  TextButton.icon(onPressed: () => openFidaLink(context, Uri.parse('https://fidalix.com')), icon: const Icon(Icons.storefront_outlined), label: const Text('Register your business')),
                   const SizedBox(height: 32),
                   TextField(
                     controller: email,
@@ -802,6 +805,10 @@ class _MerchantAccount extends StatelessWidget {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 22),
+        if (membership['role']=='OWNER')
+          ListTile(leading:const Icon(Icons.store_outlined),title:const Text('Store and branches'),trailing:const Icon(Icons.chevron_right),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>StorePage(api:api,tenantId:tenant['id'].toString())))),
+        if (['OWNER','MANAGER'].contains(membership['role']))
+          ListTile(leading:const Icon(Icons.group_outlined),title:const Text('Staff accounts'),trailing:const Icon(Icons.chevron_right),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>StaffPage(api:api,tenantId:tenant['id'].toString(),owner:membership['role']=='OWNER',branchId:membership['branchId']?.toString())))),
         if (['OWNER','ADMIN'].contains(membership['role']))
           ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('Business settings'), subtitle: const Text('Taxes, staff and promotions'), onTap: () => Navigator.push(context,MaterialPageRoute(builder: (_) => MerchantBusinessPage(api:api,tenantId:tenant['id'].toString())))),
         if (memberships.length > 1)

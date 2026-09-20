@@ -44,6 +44,10 @@ final merchant = <String, dynamic>{
   'currency': 'RWF',
   'merchantType': 'RESTAURANT',
   'minimumOrder': 0,
+  'featured': true,
+  'completedOrders': 12,
+  'favoriteCount': 8,
+  'dishes': [product],
   'rating': 4.8,
   'reviewCount': 12,
   'branches': [
@@ -85,7 +89,7 @@ ApiClient api() => ApiClient(
             : r.url.path.endsWith('/checkout-preview') ? {'subtotal':2500,'deliveryFee':0,'itemDiscount':100,'cartDiscount':240,'tax':388.8,'taxLabel':'VAT','taxPercent':18,'total':2548.8}
             : r.url.path.endsWith('/merchants')
             ? [merchant]
-            : r.url.path.endsWith('/favorites')
+            : (r.url.path.endsWith('/favorites') || r.url.path.endsWith('/recent-stores'))
             ? []
             : merchant,
       ),
@@ -154,8 +158,13 @@ void main() {
       await capture(tester, key, 'customer-home');
       await tester.tap(find.text('Pickup'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Pickup ·'), findsOneWidget);
+      expect(find.textContaining('Pickup ·'), findsWidgets);
       expect(tester.takeException(), isNull);
+      for (final heading in ['Featured on Fida','Recently Viewed','Stores near you','Popular in your area','Neighborhood Favorites','Best Overall','Most popular local restaurants','Discover a new favorite dish','All Stores']) {
+        await tester.scrollUntilVisible(find.text(heading), 250, scrollable: find.byType(Scrollable).first);
+        expect(find.text(heading), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
       client.close();
     },
   );
@@ -254,6 +263,23 @@ void main() {
     expect(find.text('Promo discount'),findsOneWidget);
     expect(tester.takeException(),isNull);
     await capture(tester,key,'customer-checkout');
+    client.close();
+  });
+
+  test('bodyless mutations send structured JSON and reads omit content-type', () async {
+    final client = ApiClient(client: MockClient((r) async {
+      if (r.method == 'GET') {
+        expect(r.headers.containsKey('content-type'), false);
+        return http.Response('[]', 200);
+      }
+      expect(r.headers['content-type'], contains('application/json'));
+      expect(jsonDecode(r.body), <String, dynamic>{});
+      return http.Response('', 204);
+    }));
+    await client.request('PUT', '/v1/customer/favorites/t');
+    await client.request('DELETE', '/v1/customer/favorites/t');
+    await client.request('DELETE', '/v1/customer/addresses/a');
+    await client.request('GET', '/v1/customer/addresses');
     client.close();
   });
 

@@ -1,3 +1,4 @@
+import {runtimeSettings} from '../lib/runtime-settings.js';
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { Prisma, prisma } from '@fida/database/client';
@@ -42,7 +43,7 @@ export async function paymentRoutes(app: FastifyInstance) {
   const attempt=await prisma.paymentAttempt.upsert({where:{orderId:id},update:{},create:{orderId:id,customerId:req.authUser!.id,reference:`fida-${id}`,provider:'FLUTTERWAVE',settlementMode:'MERCHANT_DIRECT',destinationSubaccount:order.tenant.paymentSubaccount}});
   if(attempt.settlementMode!=='MERCHANT_DIRECT'||!attempt.destinationSubaccount)return reply.code(409).send({error:'legacy_payment_review_required',message:'This older payment attempt needs administrator review before payment.'});
   if(attempt.checkoutUrl)return {url:attempt.checkoutUrl};
-  const data=await flutterwave('payments',{subaccounts:[{id:attempt.destinationSubaccount,transaction_charge_type:'flat',transaction_charge:0}],tx_ref:attempt.reference,amount:order.total.toString(),currency:order.tenant.currency,redirect_url:`${process.env.PUBLIC_BASE_URL??'https://marketplaceadmin.fidalix.com'}/v1/payments/return`,payment_options:order.paymentMethod==='CARD'?'card':'mobilemoneyrwanda',customer:{email:order.customer.email,phonenumber:order.customer.phone,name:[order.customer.firstName,order.customer.lastName].filter(Boolean).join(' ')},customizations:{title:'Fida Marketplace',description:order.orderNumber}});
+  const data=await flutterwave('payments',{subaccounts:[{id:attempt.destinationSubaccount,transaction_charge_type:'flat',transaction_charge:0}],tx_ref:attempt.reference,amount:order.total.toString(),currency:order.tenant.currency,redirect_url:`${(await runtimeSettings()).PUBLIC_BASE_URL||'https://marketplaceadmin.fidalix.com'}/v1/payments/return`,payment_options:order.paymentMethod==='CARD'?'card':'mobilemoneyrwanda',customer:{email:order.customer.email,phonenumber:order.customer.phone,name:[order.customer.firstName,order.customer.lastName].filter(Boolean).join(' ')},customizations:{title:'Fida Marketplace',description:order.orderNumber}});
   const link=String(data.link??'');if(!link.startsWith('https://'))throw Error('Invalid checkout URL');
   await prisma.paymentAttempt.update({where:{id:attempt.id},data:{checkoutUrl:link}});return {url:link};
  });

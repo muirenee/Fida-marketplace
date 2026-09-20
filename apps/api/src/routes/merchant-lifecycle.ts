@@ -22,6 +22,7 @@ export async function merchantLifecycleRoutes(app: FastifyInstance) {
       await tx.$queryRaw`SELECT id FROM "MerchantApplication" WHERE id=${id} FOR UPDATE`;
       const row=await tx.merchantApplication.findFirst({where:{id,ownerId:req.authUser!.id,status:'DRAFT'}});
       if(!row) return fail(404,'Editable application not found.');
+      if(body.stage===1){for(const key of ['logoUrl','coverUrl']){const url=fields[key];if(url!==(row.payload as any)[key]&&!await tx.mediaAsset.findFirst({where:{url,ownerId:req.authUser!.id}}))return fail(400,'Upload your logo and cover photo first.');}}
       if(body.stage>row.step) return fail(409,'Complete the previous step first.');
       return tx.merchantApplication.update({where:{id},data:{payload:{...(row.payload as object),...fields},step:Math.max(row.step,body.stage+1)}});
     });
@@ -44,9 +45,11 @@ export async function merchantLifecycleRoutes(app: FastifyInstance) {
       if(!row) return fail(404,'Application not found.');
       if(row.status!=='DRAFT') return row;
       const b=fullApplication(row.payload);
-      if(await tx.tenant.findFirst({where:{slug:b.slug,...(row.tenantId?{id:{not:row.tenantId}}:{})}})) return fail(409,'Store URL is already in use.');
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(9010901)::text`;
+      const base=b.slug;let suffix=1;
+      while(await tx.tenant.findFirst({where:{slug:b.slug,...(row.tenantId?{id:{not:row.tenantId}}:{})}}))b.slug=`${base}-${++suffix}`;
       const tenant=await createPendingTenant(tx,req.authUser!.id,b,row.tenantId??undefined);
-      return tx.merchantApplication.update({where:{id},data:{status:'SUBMITTED',tenantId:tenant.id}});
+      return tx.merchantApplication.update({where:{id},data:{status:'SUBMITTED',tenantId:tenant.id,payload:b}});
     });
   });
   app.get('/v1/admin/merchant-applications',{preHandler:requirePlatformAdmin},async()=>prisma.merchantApplication.findMany({where:{status:{not:'DRAFT'}},orderBy:{createdAt:'desc'},take:200}));
@@ -61,25 +64,42 @@ export async function merchantLifecycleRoutes(app: FastifyInstance) {
       return row;
     });
   });
-  app.get('/v1/merchant/staff',{preHandler:requireTenant(['OWNER'])},async req=>prisma.tenantMembership.findMany({where:{tenantId:req.tenantContext!.tenantId},select:staffSelect,orderBy:{createdAt:'asc'}}));
-  app.post('/v1/merchant/staff',{preHandler:requireTenant(['OWNER'])},async(req,reply)=>{
+  app.get('/v1/merchant/staff',{preHandler:requireTenant(['OWNER','MANAGER'])},async req=>prisma.tenantMembership.findMany({where:{tenantId:req.tenantContext!.tenantId,...(req.tenantContext!.role==='MANAGER'?{role:{in:['STAFF','KITCHEN_CREW'] as any},...(req.tenantContext!.branchId?{branchId:req.tenantContext!.branchId}:{})}:{})},select:staffSelect,orderBy:{createdAt:'asc'}}));
+  app.post('/v1/merchant/staff',{preHandler:requireTenant(['OWNER','MANAGER'])},async(req,reply)=>{
     const b=(req.body??{}) as Record<string,unknown>,email=typeof b.email==='string'?b.email.trim().toLowerCase():'';
-    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||typeof b.password!=='string'||b.password.length<12||b.password.length>128||!['MANAGER','KITCHEN_CREW'].includes(String(b.role)))return fail(400,'Valid email, a 12–128 character password and staff role are required.');
+    const roles=req.tenantContext!.role==='OWNER'?['MANAGER','STAFF','KITCHEN_CREW']:['STAFF','KITCHEN_CREW'];
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||typeof b.password!=='string'||b.password.length<12||b.password.length>128||!roles.includes(String(b.role)))return fail(400,'Valid email, a 12–128 character password and permitted staff role are required.');
     const branchId=typeof b.branchId==='string'&&b.branchId?b.branchId:null,tenantId=req.tenantContext!.tenantId;
+    if(req.tenantContext!.role==='MANAGER'&&req.tenantContext!.branchId&&branchId!==req.tenantContext!.branchId)return fail(403,'Staff must remain in your assigned branch.');
     if(branchId&&!await prisma.branch.findFirst({where:{id:branchId,tenantId,isActive:true}}))return fail(400,'Invalid branch.');
     const passwordHash=await hashPassword(b.password);
     const result=await prisma.$transaction(async tx=>{
       if(await tx.user.findUnique({where:{email}}))return fail(409,'This email already has an account. Use a new staff email.');
       const user=await tx.user.create({data:{email,passwordHash,firstName:typeof b.firstName==='string'?b.firstName.trim().slice(0,80):null}});
-      return tx.tenantMembership.create({data:{userId:user.id,tenantId,branchId,role:b.role as 'MANAGER'|'KITCHEN_CREW'},select:staffSelect});
+      return tx.tenantMembership.create({data:{userId:user.id,tenantId,branchId,role:b.role as any},select:staffSelect});
     });return reply.code(201).send(result);
   });
-  app.patch('/v1/merchant/staff/:id',{preHandler:requireTenant(['OWNER'])},async req=>{
-    const {id}=req.params as {id:string};const b=req.body as {role?:'MANAGER'|'KITCHEN_CREW';isActive?:boolean};
-    if(!b||Object.keys(b).some(k=>!['role','isActive'].includes(k))||(b.role!==undefined&&!['MANAGER','KITCHEN_CREW'].includes(b.role))||(b.isActive!==undefined&&typeof b.isActive!=='boolean'))return fail(400,'Invalid staff update.');
-    const changed=await prisma.tenantMembership.updateMany({where:{id,tenantId:req.tenantContext!.tenantId,role:{in:['MANAGER','KITCHEN_CREW','STAFF']}},data:b});
-    if(!changed.count)return fail(404,'Staff membership not found.');
-    return prisma.tenantMembership.findUnique({where:{id},select:staffSelect});
+  app.patch('/v1/merchant/staff/:id',{preHandler:requireTenant(['OWNER','MANAGER'])},async req=>{
+    const {id}=req.params as {id:string};const b=(req.body??{}) as Record<string,any>,context=req.tenantContext!;
+    const roles=context.role==='OWNER'?['MANAGER','KITCHEN_CREW','STAFF']:['KITCHEN_CREW','STAFF'];
+    if(Object.keys(b).some(k=>!['role','isActive','branchId','firstName','lastName'].includes(k))||(b.role!==undefined&&!roles.includes(b.role))||(b.isActive!==undefined&&typeof b.isActive!=='boolean'))return fail(400,'Invalid staff update.');
+    if(b.branchId!==undefined&&context.role!=='OWNER')return fail(403,'Only owners assign branches.');
+    if(b.branchId!==undefined&&b.branchId!==null&&!await prisma.branch.findFirst({where:{id:String(b.branchId),tenantId:context.tenantId,isActive:true}}))return fail(400,'Invalid branch.');
+    for(const key of ['firstName','lastName'])if(b[key]!==undefined&&(typeof b[key]!=='string'||b[key].length>80))return fail(400,'Invalid staff name.');
+    return prisma.$transaction(async tx=>{
+      await tx.$queryRaw`SELECT id FROM "TenantMembership" WHERE id=${id} FOR UPDATE`;
+      const row=await tx.tenantMembership.findFirst({where:{id,tenantId:context.tenantId,role:{in:roles as any},...(context.role==='MANAGER'&&context.branchId?{branchId:context.branchId}:{})}});
+      if(!row)return fail(404,'Staff membership not found.');
+      const {firstName,lastName,...membership}=b;
+      // User identities may have multiple memberships; only edit names for exclusively owned staff.
+      if(firstName!==undefined||lastName!==undefined){if(await tx.tenantMembership.count({where:{userId:row.userId,tenantId:{not:context.tenantId}}}))return fail(409,'This staff member manages their shared account profile.');await tx.user.update({where:{id:row.userId},data:{firstName,lastName}});}
+      return tx.tenantMembership.update({where:{id},data:membership,select:staffSelect});
+    });
+  });
+  app.delete('/v1/merchant/staff/:id',{preHandler:requireTenant(['OWNER','MANAGER'])},async(req,reply)=>{
+    const {id}=req.params as {id:string},c=req.tenantContext!;
+    const result=await prisma.tenantMembership.deleteMany({where:{id,tenantId:c.tenantId,role:{in:(c.role==='OWNER'?['MANAGER','STAFF','KITCHEN_CREW']:['STAFF','KITCHEN_CREW']) as any},...(c.role==='MANAGER'&&c.branchId?{branchId:c.branchId}:{})}});
+    if(!result.count)return fail(404,'Staff membership not found.');return reply.code(204).send();
   });
   app.patch('/v1/merchant/products/:id/stock',{preHandler:requireTenant(['OWNER','ADMIN','MANAGER','KITCHEN_CREW'])},async req=>{
     const {id}=req.params as {id:string};const b=req.body as {isAvailable:boolean};

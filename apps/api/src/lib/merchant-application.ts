@@ -7,8 +7,13 @@ function text(value: unknown, label: string, min = 2, max = 160) {
 }
 function image(value: unknown, label: string) {
   const s = text(value, label, 8, 2000);
+  if (/^\/v1\/media\/branding_[A-Za-z0-9_-]+\/[a-f0-9-]{36}\.webp$/.test(s)) return s;
   try { const u = new URL(s); if (u.protocol !== 'https:' || u.username || u.password) return fail(`${label} must be an HTTPS image URL.`); } catch { return fail(`${label} must be an HTTPS image URL.`); }
   return s;
+}
+export function storeSlug(name:string) {
+ const slug=name.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,52).replace(/-$/,'');
+ return slug || 'store';
 }
 export function applicationStage(stage: number, raw: unknown): Record<string, any> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return fail('Application fields are required.');
@@ -25,8 +30,7 @@ export function applicationStage(stage: number, raw: unknown): Record<string, an
     try { new Intl.DateTimeFormat('en', {timeZone:timezone}).format(); } catch { return fail('Invalid time zone.'); }
     if (!Array.isArray(b.cuisineTags) || !b.cuisineTags.length || b.cuisineTags.length > 12) return fail('Choose 1–12 cuisine or category tags.');
     const cuisineTags = [...new Set(b.cuisineTags.map(v => text(v,'Category tag',2,40)))];
-    const slug = text(b.slug,'Store URL',3,60).toLowerCase();
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return fail('Store URL must use letters, numbers and hyphens.');
+    const slug = storeSlug(text(b.name,'Store name'));
     return {name:text(b.name,'Store name'),slug,merchantType,timezone,cuisineTags,logoUrl:image(b.logoUrl,'Logo'),coverUrl:image(b.coverUrl,'Cover photo')};
   }
   if (stage === 2) {

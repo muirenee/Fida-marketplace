@@ -3,6 +3,11 @@ import { execFileSync } from 'node:child_process';
 import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 import { test } from 'node:test';
+import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+const media=await mkdtemp(join(tmpdir(),'fida-test-media-'));
+process.env.MEDIA_DIRECTORY=media;
 
 process.env.APP_ENV = 'test';
 process.env.JWT_ACCESS_SECRET = 'local-test-only-secret-at-least-thirty-two-characters';
@@ -183,6 +188,7 @@ try {
   const application=await request('POST','/v1/merchant/applications',outsider,{},201);
   await request('PATCH',`/v1/merchant/applications/${application.id}`,owner,{stage:0,data:{legalName:'Other company',taxId:'123456789'}},404);
   const data={legalName:'New Store Ltd',taxId:'123456789',name:'Approved Store',slug:'approved-store',merchantType:'RESTAURANT',timezone:'Africa/Kigali',cuisineTags:['Local'],logoUrl:'https://images.example.test/logo.png',coverUrl:'https://images.example.test/cover.png',addressLine:'KK 31 Avenue',city:'Kigali',latitude:-1.95,longitude:30.05,openingHours:Array.from({length:7},()=>[{open:'08:00',close:'12:00'},{open:'14:00',close:'21:00'}])};
+  await prisma.mediaAsset.createMany({data:[data.logoUrl,data.coverUrl].map(url=>({ownerId:outsider.id,url,bytes:100}))});
   await request('PATCH',`/v1/merchant/applications/${application.id}`,outsider,{stage:3,data},409);
   for(let stage=0;stage<4;stage++)await request('PATCH',`/v1/merchant/applications/${application.id}`,outsider,{stage,data});
   const submitted=await request('POST',`/v1/merchant/applications/${application.id}/submit`,outsider,{});
@@ -265,6 +271,106 @@ try {
   }finally{globalThis.fetch=originalFetch;}
  });
 
+ await test('binary branding is authenticated, decoded, owned and cannot select a server path',async()=>{
+  const sharp=(await import('../apps/api/node_modules/sharp/lib/index.js')).default;
+  const png=await sharp({create:{width:4,height:4,channels:3,background:'#07885a'}}).png().toBuffer();
+  const upload=await app.inject({method:'POST',url:'/v1/merchant/branding',headers:{authorization:`Bearer ${app.jwt.sign({sub:owner.id,type:'access'})}`,'content-type':'image/png'},payload:png});
+  assert.equal(upload.statusCode,201,upload.body);const asset=upload.json();
+  assert.match(asset.url,/^\/v1\/media\/branding_.*\.webp$/);
+  assert.equal((await prisma.mediaAsset.findUniqueOrThrow({where:{url:asset.url}})).ownerId,owner.id);
+  const stored=await app.inject({method:'GET',url:asset.url});assert.equal(stored.statusCode,200);assert.match(stored.headers['content-type']!,/image\/webp/);
+  const guard=join(media,'guard.txt');await writeFile(guard,'Do not touch');
+  await request('POST','/v1/merchant/branding',owner,{path:guard,size:12},400);
+  assert.equal(await readFile(guard,'utf8'),'Do not touch');
+  const invalid=await app.inject({method:'POST',url:'/v1/merchant/branding',headers:{authorization:`Bearer ${app.jwt.sign({sub:owner.id,type:'access'})}`,'content-type':'image/png'},payload:Buffer.from('<svg></svg>')});assert.equal(invalid.statusCode,400);
+  const unauth=await app.inject({method:'POST',url:'/v1/merchant/branding',headers:{'content-type':'image/png'},payload:png});assert.equal(unauth.statusCode,401);
+  const oversized=await app.inject({method:'POST',url:'/v1/merchant/branding',headers:{authorization:`Bearer ${app.jwt.sign({sub:owner.id,type:'access'})}`,'content-type':'image/png'},payload:Buffer.alloc(5*1024*1024+1)});assert.equal(oversized.statusCode,413);
+  const application=await request('POST','/v1/merchant/applications',customer,{},201);
+  await request('PATCH',`/v1/merchant/applications/${application.id}`,customer,{stage:0,data:{legalName:'Customer business',taxId:'123456'}});
+  await request('PATCH',`/v1/merchant/applications/${application.id}`,customer,{stage:1,data:{name:'Café & Grill',merchantType:'RESTAURANT',timezone:'UTC',cuisineTags:['Local'],logoUrl:asset.url,coverUrl:asset.url}},400);
+  const {storeSlug}=await import('../apps/api/src/lib/merchant-application.js');assert.equal(storeSlug(' Café & Grill! '),'cafe-grill');
+  await request('PATCH','/v1/merchant/store',owner,{name:'Renamed Kitchen',legalName:'Kitchen Ltd',taxId:'123456',merchantType:'RESTAURANT',timezone:'UTC',cuisineTags:['Local'],logoUrl:asset.url,coverUrl:asset.url});
+  assert.equal((await prisma.tenant.findUniqueOrThrow({where:{id:tenant.id}})).slug,tenant.slug);
+  await request('PATCH',`/v1/merchant/store/branches/${branch.id}`,owner,{city:'Kigali',latitude:-1.95,longitude:30.05});
+  await request('PATCH',`/v1/merchant/store/branches/${branch.id}`,owner,{isActive:false},409);
+ });
+ await test('favorites accept JSON and address deletion promotes the remaining default',async()=>{
+  await request('PUT',`/v1/customer/favorites/${tenant.id}`,customer,{});
+  assert.equal((await request('GET','/v1/customer/favorites',customer)).some((m:any)=>m.id===tenant.id),true);
+  await request('DELETE',`/v1/customer/favorites/${tenant.id}`,customer,{},204);
+  const first=await request('POST','/v1/customer/addresses',customer,{addressLine:'First Kigali address'},201);
+  const second=await request('POST','/v1/customer/addresses',customer,{addressLine:'Second Kigali address'},201);
+  await request('DELETE',`/v1/customer/addresses/${first.id}`,outsider,{},404);
+  await request('DELETE',`/v1/customer/addresses/${first.id}`,customer,{},204);
+  assert.equal((await prisma.customerAddress.findUniqueOrThrow({where:{id:second.id}})).isDefault,true);
+  await request('DELETE',`/v1/customer/addresses/${first.id}`,customer,{},404);
+  await request('POST',`/v1/customer/recent-stores/${tenant.id}`,customer,{});
+  assert.equal((await request('GET','/v1/customer/recent-stores',customer))[0].tenantId,tenant.id);
+ });
+ await test('managers may manage branch staff but never owners, managers or other branches',async()=>{
+  const manager=await request('POST','/v1/merchant/staff',owner,{email:'manager09@example.test',password:'Manager-test-password-123',role:'MANAGER',branchId:branch.id},201);
+  const user=await prisma.user.findUniqueOrThrow({where:{id:manager.user.id}});
+  const otherBranch=await prisma.branch.create({data:{tenantId:tenant.id,name:'East'}});
+  await request('POST','/v1/merchant/staff',user,{email:'invalid09@example.test',password:'Staff-test-password-123',role:'STAFF',branchId:otherBranch.id},403);
+  const member=await request('POST','/v1/merchant/staff',user,{email:'staff09@example.test',password:'Staff-test-password-123',role:'STAFF',branchId:branch.id},201);
+  await request('PATCH',`/v1/merchant/staff/${member.id}`,user,{firstName:'Edited',isActive:false});
+  await request('PATCH',`/v1/merchant/staff/${member.id}`,user,{role:'MANAGER'},400);
+  await request('PATCH',`/v1/merchant/staff/${member.id}`,user,{branchId:otherBranch.id},403);
+  await request('DELETE',`/v1/merchant/staff/${manager.id}`,user,{},404);
+  await request('PATCH',`/v1/merchant/staff/${member.id}`,owner,{branchId:otherBranch.id});
+  await request('DELETE',`/v1/merchant/staff/${member.id}`,user,{},404);
+  await request('DELETE',`/v1/merchant/staff/${member.id}`,owner,{},204);
+  await request('GET','/v1/merchant/store',user,undefined,403);
+ });
+ const password='Admin-test-password-123';
+ const {hashPassword}=await import('../apps/api/src/lib/security.js');
+ await prisma.user.update({where:{id:admin.id},data:{passwordHash:await hashPassword(password)}});
+ await test('period invoices are idempotent summaries without additional ledger charges',async()=>{
+  const date=new Date().toISOString().slice(0,10),body={tenantId:tenant.id,from:date,to:date};
+  const count=await prisma.financeEntry.count();
+  await request('POST','/v1/admin/commission-periods',owner,body,403);
+  const invoice=await request('POST','/v1/admin/commission-periods',admin,body);
+  const again=await request('POST','/v1/admin/commission-periods',admin,body);assert.equal(again.id,invoice.id);
+  assert.equal(await prisma.financeEntry.count(),count);
+  const documents=await prisma.businessDocument.findMany({where:{id:{in:invoice.payload.documentIds}}});
+  const {Prisma}=await import('../packages/database/src/client.js');
+  assert.equal(invoice.payload.total,documents.reduce((s,d)=>s.plus((d.payload as any).total),new Prisma.Decimal(0)).toFixed(2));
+  await request('POST','/v1/admin/commission-periods',admin,{...body,from:'2026-02-30'},400);
+ });
+ await test('root controls require reauthentication, protect administrators and validate preview freshness',async()=>{
+  await request('GET','/v1/admin/system/collections',owner,undefined,403);
+  const collections=await request('GET','/v1/admin/system/collections',admin);assert.ok(collections.some((c:any)=>c.name==='Product'));
+  await request('PATCH','/v1/admin/system/settings',admin,{password:'wrong',values:{}},403);
+  await request('PATCH','/v1/admin/system/settings',admin,{password,values:{ADMIN_ALLOWED_IPS:'192.0.2.1'}},400);
+  await request('PATCH','/v1/admin/system/settings',admin,{password,values:{PUBLIC_BASE_URL:'http://unsafe.test'}},400);
+  await request('PATCH','/v1/admin/system/settings',admin,{password,values:{FEATURED_STORE_IDS:tenant.id,MAINTENANCE_MODE:'false'}});
+  const feed=await request('GET','/v1/marketplace/merchants',customer);assert.equal(feed.find((m:any)=>m.id===tenant.id).featured,true);
+  await request('PATCH','/v1/admin/system/data/User',admin,{password,reason:'Test own account protection',key:{id:admin.id},changes:{isActive:false}},409);
+  await request('POST','/v1/admin/system/actions/preview',admin,{password,reason:'Test own account protection',kind:'DELETE',model:'User',key:{id:admin.id}},409);
+  const victim=await prisma.tenant.create({data:{name:'Delete test',slug:'delete-test',merchantType:'OTHER'}});
+  const child=await prisma.product.create({data:{tenantId:victim.id,name:'Delete child',price:500}});
+  const previewBody={password,reason:'Isolated database cascade test',kind:'DELETE',model:'Tenant',key:{id:victim.id}};
+  const first=await request('POST','/v1/admin/system/actions/preview',admin,previewBody);assert.equal(first.counts.Product,1);
+  await prisma.product.update({where:{id:child.id},data:{price:600}});
+  await request('POST','/v1/admin/system/actions/execute',admin,{password,token:first.token,confirmation:first.confirmation},409);
+  const current=await request('POST','/v1/admin/system/actions/preview',admin,previewBody);
+  await request('POST','/v1/admin/system/actions/execute',admin,{password,token:current.token,confirmation:'wrong'},400);
+  await request('POST','/v1/admin/system/actions/execute',admin,{password,token:current.token,confirmation:current.confirmation});
+  assert.equal(await prisma.tenant.count({where:{id:victim.id}}),0);assert.equal(await prisma.product.count({where:{id:child.id}}),0);
+  await request('POST','/v1/admin/system/actions/execute',admin,{password,token:current.token,confirmation:current.confirmation},409);
+ });
+ await test('protected reset clears only isolated operational data while preserving admin, settings, audit and schemas',async()=>{
+  const preview=await request('POST','/v1/admin/system/actions/preview',admin,{password,reason:'Isolated PGlite reset verification',kind:'RESET'});
+  assert.ok(preview.counts.Order>0);
+  await request('POST','/v1/admin/system/actions/execute',admin,{password,token:preview.token,confirmation:preview.confirmation});
+  assert.equal(await prisma.order.count(),0);assert.equal(await prisma.tenant.count(),0);
+  assert.equal(await prisma.user.count({where:{isPlatformAdmin:false}}),0);
+  assert.equal(await prisma.user.count({where:{id:admin.id,isPlatformAdmin:true}}),1);
+  assert.equal(await prisma.runtimeSettings.count(),1);
+  assert.ok(await prisma.adminAuditEvent.count({where:{action:'OPERATIONAL_RESET'}}));
+  const {models,delegate}=await import('../apps/api/src/lib/admin-data.js');for(const model of models)await delegate(prisma,model.name).count();
+ });
+
 } finally {
- await app.close();await prisma.$disconnect();await socket.stop();await db.close();
+ await app.close();await prisma.$disconnect();await socket.stop();await db.close();await rm(media,{recursive:true,force:true});
 }

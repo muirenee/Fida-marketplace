@@ -91,7 +91,11 @@ class MerchantApiClient {
     if (authenticated && _access != null)
       request.headers['authorization'] = 'Bearer $_access';
     if (tenantId != null) request.headers['x-tenant-id'] = tenantId;
-    if (body != null) request.body = jsonEncode(body);
+    if (body != null || !['GET', 'HEAD'].contains(method)) {
+      request.body = jsonEncode(body ?? <String, dynamic>{});
+    } else {
+      request.headers.remove('content-type');
+    }
     final response = await http.Response.fromStream(
       await _client.send(request),
     );
@@ -440,6 +444,30 @@ class MerchantApiClient {
       body: {'token': token, 'app': 'merchant'},
     );
   });
+
+  Future<String> uploadBranding(List<int> bytes) async {
+    if (bytes.isEmpty || bytes.length > 5 * 1024 * 1024) {
+      throw MerchantApiException('Choose an image up to 5 MB.');
+    }
+    final String type;
+    if (bytes.length >= 3 && bytes[0] == 255 && bytes[1] == 216 && bytes[2] == 255) {
+      type = 'image/jpeg';
+    } else if (bytes.length >= 8 && bytes[0] == 137 && bytes[1] == 80 && bytes[2] == 78 && bytes[3] == 71) {
+      type = 'image/png';
+    } else if (bytes.length >= 12 && ascii.decode(bytes.sublist(0, 4), allowInvalid: true) == 'RIFF' && ascii.decode(bytes.sublist(8, 12), allowInvalid: true) == 'WEBP') {
+      type = 'image/webp';
+    } else {
+      throw MerchantApiException('Choose a JPEG, PNG or WebP image.');
+    }
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final response = await _client.post(_uri('/v1/merchant/branding'), headers: {
+        'authorization': 'Bearer $_access', 'content-type': type, 'accept': 'application/json',
+      }, body: bytes);
+      if (response.statusCode == 201) return (_json(response) as Map)['url'].toString();
+      if (response.statusCode != 401 || attempt != 0 || !await refresh()) throw _error(response);
+    }
+    throw MerchantApiException('Please sign in again.');
+  }
 
   void close() => _client.close();
 }

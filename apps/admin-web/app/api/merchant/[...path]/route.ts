@@ -15,7 +15,7 @@ async function forward(
   request: NextRequest,
   context: Context,
   accessToken: string,
-  bodyText: string | null,
+  bodyText: ArrayBuffer | null,
 ) {
   const { path } = await context.params;
   if (path.some(p => !/^[a-zA-Z0-9_-]+$/.test(p))) return new Response(JSON.stringify({ error: 'invalid_path' }), { status: 400 });
@@ -27,7 +27,7 @@ async function forward(
     accept: 'application/json',
     authorization: `Bearer ${accessToken}`,
   };
-  if (bodyText) headers['content-type'] = 'application/json';
+  if (bodyText) headers['content-type'] = request.headers.get('content-type') ?? 'application/json';
 
   return fetch(target, {
     method: request.method,
@@ -41,7 +41,12 @@ async function handler(request: NextRequest, context: Context) {
   if (request.method !== 'GET' && !hasTrustedOrigin(request)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 });
   let accessToken = request.cookies.get(accessCookieName)?.value;
   const refreshToken = request.cookies.get(refreshCookieName)?.value;
-  const bodyText = request.method === 'GET' || request.method === 'HEAD' ? null : await request.text();
+  let bodyText:ArrayBuffer|null=null;
+  if(request.method!=='GET'&&request.method!=='HEAD'&&request.body){
+    const reader=request.body.getReader(),chunks:Uint8Array[]=[];let size=0;
+    while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>7*1024*1024){await reader.cancel();return NextResponse.json({error:'body_too_large'},{status:413});}chunks.push(part.value);}
+    if(size){const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}bodyText=bytes.buffer;}
+  }
   let refreshed: Awaited<ReturnType<typeof refreshAdminSession>> = null;
 
   if (!accessToken && refreshToken) {

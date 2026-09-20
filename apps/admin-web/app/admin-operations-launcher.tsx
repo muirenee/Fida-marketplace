@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 
 const tools = [
+  { href: '/system', label: 'System administration' },
   { href: '/business-operations', label: 'Business operations' },
   { href: '/operations', label: 'Operations' },
   { href: '/insights', label: 'Insights' },

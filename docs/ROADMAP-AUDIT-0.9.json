@@ -1,0 +1,272 @@
+{
+  "scope": "Source presence only; see RELEASE-0.9.md for verification and remaining gaps",
+  "features": [
+    {
+      "feature": "binary_onboarding_and_slug",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/routes/branding.ts",
+          "signature": "limitInputPixels",
+          "present": true
+        },
+        {
+          "path": "apps/api/src/lib/merchant-application.ts",
+          "signature": "storeSlug",
+          "present": true
+        },
+        {
+          "path": "apps/merchant-mobile/lib/main.dart",
+          "signature": "Uri.parse('https://fidalix.com')",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "native_store_and_staff",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/merchant-mobile/lib/store_page.dart",
+          "signature": "uploadBranding",
+          "present": true
+        },
+        {
+          "path": "apps/merchant-mobile/lib/staff_page.dart",
+          "signature": "Delete staff membership?",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "customer_discovery",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/customer-mobile/lib/screens/marketplace_screen.dart",
+          "signature": "Neighborhood Favorites",
+          "present": true
+        },
+        {
+          "path": "apps/api/src/routes/marketplace.ts",
+          "signature": "storeVisit.upsert",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "root_system_controls",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/routes/admin-system.ts",
+          "signature": "Preview expired or already used.",
+          "present": true
+        },
+        {
+          "path": "apps/admin-web/app/system/page.tsx",
+          "signature": "Master settings",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "period_commission",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/routes/commission-periods.ts",
+          "signature": "Consolidated commission invoice",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "merchant_application",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/routes/merchant-lifecycle.ts",
+          "signature": "/v1/merchant/applications/:id/submit",
+          "present": true
+        },
+        {
+          "path": "apps/admin-web/app/merchant/register/page.tsx",
+          "signature": "openingHours",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "admin_approval",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/routes/merchant-lifecycle.ts",
+          "signature": "/v1/admin/merchant-applications/:id/review",
+          "present": true
+        },
+        {
+          "path": "apps/admin-web/app/business-operations/application-review.tsx",
+          "signature": "APPROVE",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "staff_rbac",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/lib/tenant.ts",
+          "signature": "KITCHEN_CREW",
+          "present": true
+        },
+        {
+          "path": "apps/admin-web/app/merchant/staff-settings.tsx",
+          "signature": "MANAGER",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "tax_and_item_promotions",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/lib/checkout.ts",
+          "signature": "allocateDiscount",
+          "present": true
+        },
+        {
+          "path": "apps/api/src/routes/promotions.ts",
+          "signature": "productId",
+          "present": true
+        },
+        {
+          "path": "apps/customer-mobile/lib/screens/checkout_screen.dart",
+          "signature": "'taxLabel'",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "cooking_notes",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/routes/orders.ts",
+          "signature": "cookingInstructions",
+          "present": true
+        },
+        {
+          "path": "apps/merchant-mobile/lib/main.dart",
+          "signature": "cookingInstructions",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "customer_safe_insets",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/customer-mobile/lib/screens/merchant_screen.dart",
+          "signature": "SafeArea(",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "driver_actual_settlements",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/routes/driver-settlements.ts",
+          "signature": "settledPayout",
+          "present": true
+        },
+        {
+          "path": "apps/driver-mobile/lib/earnings_sheet.dart",
+          "signature": "No historical pay record",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "live_tracking",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "packages/mobile_common/lib/delivery_map.dart",
+          "signature": "FlutterMap",
+          "present": true
+        },
+        {
+          "path": "apps/api/src/routes/driver.ts",
+          "signature": "latitude",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "delivery_pin",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/routes/driver.ts",
+          "signature": "deliveryPin",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "commercial_documents",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/lib/documents.ts",
+          "signature": "CUSTOMER_RECEIPT",
+          "present": true
+        },
+        {
+          "path": "apps/api/src/routes/documents.ts",
+          "signature": "commission-balances",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "merchant_payment_routing",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/routes/payments.ts",
+          "signature": "transaction_charge:0",
+          "present": true
+        },
+        {
+          "path": "apps/api/src/lib/finance.ts",
+          "signature": "MERCHANT_DIRECT",
+          "present": true
+        }
+      ]
+    },
+    {
+      "feature": "upgrade_and_build",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "scripts/upgrade-0.9.sh",
+          "signature": "pg_dump",
+          "present": true
+        },
+        {
+          "path": "scripts/build-android.sh",
+          "signature": "flutter build",
+          "present": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+import {runtimeSettings} from '../lib/runtime-settings.js';
+import {authenticate} from '../lib/auth.js';
 import { branchIsOpen } from '../lib/business-hours.js';
 import type { FastifyInstance } from 'fastify';
 import { MerchantType, Prisma, TenantStatus, prisma } from '@fida/database/client';
@@ -57,7 +59,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         minimumOrder: true,
         timezone: true,
         logoUrl: true, coverUrl: true, cuisineTags: true,
-        products: { where: { isActive: true, isAvailable: true, deletedAt: null, imageUrl: { not: null }, OR: [{ categoryId: null }, { category: { isActive: true, deletedAt: null } }] }, select: {imageUrl: true}, orderBy: {name: 'asc'}, take: 1 },
+        products: { where: { isActive: true, isAvailable: true, deletedAt: null, imageUrl: { not: null }, OR: [{ categoryId: null }, { category: { isActive: true, deletedAt: null } }] }, select: {id:true,name:true,price:true,imageUrl: true}, orderBy: {name: 'asc'}, take: 3 },
         branches: {
           where: { isActive: true, isAcceptingOrders: true },
           select: branchSelect,
@@ -66,11 +68,14 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       orderBy: { name: 'asc' },
     });
     const ids = merchants.map(m => m.id);
-    const [ratings, promos] = await Promise.all([
+    const [ratings, promos, popularity, favorites, settings] = await Promise.all([
       prisma.review.groupBy({by:['tenantId'],where:{tenantId:{in:ids}},_avg:{rating:true},_count:{rating:true}}),
       prisma.promotion.findMany({where:{tenantId:{in:ids},isActive:true,expiresAt:{gt:new Date()}},select:{tenantId:true,code:true,percent:true,productId:true,discountType:true,flatAmount:true,stackable:true,minimumOrder:true,maxDiscount:true,usedCount:true,maxUses:true}}),
+      prisma.order.groupBy({by:['tenantId'],where:{tenantId:{in:ids},status:'COMPLETED',createdAt:{gte:new Date(Date.now()-30*86400000)}},_count:{id:true}}),
+      prisma.favorite.groupBy({by:['tenantId'],where:{tenantId:{in:ids}},_count:{userId:true}}),
+      runtimeSettings(),
     ]);
-    return merchants.map(({products,...m}) => ({...m, imageUrl:m.coverUrl??products[0]?.imageUrl ?? null,
+    return merchants.map(({products,...m}) => ({...m, dishes:products, featured:(settings.FEATURED_STORE_IDS||'').split(',').map(v=>v.trim()).includes(m.id), completedOrders:popularity.find(p=>p.tenantId===m.id)?._count.id??0, favoriteCount:favorites.find(p=>p.tenantId===m.id)?._count.userId??0, imageUrl:m.coverUrl??products[0]?.imageUrl ?? null,
       rating:ratings.find(r=>r.tenantId===m.id)?._avg.rating ?? null,
       reviewCount:ratings.find(r=>r.tenantId===m.id)?._count.rating ?? 0,
       promotions:promos.filter(p=>p.tenantId===m.id && p.usedCount<p.maxUses).map(({usedCount,maxUses,tenantId,...p})=>p),
@@ -78,6 +83,12 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     }));
   });
 
+  app.get('/v1/customer/recent-stores',{preHandler:authenticate},async req=>prisma.storeVisit.findMany({where:{userId:req.authUser!.id},orderBy:{visitedAt:'desc'},take:40,select:{tenantId:true,visitedAt:true}}));
+  app.post('/v1/customer/recent-stores/:tenantId',{preHandler:authenticate},async(req,reply)=>{
+    const {tenantId}=req.params as {tenantId:string};
+    if(!await prisma.tenant.findFirst({where:{id:tenantId,status:'ACTIVE'}}))return reply.code(404).send({error:'store_not_found'});
+    await prisma.storeVisit.upsert({where:{userId_tenantId:{userId:req.authUser!.id,tenantId}},create:{userId:req.authUser!.id,tenantId},update:{visitedAt:new Date()}});return {success:true};
+  });
   app.get('/v1/marketplace/merchants/:slug', async (request, reply) => {
     const { slug } = request.params as { slug: string };
     const merchant = await prisma.tenant.findFirst({

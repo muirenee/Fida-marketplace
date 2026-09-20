@@ -1,3 +1,8 @@
+import {commissionPeriodRoutes} from './routes/commission-periods.js';
+import {adminSystemRoutes} from './routes/admin-system.js';
+import {runtimeSettings} from './lib/runtime-settings.js';
+import {storeMetadataRoutes} from './routes/store-metadata.js';
+import {brandingRoutes} from './routes/branding.js';
 import { promotionRoutes } from './routes/promotions.js';
 import { driverSettlementRoutes } from './routes/driver-settlements.js';
 import { merchantLifecycleRoutes } from './routes/merchant-lifecycle.js';
@@ -40,7 +45,7 @@ if (!jwtSecret || jwtSecret.length < 32) {
   throw new Error('JWT_ACCESS_SECRET must be configured with at least 32 characters');
 }
 
-const app = Fastify({ logger: process.env.APP_ENV !== 'test' });
+const app = Fastify({ logger: process.env.APP_ENV !== 'test', trustProxy:process.env.TRUST_PROXY?.split(',').map(v=>v.trim()).filter(Boolean)??false });
 app.setErrorHandler((error, request, reply) => {
   const e = error as { code?: string; statusCode?: number; message?: string };
   if (e.code === 'P2002') return reply.code(409).send({ error: 'already_exists', message: 'An item with these details already exists.' });
@@ -52,7 +57,7 @@ app.setErrorHandler((error, request, reply) => {
 });
 
 await app.register(cors, {
-  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((value) => value.trim()) : true,
+  origin(origin,callback){void runtimeSettings().then(settings=>{const origins=(settings.CORS_ORIGIN||'').split(',').map(v=>v.trim()).filter(Boolean);callback(null,!origin||origins.includes(origin)||(!origins.length&&process.env.APP_ENV==='test'));}).catch(error=>callback(error,false));},
   credentials: true,
 });
 await app.register(jwt, { secret: jwtSecret });
@@ -73,6 +78,9 @@ app.addHook('preHandler', async(request,reply)=>{
 registerAdminAudit(app);
 registerAdminGuardrails(app);
 
+app.addHook('onRequest',async(req,reply)=>{const settings=await runtimeSettings();if(settings.MAINTENANCE_MODE==='true'&&!['/health','/v1/admin/','/v1/auth/','/v1/payments/'].some(p=>req.url.startsWith(p)))return reply.code(503).send({error:'maintenance',message:'The marketplace is temporarily under maintenance.'});});
+await app.register(adminSystemRoutes);
+await app.register(commissionPeriodRoutes);
 await app.register(authRoutes);
 await app.register(marketplaceRoutes);
 await app.register(addressRoutes);
@@ -81,10 +89,12 @@ await app.register(orderRoutes);
 await app.register(driverRoutes);
 await app.register(tenantRoutes);
 await app.register(merchantLifecycleRoutes);
+await app.register(storeMetadataRoutes);
 await app.register(driverSettlementRoutes);
 await app.register(merchantRoutes);
 await app.register(merchantBusinessRoutes);
 await app.register(mediaRoutes);
+await app.register(brandingRoutes);
 await app.register(businessOperationsRoutes);
 await app.register(paymentRoutes);
 await app.register(documentRoutes);

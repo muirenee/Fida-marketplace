@@ -14,7 +14,8 @@
     "@fida/database": "workspace:*",
     "dotenv": "^17.2.2",
     "fastify": "^5.6.0",
-    "firebase-admin": "^14.4.0"
+    "firebase-admin": "^14.4.0",
+    "sharp": "0.34.5"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

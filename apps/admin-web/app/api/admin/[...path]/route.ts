@@ -1,3 +1,4 @@
+import {hasTrustedOrigin} from '../../../../lib/request-origin';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   accessCookieName,
@@ -34,6 +35,7 @@ async function forward(
 }
 
 async function handler(request: NextRequest, context: Context) {
+  if(!['GET','HEAD'].includes(request.method)&&!hasTrustedOrigin(request))return NextResponse.json({error:'invalid_origin'},{status:403});
   let accessToken = request.cookies.get(accessCookieName)?.value;
   const refreshToken = request.cookies.get(refreshCookieName)?.value;
   const bodyText = request.method === 'GET' || request.method === 'HEAD' ? null : await request.text();

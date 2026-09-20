@@ -1,0 +1,55 @@
+# 0.9 workspace impact
+
+- `.env.example`
+- `apps/admin-web/app/admin-operations-launcher.tsx`
+- `apps/admin-web/app/api/admin/[...path]/route.ts`
+- `apps/admin-web/app/api/merchant/[...path]/route.ts`
+- `apps/admin-web/app/merchant/page.tsx`
+- `apps/admin-web/app/merchant/register/page.tsx`
+- `apps/admin-web/app/merchant/staff-settings.tsx`
+- `apps/admin-web/app/merchant/store-settings.tsx`
+- `apps/admin-web/app/polish.css`
+- `apps/admin-web/app/system/page.tsx`
+- `apps/api/Dockerfile`
+- `apps/api/package.json`
+- `apps/api/src/generated/admin-catalog.ts`
+- `apps/api/src/lib/admin-data.ts`
+- `apps/api/src/lib/auth.ts`
+- `apps/api/src/lib/merchant-application.ts`
+- `apps/api/src/lib/runtime-settings.ts`
+- `apps/api/src/routes/addresses.ts`
+- `apps/api/src/routes/admin-system.ts`
+- `apps/api/src/routes/branding.ts`
+- `apps/api/src/routes/commission-periods.ts`
+- `apps/api/src/routes/marketplace.ts`
+- `apps/api/src/routes/merchant-lifecycle.ts`
+- `apps/api/src/routes/payments.ts`
+- `apps/api/src/routes/store-metadata.ts`
+- `apps/api/src/server.ts`
+- `apps/customer-mobile/lib/core/api_client.dart`
+- `apps/customer-mobile/lib/screens/marketplace_screen.dart`
+- `apps/customer-mobile/pubspec.yaml`
+- `apps/customer-mobile/test/experience_test.dart`
+- `apps/driver-mobile/pubspec.yaml`
+- `apps/merchant-mobile/lib/api_client.dart`
+- `apps/merchant-mobile/lib/main.dart`
+- `apps/merchant-mobile/lib/staff_page.dart`
+- `apps/merchant-mobile/lib/store_page.dart`
+- `apps/merchant-mobile/pubspec.yaml`
+- `docs/RELEASE-0.9.md`
+- `docs/ROADMAP-AUDIT-0.9.json`
+- `infra/docker-compose.yml`
+- `package.json`
+- `packages/database/prisma/schema.prisma`
+- `packages/database/prisma/upgrades/20260920-09-schema.sql`
+- `pnpm-lock.yaml`
+- `scripts/apply-runtime-env.py`
+- `scripts/audit-roadmap.py`
+- `scripts/generate-admin-catalog.mjs`
+- `scripts/reload-environment.sh`
+- `scripts/upgrade-0.9.sh`
+- `tests/business-integration.mts`
+- `tests/fixtures/schema-0.8.prisma`
+- `tests/upgrade-09.mts`
+
+No production records are changed by source publication.

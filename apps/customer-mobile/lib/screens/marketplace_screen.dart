@@ -18,6 +18,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   final _searchFocus = FocusNode();
   Timer? _debounce;
   List<Map<String, dynamic>> _merchants = [];
+  final List<String> _recent = [];
   final Set<String> _favorites = {};
   final Set<String> _savingFavorites = {};
   bool _loading = true, _offersOnly = false, _openOnly = false;
@@ -36,6 +37,11 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     super.initState();
     _load();
     _loadFavorites();
+    _loadRecent();
+  }
+
+  Future<void> _loadRecent() async {
+    try {final rows=await widget.api.request('GET','/v1/customer/recent-stores') as List;if(mounted)setState((){_recent.clear();_recent.addAll(rows.map((r)=>r['tenantId'].toString()));});} catch (_) {}
   }
 
   Future<void> _loadFavorites() async {
@@ -159,16 +165,12 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     }
   }
 
-  void _open(Map<String, dynamic> m) => Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => MerchantScreen(
-        api: widget.api,
-        slug: m['slug'].toString(),
-        initialFulfillment: _mode,
-      ),
-    ),
-  );
+  Future<void> _open(Map<String, dynamic> m) async {
+    final id=m['id'].toString();setState((){_recent.remove(id);_recent.insert(0,id);});
+    unawaited(widget.api.request('POST','/v1/customer/recent-stores/$id',body:<String,dynamic>{}).catchError((_)=><String,dynamic>{}));
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>MerchantScreen(api:widget.api,slug:m['slug'].toString(),initialFulfillment:_mode)));
+    if(mounted)await _loadFavorites();
+  }
   Widget _card(Map<String, dynamic> m, {bool compact = false}) {
     final promos = m['promotions'] as List? ?? [];
     final branches = m['branches'] as List? ?? [];
@@ -197,7 +199,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
               FoodCover(
                 url: m['imageUrl']?.toString(),
                 baseUrl: ApiClient.baseUrl,
-                height: compact ? 155 : 190,
+                height: compact ? 132 : 190,
                 label: m['name'].toString(),
               ),
               if (promos.isNotEmpty)
@@ -247,8 +249,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                   m['name'].toString(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 19,
+                  style: TextStyle(
+                    fontSize: compact ? 16 : 19,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -293,6 +295,34 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         ],
       ),
     );
+  }
+
+  Widget _section(String title,List<Map<String,dynamic>> rows,{bool grid=false,String? empty}) {
+    final scale=MediaQuery.textScalerOf(context).scale(14)/14;
+    return SliverToBoxAdapter(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Padding(padding:const EdgeInsets.fromLTRB(16,24,16,12),child:Text(title,style:const TextStyle(fontSize:22,fontWeight:FontWeight.w800,letterSpacing:-.5))),
+      if(rows.isEmpty) Padding(padding:const EdgeInsets.symmetric(horizontal:16,vertical:8),child:Text(empty??'More stores will appear here as local orders and reviews grow.',style:const TextStyle(color:Colors.black54)))
+      else if(grid) SizedBox(height:(112+scale*24)*2,child:GridView.builder(padding:const EdgeInsets.symmetric(horizontal:16),scrollDirection:Axis.horizontal,gridDelegate:SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount:2,mainAxisExtent:105,crossAxisSpacing:14,mainAxisSpacing:12),itemCount:rows.length,itemBuilder:(_,i){final m=rows[i];return InkWell(onTap:()=>_open(m),child:Column(children:[SizedBox(width:68,height:68,child:ClipOval(child:FoodCover(url:(m['logoUrl']??m['imageUrl'])?.toString(),baseUrl:ApiClient.baseUrl,height:68,radius:0,label:m['name'].toString()))),const SizedBox(height:6),Text(m['name'].toString(),maxLines:2,overflow:TextOverflow.ellipsis,textAlign:TextAlign.center,style:const TextStyle(fontSize:12,fontWeight:FontWeight.w600))]));}))
+      else SizedBox(height:210+scale*90,child:ListView.separated(padding:const EdgeInsets.symmetric(horizontal:16),scrollDirection:Axis.horizontal,itemCount:rows.length.clamp(0,12),separatorBuilder:(_,__)=>const SizedBox(width:14),itemBuilder:(_,i)=>SizedBox(width:MediaQuery.sizeOf(context).width*.68,child:_card(rows[i],compact:true)))),
+    ]));
+  }
+  List<Widget> _discovery(List<Map<String,dynamic>> rows) {
+    List<Map<String,dynamic>> ranked(String key)=>rows.where((m)=>asDouble(m[key])>0).toList()..sort((a,b)=>asDouble(b[key]).compareTo(asDouble(a[key])));
+    final popular=ranked('completedOrders'),rated=ranked('rating'),favorites=ranked('favoriteCount');
+    final recent=_recent.map((id)=>rows.where((m)=>m['id']==id).firstOrNull).whereType<Map<String,dynamic>>().toList();
+    final dishes=rows.expand((m)=>(m['dishes'] as List? ?? []).map((p)=>{'merchant':m,'product':p})).toList();
+    return [
+      _section('Featured on Fida',rows.where((m)=>m['featured']==true).toList(),empty:'Featured stores will appear here.'),
+      _section('Recently Viewed',recent,empty:'Open a store to see it here.'),
+      _section('Stores near you',rows,grid:true),
+      _section('Popular in your area',popular),
+      _section('Neighborhood Favorites',favorites),
+      _section('Best Overall',rated),
+      _section('Most popular local restaurants',popular.where((m)=>m['merchantType']=='RESTAURANT').toList()),
+      SliverToBoxAdapter(child:Padding(padding:const EdgeInsets.fromLTRB(16,24,16,12),child:const Text('Discover a new favorite dish',style:TextStyle(fontSize:22,fontWeight:FontWeight.w800,letterSpacing:-.5)))),
+      if(dishes.isNotEmpty) SliverToBoxAdapter(child:SizedBox(height:235+MediaQuery.textScalerOf(context).scale(16)*2,child:ListView.separated(padding:const EdgeInsets.symmetric(horizontal:16),scrollDirection:Axis.horizontal,itemCount:dishes.length.clamp(0,20),separatorBuilder:(_,__)=>const SizedBox(width:14),itemBuilder:(_,i){final m=dishes[i]['merchant'] as Map<String,dynamic>,p=dishes[i]['product'] as Map;return SizedBox(width:220,child:InkWell(onTap:()=>_open(m),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[FoodCover(url:p['imageUrl']?.toString(),baseUrl:ApiClient.baseUrl,height:140,label:p['name'].toString()),const SizedBox(height:10),Text(p['name'].toString(),maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700)),Text(money(p['price'],currency:m['currency']?.toString()??'RWF')),Text(m['name'].toString(),maxLines:1,overflow:TextOverflow.ellipsis)])));})))
+      else const SliverToBoxAdapter(child:Padding(padding:EdgeInsets.symmetric(horizontal:16),child:Text('Available dishes will appear here.'))),
+    ];
   }
 
   @override
@@ -564,37 +594,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
               ),
             )
           else ...[
-            if (rows.length > 1 && _search.text.isEmpty)
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 270,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: rows.length.clamp(0, 6),
-                    separatorBuilder: (_, __) => const SizedBox(width: 14),
-                    itemBuilder: (_, i) => SizedBox(
-                      width: MediaQuery.sizeOf(context).width * .73,
-                      child: _card(rows[i], compact: true),
-                    ),
-                  ),
-                ),
-              ),
-            if (rows.length > 1 && _search.text.isEmpty)
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: SectionHeading('Explore all stores'),
-                ),
-              ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-              sliver: SliverList.separated(
-                itemCount: rows.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 26),
-                itemBuilder: (_, i) => _card(rows[i]),
-              ),
-            ),
+            if(_search.text.isEmpty) ..._discovery(rows),
+            SliverToBoxAdapter(child:Padding(padding:const EdgeInsets.fromLTRB(16,20,16,12),child:Text(_search.text.isEmpty?'All Stores':'Search results',style:const TextStyle(fontSize:22,fontWeight:FontWeight.w800)))),
+            SliverPadding(padding:const EdgeInsets.fromLTRB(16,0,16,28),sliver:SliverList.separated(itemCount:rows.length,separatorBuilder:(_,__)=>const SizedBox(height:26),itemBuilder:(_,i)=>_card(rows[i]))),
           ],
         ],
       ),
