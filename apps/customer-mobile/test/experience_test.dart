@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -126,6 +127,18 @@ Future<void> mount(
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() async {
+    // Use readable fonts in captured previews instead of the test-only Ahem font.
+    for (final font in [('Roboto', 'regular.ttf'), ('MaterialIcons', 'icons.otf')]) {
+      final file = File('build/test-fonts/${font.$2}');
+      if (await file.exists()) {
+        final bytes = await file.readAsBytes();
+        final loader = FontLoader(font.$1)..addFont(Future.value(ByteData.sublistView(bytes)));
+        await loader.load();
+      }
+    }
+  });
   testWidgets(
     'home displays real store and filters pickup without layout errors',
     (tester) async {

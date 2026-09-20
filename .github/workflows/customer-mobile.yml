@@ -71,7 +71,12 @@ jobs:
 
       - name: Test customer ordering UX
         working-directory: apps/customer-mobile
-        run: flutter test test/experience_test.dart
+        run: |
+          mkdir -p build/test-fonts
+          PREVIEW_FONT=$(find "$FLUTTER_ROOT" -name 'Roboto-Regular.ttf' -print -quit)
+          cp "${PREVIEW_FONT:-/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf}" build/test-fonts/regular.ttf
+          cp "$FLUTTER_ROOT/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf" build/test-fonts/icons.otf
+          flutter test test/experience_test.dart
 
       - name: Upload UI previews
         if: always()
