@@ -217,6 +217,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                     ),
                     child: Text(
                       promotionDescription(promos.first as Map, m['currency']?.toString() ?? 'RWF'),
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
@@ -276,6 +277,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 : fees.isEmpty
                 ? 'Delivery fee at checkout'
                 : 'Delivery from ${money(fees.first, currency: m['currency']?.toString() ?? 'RWF')}',
+            maxLines: 2, overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: Colors.black54),
           ),
           const SizedBox(height: 4),
@@ -285,6 +287,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 : rating == null
                 ? 'Discover something delicious'
                 : '★ ${m['reviewCount']} verified reviews',
+            maxLines: 2, overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 12,
               color: branch?['isOpen'] == false
@@ -302,8 +305,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     return SliverToBoxAdapter(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
       Padding(padding:const EdgeInsets.fromLTRB(16,24,16,12),child:Text(title,style:const TextStyle(fontSize:22,fontWeight:FontWeight.w800,letterSpacing:-.5))),
       if(rows.isEmpty) Padding(padding:const EdgeInsets.symmetric(horizontal:16,vertical:8),child:Text(empty??'More stores will appear here as local orders and reviews grow.',style:const TextStyle(color:Colors.black54)))
-      else if(grid) SizedBox(height:(112+scale*24)*2,child:GridView.builder(padding:const EdgeInsets.symmetric(horizontal:16),scrollDirection:Axis.horizontal,gridDelegate:SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount:2,mainAxisExtent:105,crossAxisSpacing:14,mainAxisSpacing:12),itemCount:rows.length,itemBuilder:(_,i){final m=rows[i];return InkWell(onTap:()=>_open(m),child:Column(children:[SizedBox(width:68,height:68,child:ClipOval(child:FoodCover(url:(m['logoUrl']??m['imageUrl'])?.toString(),baseUrl:ApiClient.baseUrl,height:68,radius:0,label:m['name'].toString()))),const SizedBox(height:6),Text(m['name'].toString(),maxLines:2,overflow:TextOverflow.ellipsis,textAlign:TextAlign.center,style:const TextStyle(fontSize:12,fontWeight:FontWeight.w600))]));}))
-      else SizedBox(height:210+scale*90,child:ListView.separated(padding:const EdgeInsets.symmetric(horizontal:16),scrollDirection:Axis.horizontal,itemCount:rows.length.clamp(0,12),separatorBuilder:(_,__)=>const SizedBox(width:14),itemBuilder:(_,i)=>SizedBox(width:MediaQuery.sizeOf(context).width*.68,child:_card(rows[i],compact:true)))),
+      else if(grid) SizedBox(height:(82+scale*28)*2+14,child:GridView.builder(padding:const EdgeInsets.symmetric(horizontal:16),scrollDirection:Axis.horizontal,gridDelegate:SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount:2,mainAxisExtent:86,crossAxisSpacing:14,mainAxisSpacing:12),itemCount:rows.length,itemBuilder:(_,i){final m=rows[i];return InkWell(onTap:()=>_open(m),child:Column(children:[SizedBox(width:68,height:68,child:ClipOval(child:FoodCover(url:(m['logoUrl']??m['imageUrl'])?.toString(),baseUrl:ApiClient.baseUrl,height:68,radius:0,label:m['name'].toString()))),const SizedBox(height:6),Text(m['name'].toString(),maxLines:2,overflow:TextOverflow.ellipsis,textAlign:TextAlign.center,style:const TextStyle(fontSize:12,fontWeight:FontWeight.w600))]));}))
+      else SizedBox(height:160+scale*90,child:ListView.separated(padding:const EdgeInsets.symmetric(horizontal:16),scrollDirection:Axis.horizontal,itemCount:rows.length.clamp(0,12),separatorBuilder:(_,__)=>const SizedBox(width:14),itemBuilder:(_,i)=>SizedBox(width:MediaQuery.sizeOf(context).width*.48,child:_card(rows[i],compact:true)))),
     ]));
   }
   List<Widget> _discovery(List<Map<String,dynamic>> rows) {
@@ -549,16 +552,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                         ],
                       ),
                     ),
-                    SectionHeading(
-                      _search.text.isNotEmpty
-                          ? 'Search results'
-                          : _offersOnly
-                          ? 'Offers for you'
-                          : 'Discover on Fida',
-                      subtitle: _loading
-                          ? 'Finding your next favourite…'
-                          : '${rows.length} stores · ${_mode == 'DELIVERY' ? 'Delivery' : 'Pickup'}',
-                    ),
+
                   ],
                 ),
               ),

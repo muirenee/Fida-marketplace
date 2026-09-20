@@ -164,6 +164,7 @@ void main() {
         await tester.scrollUntilVisible(find.text(heading), 250, scrollable: find.byType(Scrollable).first);
         expect(find.text(heading), findsOneWidget);
         expect(tester.takeException(), isNull, reason: heading);
+        if (heading == 'Stores near you') await capture(tester, key, 'customer-store-grid');
       }
       client.close();
     },

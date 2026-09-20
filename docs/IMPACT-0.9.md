@@ -1,6 +1,7 @@
 # 0.9 workspace impact
 
 - `.env.example`
+- `.github/workflows/validate.yml`
 - `apps/admin-web/app/admin-operations-launcher.tsx`
 - `apps/admin-web/app/api/admin/[...path]/route.ts`
 - `apps/admin-web/app/api/merchant/[...path]/route.ts`
@@ -36,12 +37,14 @@
 - `apps/merchant-mobile/lib/staff_page.dart`
 - `apps/merchant-mobile/lib/store_page.dart`
 - `apps/merchant-mobile/pubspec.yaml`
+- `docs/IMPACT-0.9.md`
 - `docs/RELEASE-0.9.md`
 - `docs/ROADMAP-AUDIT-0.9.json`
 - `infra/docker-compose.yml`
 - `package.json`
 - `packages/database/prisma/schema.prisma`
 - `packages/database/prisma/upgrades/20260920-09-schema.sql`
+- `packages/mobile_common/lib/food_ui.dart`
 - `pnpm-lock.yaml`
 - `scripts/apply-runtime-env.py`
 - `scripts/audit-roadmap.py`
@@ -49,6 +52,7 @@
 - `scripts/reload-environment.sh`
 - `scripts/upgrade-0.9.sh`
 - `tests/business-integration.mts`
+- `tests/environment-update.py`
 - `tests/fixtures/schema-0.8.prisma`
 - `tests/upgrade-09.mts`
 
