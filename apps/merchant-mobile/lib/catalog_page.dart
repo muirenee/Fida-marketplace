@@ -439,6 +439,31 @@ class _CatalogPageState extends State<CatalogPage> {
     );
   }
 
+  Future<void> remove(String kind, Map row) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('Delete ${row['name']}?'),
+        content: Text(
+          kind == 'categories'
+              ? 'Products in this category will be hidden from customers. Order history is preserved.'
+              : 'This product will be removed from your catalog. Previous orders keep their item details.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) await mutate(kind, row, 'DELETE');
+  }
+
   @override
   Widget build(BuildContext context) {
     if (loading) return const Center(child: CircularProgressIndicator());

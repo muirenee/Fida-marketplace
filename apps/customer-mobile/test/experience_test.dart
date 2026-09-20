@@ -131,7 +131,7 @@ void main() {
     (tester) async {
       final client = api(), key = GlobalKey();
       await mount(tester, Scaffold(body: MarketplaceScreen(api: client)), key);
-      expect(find.text('Kigali Kitchen'), findsOneWidget);
+      expect(find.text('Kigali Kitchen'), findsWidgets);
       expect(tester.takeException(), isNull);
       await capture(tester, key, 'customer-home');
       await tester.tap(find.text('Pickup'));

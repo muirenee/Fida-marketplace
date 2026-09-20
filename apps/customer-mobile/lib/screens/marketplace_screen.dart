@@ -421,7 +421,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                     ),
                     const SizedBox(height: 18),
                     SizedBox(
-                      height: 88,
+                      height: 70 + MediaQuery.textScalerOf(context).scale(12) * 2,
                       child: ListView(
                         scrollDirection: Axis.horizontal,
                         children: [
@@ -457,6 +457,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                       const SizedBox(height: 7),
                                       Text(
                                         t.$1,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
                                         style: TextStyle(
                                           fontSize: 12,
                                           fontWeight: _type == t.$3
