@@ -48,6 +48,9 @@ jobs:
       - name: Integration tests
         run: pnpm test:integration
 
+      - name: Verify environment update script
+        run: python3 tests/environment-update.py
+
       - name: Typecheck Admin web
         run: pnpm --filter @fida/admin-web typecheck
 
