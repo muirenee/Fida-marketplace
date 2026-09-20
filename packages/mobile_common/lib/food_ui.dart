@@ -18,19 +18,26 @@ class FoodCover extends StatelessWidget {
     final fallback = Container(
       color: const Color(0xFFEAF3DF),
       alignment: Alignment.center,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 64)),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF28563E),
-            ),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: height < 100
+              ? const Icon(Icons.storefront_outlined, size: 36, color: Color(0xFF28563E))
+              : SizedBox(
+                  width: 220,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(emoji, style: const TextStyle(fontSize: 64)),
+                      const SizedBox(height: 8),
+                      Text(label, maxLines: 2, overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF28563E))),
+                    ],
+                  ),
+                ),
+        ),
       ),
     );
     return ClipRRect(

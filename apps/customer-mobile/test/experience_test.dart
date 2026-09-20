@@ -163,7 +163,7 @@ void main() {
       for (final heading in ['Featured on Fida','Recently Viewed','Stores near you','Popular in your area','Neighborhood Favorites','Best Overall','Most popular local restaurants','Discover a new favorite dish','All Stores']) {
         await tester.scrollUntilVisible(find.text(heading), 250, scrollable: find.byType(Scrollable).first);
         expect(find.text(heading), findsOneWidget);
-        expect(tester.takeException(), isNull);
+        expect(tester.takeException(), isNull, reason: heading);
       }
       client.close();
     },
