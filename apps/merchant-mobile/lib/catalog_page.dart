@@ -69,8 +69,9 @@ class _CatalogPageState extends State<CatalogPage> {
       await load();
     } catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -289,13 +290,13 @@ class _CatalogPageState extends State<CatalogPage> {
     final options = (row['options'] as List? ?? [])
         .map((o) => Map<String, dynamic>.from(o as Map))
         .toList();
-    String? error;
     bool saving = false;
+    String? formError;
     await showDialog<void>(
       context: context,
       builder: (dialog) => StatefulBuilder(
         builder: (ctx, update) => AlertDialog(
-          title: const Text('Choices and add-ons'),
+          title: const Text('Modifiers & add-ons'),
           content: SizedBox(
             width: 440,
             child: SingleChildScrollView(
@@ -303,50 +304,95 @@ class _CatalogPageState extends State<CatalogPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    'Customers can select these paid or free extras. Prices are added to the product price.',
+                    'Group choices together, then set required minimum and maximum selections. Leave group empty for optional extras.',
                   ),
                   for (var i = 0; i < options.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
+                    Container(
+                      key: ValueKey('choice-$i-${options.length}'),
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.black12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
                         children: [
-                          Expanded(
-                            child: TextFormField(
-                              key: ValueKey('name-$i-${options.length}'),
-                              initialValue:
-                                  options[i]['name']?.toString() ?? '',
-                              decoration: const InputDecoration(
-                                labelText: 'Choice name',
-                              ),
-                              onChanged: (v) => options[i]['name'] = v,
+                          TextFormField(
+                            initialValue: options[i]['name']?.toString() ?? '',
+                            decoration: const InputDecoration(
+                              labelText: 'Choice name',
                             ),
+                            onChanged: (v) => options[i]['name'] = v,
                           ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            width: 90,
-                            child: TextFormField(
-                              key: ValueKey('price-$i-${options.length}'),
-                              initialValue:
-                                  options[i]['price']?.toString() ?? '0',
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'RWF',
-                              ),
-                              onChanged: (v) =>
-                                  options[i]['price'] = double.tryParse(v),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            initialValue: '${options[i]['price'] ?? 0}',
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Additional price',
                             ),
+                            onChanged: (v) =>
+                                options[i]['price'] = double.tryParse(v),
                           ),
-                          IconButton(
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            initialValue: options[i]['group']?.toString() ?? '',
+                            decoration: const InputDecoration(
+                              labelText: 'Group (optional)',
+                              hintText: 'Rice choice',
+                            ),
+                            onChanged: (v) => update(() {
+                              options[i]['group'] = v;
+                              options[i]['minSelect'] ??= 0;
+                              options[i]['maxSelect'] ??= 1;
+                            }),
+                          ),
+                          if ((options[i]['group'] ?? '')
+                              .toString()
+                              .isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                for (final k in ['minSelect', 'maxSelect'])
+                                  Expanded(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(4),
+                                      child: TextFormField(
+                                        initialValue:
+                                            '${options[i][k] ?? (k == 'minSelect' ? 0 : 1)}',
+                                        keyboardType: TextInputType.number,
+                                        decoration: InputDecoration(
+                                          labelText: k == 'minSelect'
+                                              ? 'Minimum'
+                                              : 'Maximum',
+                                        ),
+                                        onChanged: (v) {
+                                          for (final o in options.where(
+                                            (o) =>
+                                                o['group'] ==
+                                                options[i]['group'],
+                                          )) {
+                                            o[k] = int.tryParse(v);
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                          TextButton.icon(
                             onPressed: saving
                                 ? null
                                 : () => update(() => options.removeAt(i)),
-                            icon: const Icon(Icons.remove_circle_outline),
+                            icon: const Icon(Icons.delete_outline),
+                            label: const Text('Remove'),
                           ),
                         ],
                       ),
                     ),
                   TextButton.icon(
-                    onPressed: saving || options.length >= 20
+                    onPressed: saving || options.length >= 40
                         ? null
                         : () => update(
                             () => options.add({'name': '', 'price': 0}),
@@ -354,7 +400,8 @@ class _CatalogPageState extends State<CatalogPage> {
                     icon: const Icon(Icons.add),
                     label: const Text('Add choice'),
                   ),
-                  if (error != null) Text(error!),
+                  if (formError != null)
+                    Text(formError!, style: const TextStyle(color: Colors.red)),
                 ],
               ),
             ),
@@ -368,18 +415,6 @@ class _CatalogPageState extends State<CatalogPage> {
               onPressed: saving
                   ? null
                   : () async {
-                      if (options.any(
-                        (o) =>
-                            (o['name'] ?? '').toString().trim().isEmpty ||
-                            o['price'] == null ||
-                            (o['price'] as num) < 0,
-                      )) {
-                        update(
-                          () => error =
-                              'Each choice needs a name and a valid price.',
-                        );
-                        return;
-                      }
                       update(() => saving = true);
                       try {
                         await widget.api.request(
@@ -391,11 +426,9 @@ class _CatalogPageState extends State<CatalogPage> {
                         if (dialog.mounted) Navigator.pop(dialog);
                         await load();
                       } catch (e) {
-                        if (ctx.mounted)
-                          update(() {
-                            error = '$e';
-                            saving = false;
-                          });
+                        if (dialog.mounted) update(() => formError = '$e');
+                      } finally {
+                        if (dialog.mounted) update(() => saving = false);
                       }
                     },
               child: Text(saving ? 'Saving…' : 'Save choices'),
@@ -404,31 +437,6 @@ class _CatalogPageState extends State<CatalogPage> {
         ),
       ),
     );
-  }
-
-  Future<void> remove(String kind, Map row) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text('Delete ${row['name']}?'),
-        content: Text(
-          kind == 'categories'
-              ? 'Products in this category will be hidden from customers. Order history is preserved.'
-              : 'This product will be removed from your catalog. Previous orders keep their item details.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('Keep'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) await mutate(kind, row, 'DELETE');
   }
 
   @override

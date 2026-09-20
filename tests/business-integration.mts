@@ -68,6 +68,24 @@ try {
   await request('PATCH',`/v1/merchant/drivers/${driver.id}/details`,owner,{maxConcurrentOrders:1,vehicleType:'BICYCLE'});
   await request('PATCH','/v1/driver/availability',driverUser,{isOnline:true,isAvailable:true});
  });
+ await test('required groups and separately configured lines are priced on the server',async()=>{
+  const configured=await request('POST','/v1/merchant/products',owner,{name:'Custom meal',price:1000,categoryId:category.id,options:[{name:'White rice',price:0,group:'Rice',minSelect:1,maxSelect:1},{name:'Brown rice',price:200,group:'Rice',minSelect:1,maxSelect:1},{name:'Cheese',price:100}]},201);
+  await request('POST','/v1/customer/orders',customer,{...checkout,items:[{productId:configured.id,quantity:1}]},409);
+  await request('POST','/v1/customer/orders',customer,{...checkout,items:[{productId:configured.id,quantity:1,options:['White rice','Brown rice']}]},409);
+  const payload={...checkout,fulfillmentType:'PICKUP',deliveryInstructions:'Please include utensils.',items:[{productId:configured.id,quantity:1,options:['White rice']},{productId:configured.id,quantity:2,options:['Brown rice','Cheese']}]};
+  const preview=await request('POST','/v1/customer/checkout-preview',customer,payload);
+  const placed=await request('POST','/v1/customer/orders',customer,payload,201);
+  assert.equal(placed.items.length,2);assert.equal(Number(placed.subtotal),3600);assert.equal(Number(placed.total),Number(preview.total));assert.equal(placed.deliveryInstructions,'Please include utensils.');
+  await request('PATCH',`/v1/merchant/products/${configured.id}`,owner,{isAvailable:false});
+  await request('POST','/v1/customer/orders',customer,payload,409);
+  await request('PATCH',`/v1/merchant/products/${configured.id}`,owner,{options:[{name:' White rice ',price:0},{name:'White rice',price:0}]},400);
+ });
+ await test('operator pay controls are authorized and require valid rates',async()=>{
+  await request('PATCH','/v1/merchant/driver-pay',outsider,{driverBasePay:300,driverPerKmPay:50},403);
+  await request('PATCH','/v1/merchant/driver-pay',staff,{driverBasePay:300,driverPerKmPay:50},403);
+  await request('PATCH','/v1/merchant/driver-pay',owner,{driverBasePay:-1,driverPerKmPay:50},400);
+  await request('PATCH','/v1/merchant/driver-pay',owner,{driverBasePay:300,driverPerKmPay:50});
+ });
  await test('checkout blocks suspended categories, closed branches, unavailable payments and invalid options',async()=>{
   await request('PATCH',`/v1/merchant/categories/${category.id}`,owner,{isActive:false});
   await request('POST','/v1/customer/orders',customer,checkout,409);
@@ -93,7 +111,14 @@ try {
  await test('delivery capacity, customer-only PIN, transition guards and completion ledger',async()=>{
   for(const status of ['ACCEPTED','PREPARING','READY_FOR_PICKUP'])await request('PATCH',`/v1/merchant/orders/${order.id}/status`,owner,{status});
   const merchantOrders=await request('GET','/v1/merchant/orders');assert.equal(JSON.stringify(merchantOrders).includes('deliveryPin'),false);
+  const offers=await request('GET','/v1/driver/deliveries/available',driverUser);assert.ok(Number(offers.find((d:any)=>d.id===order.delivery.id).estimatedPayout)>=300);
   const claimed=await request('POST',`/v1/driver/deliveries/${order.delivery.id}/claim`,driverUser,{});assert.equal(JSON.stringify(claimed).includes('deliveryPin'),false);
+  const agreedPay=Number(claimed.estimatedPayout);assert.ok(agreedPay>=300);
+  await request('PATCH','/v1/merchant/driver-pay',owner,{driverBasePay:900,driverPerKmPay:0});
+  assert.equal(Number((await prisma.delivery.findUniqueOrThrow({where:{id:claimed.id}})).estimatedPayout),agreedPay);
+  await request('PATCH','/v1/driver/location',driverUser,{latitude:-1.952,longitude:30.052});
+  const tracking=await request('GET',`/v1/customer/orders/${order.id}`,customer);assert.equal(tracking.delivery.driver.latitude,-1.952);assert.ok(tracking.branch.latitude);
+  await request('GET',`/v1/customer/orders/${order.id}`,outsider,undefined,404);
   await request('PATCH',`/v1/merchant/drivers/${driver.id}`,owner,{isActive:false},409);
   const second=await request('POST','/v1/customer/orders',customer,checkout,201);
   for(const status of ['ACCEPTED','PREPARING','READY_FOR_PICKUP'])await request('PATCH',`/v1/merchant/orders/${second.id}/status`,owner,{status});
@@ -106,6 +131,17 @@ try {
   assert.equal(await prisma.financeEntry.count({where:{orderId:order.id,kind:'COMMISSION_DUE'}}),1);
   assert.ok(await prisma.notificationEvent.count({where:{orderId:order.id}})>=5);
  });
+ await test('receipts and commission invoices are automatic, stable and tenant scoped',async()=>{
+  assert.equal(await prisma.businessDocument.count({where:{orderId:order.id}}),2);
+  const receipt=await request('GET',`/v1/customer/orders/${order.id}/receipt`,customer);
+  assert.equal(Number(receipt.payload.total),Number(order.total));assert.equal(receipt.payload.lines[0].description,order.items[0].productName);
+  const retry=await request('GET',`/v1/customer/orders/${order.id}/receipt`,customer);assert.deepEqual(retry,receipt);
+  await request('GET',`/v1/customer/orders/${order.id}/receipt`,outsider,undefined,404);
+  await request('GET','/v1/merchant/documents',staff,undefined,403);
+  const invoices=await request('GET','/v1/merchant/documents');assert.equal(invoices[0].kind,'COMMISSION_INVOICE');assert.equal(Number(invoices[0].payload.total),Number(order.platformCommissionAmount));
+  const finished=await request('GET',`/v1/customer/orders/${order.id}`,customer);assert.equal(finished.delivery.driver.latitude,null);assert.equal(finished.delivery.driver.longitude,null);
+  const earnings=await request('GET','/v1/driver/earnings',driverUser);assert.equal(earnings.length,1);assert.ok(Number(earnings[0].estimatedPayout)>=300);
+ });
  await test('refund access, approval and receipt requirement',async()=>{
   const refund=await request('POST',`/v1/customer/orders/${order.id}/refund`,customer,{reason:'Missing food'});
   await request('PATCH',`/v1/admin/business/refunds/${refund.id}`,owner,{status:'APPROVED',resolution:'Checked'},403);
@@ -114,6 +150,8 @@ try {
   await request('PATCH',`/v1/admin/business/refunds/${refund.id}`,admin,{status:'REFUNDED',resolution:'Cash returned',externalReference:'test-cash-receipt'});
   const result=await prisma.order.findUniqueOrThrow({where:{id:order.id}});assert.equal(result.paymentStatus,'REFUNDED');
   assert.equal(await prisma.financeEntry.count({where:{orderId:order.id,kind:'COMMISSION_REVERSAL'}}),1);
+  assert.equal(await prisma.businessDocument.count({where:{orderId:order.id}}),4);
+  const refundedReceipt=await request('GET',`/v1/customer/orders/${order.id}/receipt`,customer);assert.equal(refundedReceipt.creditNotes.length,1);assert.equal(Number(refundedReceipt.creditNotes[0].payload.total),-Number(order.total));
  });
  await test('payment verification rejects tampering and duplicate notifications do not double book',async()=>{
   process.env.FLUTTERWAVE_SECRET_KEY='test-key';process.env.FLUTTERWAVE_WEBHOOK_SECRET='test-webhook-secret';

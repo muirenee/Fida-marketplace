@@ -1,95 +1,303 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-
+import 'package:fida_mobile_common/fida_mobile_common.dart';
 import '../core/api_client.dart';
 import '../ui/format.dart';
 import 'merchant_screen.dart';
 
 class MarketplaceScreen extends StatefulWidget {
-  const MarketplaceScreen({super.key, required this.api});
-
+  const MarketplaceScreen({super.key, required this.api, this.onAccount});
   final ApiClient api;
-
+  final VoidCallback? onAccount;
   @override
   State<MarketplaceScreen> createState() => _MarketplaceScreenState();
 }
 
 class _MarketplaceScreenState extends State<MarketplaceScreen> {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
+  Timer? _debounce;
   List<Map<String, dynamic>> _merchants = [];
-  bool _loading = true;
-  String? _error;
-  String? _type;
-  String _query = '';
-
-  static const _types = <String, ({String label, IconData icon})>{
-    'RESTAURANT': (label: 'Restaurants', icon: Icons.restaurant_rounded),
-    'SUPERMARKET': (label: 'Grocery', icon: Icons.shopping_basket_rounded),
-    'PHARMACY': (label: 'Pharmacy', icon: Icons.local_pharmacy_rounded),
-    'RETAIL': (label: 'Shops', icon: Icons.storefront_rounded),
-  };
-
+  final Set<String> _favorites = {};
+  final Set<String> _savingFavorites = {};
+  bool _loading = true, _offersOnly = false, _openOnly = false;
+  String? _error, _type, _city;
+  String _mode = 'DELIVERY', _sort = 'name';
+  int _request = 0;
+  static const _types = [
+    ('All', '✨', null),
+    ('Restaurants', '🍔', 'RESTAURANT'),
+    ('Grocery', '🥬', 'SUPERMARKET'),
+    ('Pharmacy', '💊', 'PHARMACY'),
+    ('Shops', '🛍️', 'RETAIL'),
+  ];
   @override
   void initState() {
     super.initState();
     _load();
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    try {
+      final rows =
+          await widget.api.request('GET', '/v1/customer/favorites') as List;
+      if (mounted)
+        setState(() {
+          _favorites.clear();
+          _favorites.addAll(rows.map((r) => r['id'].toString()));
+        });
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _search.dispose();
+    _searchFocus.dispose();
+    _debounce?.cancel();
     super.dispose();
   }
 
   Future<void> _load() async {
+    final version = ++_request;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final rows = await widget.api.merchants(type: _type);
-      if (!mounted) return;
-      setState(() => _merchants = rows);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.message);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _error = 'Unable to load merchants.');
+      final rows = await widget.api.merchants(
+        type: _type,
+        city: _city,
+        search: _search.text,
+      );
+      if (mounted && version == _request) setState(() => _merchants = rows);
+    } catch (e) {
+      if (mounted && version == _request) setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && version == _request) setState(() => _loading = false);
     }
   }
 
-  List<Map<String, dynamic>> get _filteredMerchants {
-    final query = _query.trim().toLowerCase();
-    if (query.isEmpty) return _merchants;
-    return _merchants.where((merchant) {
-      final branches = merchant['branches'] as List? ?? const [];
-      final searchable =
-          <Object?>[
-                merchant['name'],
-                merchant['merchantType'],
-                for (final branch in branches) ...[
-                  if (branch is Map) branch['name'],
-                  if (branch is Map) branch['city'],
-                ],
-              ]
-              .whereType<Object>()
-              .map((value) => value.toString())
-              .join(' ')
-              .toLowerCase();
-      return searchable.contains(query);
+  List<Map<String, dynamic>> get _visible {
+    final rows = _merchants.where((m) {
+      final branches = m['branches'] as List? ?? [];
+      return branches.any(
+            (b) =>
+                b[_mode == 'DELIVERY' ? 'deliveryEnabled' : 'pickupEnabled'] ==
+                    true &&
+                (!_openOnly || b['isOpen'] == true),
+          ) &&
+          (!_offersOnly || (m['promotions'] as List? ?? []).isNotEmpty);
     }).toList();
+    if (_sort == 'rating')
+      rows.sort(
+        (a, b) => asDouble(b['rating']).compareTo(asDouble(a['rating'])),
+      );
+    if (_sort == 'minimum')
+      rows.sort(
+        (a, b) =>
+            asDouble(a['minimumOrder']).compareTo(asDouble(b['minimumOrder'])),
+      );
+    return rows;
   }
 
-  Future<void> _selectType(String? value) async {
-    setState(() => _type = value);
-    await _load();
+  Future<void> _location() async {
+    final controller = TextEditingController(text: _city ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Where are you ordering?'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'City',
+            hintText: 'Kigali',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, ''),
+            child: const Text('All cities'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(c, controller.text.trim()),
+            child: const Text('Show stores'),
+          ),
+        ],
+      ),
+    );
+    // The dialog owns its field until its closing transition finishes.
+    if (result != null && mounted) {
+      setState(() => _city = result.isEmpty ? null : result);
+      await _load();
+    }
+  }
+
+  Future<void> _favorite(Map<String, dynamic> m) async {
+    final id = m['id'].toString();
+    if (_savingFavorites.contains(id)) return;
+    setState(() => _savingFavorites.add(id));
+    try {
+      await widget.api.request(
+        _favorites.contains(id) ? 'DELETE' : 'PUT',
+        '/v1/customer/favorites/$id',
+      );
+      if (mounted)
+        setState(
+          () => _favorites.contains(id)
+              ? _favorites.remove(id)
+              : _favorites.add(id),
+        );
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _savingFavorites.remove(id));
+    }
+  }
+
+  void _open(Map<String, dynamic> m) => Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => MerchantScreen(
+        api: widget.api,
+        slug: m['slug'].toString(),
+        initialFulfillment: _mode,
+      ),
+    ),
+  );
+  Widget _card(Map<String, dynamic> m, {bool compact = false}) {
+    final promos = m['promotions'] as List? ?? [];
+    final branches = m['branches'] as List? ?? [];
+    final branch =
+        branches
+                .where(
+                  (b) =>
+                      b[_mode == 'DELIVERY'
+                          ? 'deliveryEnabled'
+                          : 'pickupEnabled'] ==
+                      true,
+                )
+                .firstOrNull
+            as Map?;
+    final rating = double.tryParse('${m['rating']}');
+    final zones = branch?['deliveryZones'] as List? ?? [];
+    final fees = zones.map((z) => asDouble(z['fee'])).toList()..sort();
+    return InkWell(
+      onTap: () => _open(m),
+      borderRadius: BorderRadius.circular(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            children: [
+              FoodCover(
+                url: m['imageUrl']?.toString(),
+                baseUrl: ApiClient.baseUrl,
+                height: compact ? 155 : 190,
+                label: m['name'].toString(),
+              ),
+              if (promos.isNotEmpty)
+                Positioned(
+                  left: 10,
+                  top: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF07855A),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${promos.first['percent']}% off · ${promos.first['code']}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              Positioned(
+                right: 6,
+                bottom: 6,
+                child: IconButton.filledTonal(
+                  tooltip: 'Save merchant',
+                  onPressed: _savingFavorites.contains(m['id'])
+                      ? null
+                      : () => _favorite(m),
+                  icon: Icon(
+                    _favorites.contains(m['id'])
+                        ? Icons.favorite
+                        : Icons.favorite_border,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  m['name'].toString(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (rating != null)
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF2F2F2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    rating.toStringAsFixed(1),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _mode == 'PICKUP'
+                ? 'Pickup · ${branch?['city'] ?? branch?['name'] ?? 'Local store'}'
+                : fees.isEmpty
+                ? 'Delivery fee at checkout'
+                : 'Delivery from ${money(fees.first, currency: m['currency']?.toString() ?? 'RWF')}',
+            style: const TextStyle(color: Colors.black54),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            branch?['isOpen'] == false
+                ? 'Currently closed · schedule at checkout'
+                : rating == null
+                ? 'Discover something delicious'
+                : '★ ${m['reviewCount']} verified reviews',
+            style: TextStyle(
+              fontSize: 12,
+              color: branch?['isOpen'] == false
+                  ? Colors.deepOrange
+                  : const Color(0xFF176B55),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final merchants = _filteredMerchants;
+    final rows = _visible;
     return RefreshIndicator(
       onRefresh: _load,
       child: CustomScrollView(
@@ -99,7 +307,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             child: SafeArea(
               bottom: false,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -107,75 +315,108 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                       children: [
                         Expanded(
                           child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: () {},
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 4),
+                            onTap: _location,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                               child: Row(
                                 children: [
-                                  Icon(
-                                    Icons.location_on_rounded,
-                                    color: Color(0xFF176B55),
+                                  const Icon(
+                                    Icons.location_on_outlined,
+                                    size: 20,
                                   ),
-                                  SizedBox(width: 7),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Order near you',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: Colors.black54,
-                                          ),
-                                        ),
-                                        Text(
-                                          'Pickup or delivery',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        ),
-                                      ],
+                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      _city ?? 'Choose your city',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 17,
+                                      ),
                                     ),
                                   ),
-                                  Icon(Icons.keyboard_arrow_down_rounded),
+                                  const Icon(Icons.keyboard_arrow_down),
                                 ],
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFF2F3F2),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.person_rounded),
+                        IconButton(
+                          tooltip: 'Account',
+                          onPressed: widget.onAccount,
+                          icon: const Icon(Icons.person_outline),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        for (final mode in [
+                          ('DELIVERY', 'Delivery', Icons.delivery_dining),
+                          ('PICKUP', 'Pickup', Icons.shopping_bag_outlined),
+                        ])
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setState(() => _mode = mode.$1),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: _mode == mode.$1
+                                          ? Colors.black
+                                          : const Color(0xFFEEEEEE),
+                                      width: _mode == mode.$1 ? 3 : 1,
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(mode.$3),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      mode.$2,
+                                      style: TextStyle(
+                                        fontWeight: _mode == mode.$1
+                                            ? FontWeight.w800
+                                            : FontWeight.w400,
+                                        fontSize: 17,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
                     TextField(
                       controller: _search,
-                      onChanged: (value) => setState(() => _query = value),
-                      textInputAction: TextInputAction.search,
+                      focusNode: _searchFocus,
+                      onChanged: (_) {
+                        _debounce?.cancel();
+                        _debounce = Timer(
+                          const Duration(milliseconds: 350),
+                          _load,
+                        );
+                      },
                       decoration: InputDecoration(
-                        hintText: 'Search restaurants, grocery and shops',
-                        prefixIcon: const Icon(Icons.search_rounded),
-                        suffixIcon: _query.isEmpty
-                            ? null
-                            : IconButton(
-                                onPressed: () {
-                                  _search.clear();
-                                  setState(() => _query = '');
-                                },
-                                icon: const Icon(Icons.close_rounded),
-                              ),
+                        hintText: 'Search Fida',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: IconButton(
+                          tooltip: 'Clear search',
+                          onPressed: () {
+                            _search.clear();
+                            _load();
+                          },
+                          icon: const Icon(Icons.close),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(30),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 18),
@@ -184,349 +425,176 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                       child: ListView(
                         scrollDirection: Axis.horizontal,
                         children: [
-                          _CategoryButton(
-                            label: 'All',
-                            icon: Icons.grid_view_rounded,
-                            selected: _type == null,
-                            onTap: () => _selectType(null),
-                          ),
-                          for (final entry in _types.entries)
-                            _CategoryButton(
-                              label: entry.value.label,
-                              icon: entry.value.icon,
-                              selected: _type == entry.key,
-                              onTap: () => _selectType(entry.key),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8F4EF),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: const Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Local ordering, simplified',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w900,
+                          for (final t in _types)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 14),
+                              child: InkWell(
+                                onTap: () {
+                                  setState(() => _type = t.$3);
+                                  _load();
+                                },
+                                child: SizedBox(
+                                  width: 78,
+                                  child: Column(
+                                    children: [
+                                      Container(
+                                        width: 58,
+                                        height: 54,
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          color: _type == t.$3
+                                              ? const Color(0xFFE2F3DF)
+                                              : const Color(0xFFF7F7F7),
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          t.$2,
+                                          style: const TextStyle(fontSize: 32),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 7),
+                                      Text(
+                                        t.$1,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: _type == t.$3
+                                              ? FontWeight.w800
+                                              : FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                SizedBox(height: 4),
-                                Text(
-                                  'Choose pickup or merchant-priced delivery when you check out.',
-                                ),
-                              ],
+                              ),
                             ),
+                        ],
+                      ),
+                    ),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          FilterChip(
+                            label: const Text('Offers'),
+                            avatar: const Icon(
+                              Icons.local_offer_outlined,
+                              size: 17,
+                            ),
+                            selected: _offersOnly,
+                            onSelected: (v) => setState(() => _offersOnly = v),
                           ),
-                          SizedBox(width: 12),
-                          Icon(
-                            Icons.delivery_dining_rounded,
-                            size: 42,
-                            color: Color(0xFF176B55),
+                          const SizedBox(width: 8),
+                          FilterChip(
+                            label: const Text('Open now'),
+                            selected: _openOnly,
+                            onSelected: (v) => setState(() => _openOnly = v),
+                          ),
+                          const SizedBox(width: 8),
+                          PopupMenuButton<String>(
+                            onSelected: (v) => setState(() => _sort = v),
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(
+                                value: 'name',
+                                child: Text('Store name'),
+                              ),
+                              PopupMenuItem(
+                                value: 'rating',
+                                child: Text('Highest rated'),
+                              ),
+                              PopupMenuItem(
+                                value: 'minimum',
+                                child: Text('Lowest minimum order'),
+                              ),
+                            ],
+                            child: const Chip(
+                              label: Text('Sort'),
+                              avatar: Icon(Icons.tune, size: 18),
+                            ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _type == null
-                                ? 'Popular near you'
-                                : _types[_type]?.label ?? 'Merchants',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w900),
-                          ),
-                        ),
-                        if (!_loading)
-                          Text(
-                            '${merchants.length} available',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: Colors.black54),
-                          ),
-                      ],
+                    SectionHeading(
+                      _search.text.isNotEmpty
+                          ? 'Search results'
+                          : _offersOnly
+                          ? 'Offers for you'
+                          : 'Discover on Fida',
+                      subtitle: _loading
+                          ? 'Finding your next favourite…'
+                          : '${rows.length} stores · ${_mode == 'DELIVERY' ? 'Delivery' : 'Pickup'}',
                     ),
-                    const SizedBox(height: 12),
                   ],
                 ),
               ),
             ),
           ),
           if (_loading)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_error != null)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.cloud_off_rounded, size: 48),
-                      const SizedBox(height: 12),
-                      Text(_error!, textAlign: TextAlign.center),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: _load,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          else if (merchants.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    _query.isEmpty
-                        ? 'No merchants are available in this category yet.'
-                        : 'No merchants match “$_query”.',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-              sliver: SliverList.separated(
-                itemCount: merchants.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 22),
-                itemBuilder: (context, index) => _MerchantCard(
-                  merchant: merchants[index],
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => MerchantScreen(
-                        api: widget.api,
-                        slug: merchants[index]['slug'].toString(),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+            const SliverToBoxAdapter(
+              child: LinearProgressIndicator(minHeight: 2),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CategoryButton extends StatelessWidget {
-  const _CategoryButton({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: SizedBox(
-          width: 74,
-          child: Column(
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: selected
-                      ? const Color(0xFF111111)
-                      : const Color(0xFFF2F3F2),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  icon,
-                  color: selected ? Colors.white : Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 7),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MerchantCard extends StatelessWidget {
-  const _MerchantCard({required this.merchant, required this.onTap});
-
-  final Map<String, dynamic> merchant;
-  final VoidCallback onTap;
-
-  IconData get _icon => switch (merchant['merchantType']) {
-    'RESTAURANT' => Icons.restaurant_rounded,
-    'SUPERMARKET' => Icons.shopping_basket_rounded,
-    'PHARMACY' => Icons.local_pharmacy_rounded,
-    _ => Icons.storefront_rounded,
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final branches = merchant['branches'] as List? ?? const [];
-    final branch = branches.isNotEmpty && branches.first is Map
-        ? branches.first as Map
-        : null;
-    final currency = (merchant['currency'] ?? 'RWF').toString();
-    final minimum = asDouble(merchant['minimumOrder']);
-    final pickupEnabled = branch?['pickupEnabled'] == true;
-    final deliveryEnabled = branch?['deliveryEnabled'] == true;
-    final zones = branch?['deliveryZones'] as List? ?? const [];
-    final hasFreeZone = zones.any(
-      (zone) => zone is Map && asDouble(zone['fee']) == 0,
-    );
-    final location = branch == null
-        ? merchant['merchantType'].toString().replaceAll('_', ' ').toLowerCase()
-        : [branch['name'], branch['city']]
-              .where((value) => value != null && '$value'.trim().isNotEmpty)
-              .join(' · ');
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 150,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              gradient: const LinearGradient(
-                colors: [Color(0xFFE8F4EF), Color(0xFFF3F1E8)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: Center(
-              child: Container(
-                width: 82,
-                height: 82,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: .9),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(_icon, size: 42, color: const Color(0xFF176B55)),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
+          if (_error != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      merchant['name'].toString(),
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      location.isEmpty ? 'Local merchant' : location,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium
-                          ?.copyWith(color: Colors.black54),
-                    ),
-                    const SizedBox(height: 5),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 4,
-                      children: [
-                        if (pickupEnabled)
-                          const _MetaText(
-                            icon: Icons.shopping_bag_outlined,
-                            text: 'Pickup',
-                          ),
-                        if (deliveryEnabled)
-                          _MetaText(
-                            icon: Icons.delivery_dining_rounded,
-                            text: hasFreeZone
-                                ? 'Free delivery nearby'
-                                : 'Delivery by distance',
-                          ),
-                        if (minimum > 0)
-                          _MetaText(
-                            icon: Icons.receipt_long_outlined,
-                            text:
-                                'Min ${money(merchant['minimumOrder'], currency: currency)}',
-                          ),
-                      ],
+                    const Icon(Icons.wifi_off, size: 40),
+                    Text(_error!),
+                    TextButton(
+                      onPressed: _load,
+                      child: const Text('Try again'),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              const Icon(Icons.chevron_right_rounded, color: Colors.black54),
-            ],
-          ),
+            )
+          else if (!_loading && rows.isEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text(
+                  'No stores match. Try another city, category or filter.',
+                ),
+              ),
+            )
+          else ...[
+            if (rows.length > 1 && _search.text.isEmpty)
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 270,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: rows.length.clamp(0, 6),
+                    separatorBuilder: (_, __) => const SizedBox(width: 14),
+                    itemBuilder: (_, i) => SizedBox(
+                      width: MediaQuery.sizeOf(context).width * .73,
+                      child: _card(rows[i], compact: true),
+                    ),
+                  ),
+                ),
+              ),
+            if (rows.length > 1 && _search.text.isEmpty)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: SectionHeading('Explore all stores'),
+                ),
+              ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+              sliver: SliverList.separated(
+                itemCount: rows.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 26),
+                itemBuilder: (_, i) => _card(rows[i]),
+              ),
+            ),
+          ],
         ],
       ),
-    );
-  }
-}
-
-class _MetaText extends StatelessWidget {
-  const _MetaText({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 15, color: Colors.black54),
-        const SizedBox(width: 4),
-        Text(
-          text,
-          style: Theme.of(context).textTheme.bodySmall
-              ?.copyWith(fontWeight: FontWeight.w600),
-        ),
-      ],
     );
   }
 }

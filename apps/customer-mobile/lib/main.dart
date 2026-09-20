@@ -86,8 +86,9 @@ class _SplashScreen extends StatelessWidget {
             const SizedBox(height: 18),
             Text(
               'Fida Marketplace',
-              style: Theme.of(context).textTheme.headlineMedium
-                  ?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 18),
             const SizedBox.square(

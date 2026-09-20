@@ -1,3 +1,4 @@
+import 'addresses_screen.dart';
 import 'saved_screen.dart';
 
 import 'package:flutter/material.dart';
@@ -36,7 +37,10 @@ class _CustomerShellState extends State<CustomerShell> {
       body: IndexedStack(
         index: _index,
         children: [
-          MarketplaceScreen(api: widget.api),
+          MarketplaceScreen(
+            api: widget.api,
+            onAccount: () => setState(() => _index = 2),
+          ),
           OrdersScreen(api: widget.api),
           _AccountScreen(session: widget.session),
         ],
@@ -152,8 +156,9 @@ class _AccountScreenState extends State<_AccountScreen> {
               foregroundColor: const Color(0xFF176B55),
               child: Text(
                 name.isEmpty ? 'F' : name.substring(0, 1).toUpperCase(),
-                style: Theme.of(context).textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
             const SizedBox(width: 14),
@@ -163,8 +168,9 @@ class _AccountScreenState extends State<_AccountScreen> {
                 children: [
                   Text(
                     name.isEmpty ? 'Fida customer' : name,
-                    style: Theme.of(context).textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   if (user['email'] != null)
                     Text(
@@ -189,7 +195,13 @@ class _AccountScreenState extends State<_AccountScreen> {
           warning: phone == null || phone.isEmpty,
         ),
         const SizedBox(height: 10),
-        const _AccountTile(
+        _AccountTile(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AddressesScreen(api: widget.session.api),
+            ),
+          ),
           icon: Icons.location_on_outlined,
           title: 'Delivery addresses',
           subtitle: 'Saved addresses are available during checkout',
@@ -238,8 +250,9 @@ class _AccountScreenState extends State<_AccountScreen> {
         Text(
           'Fida Marketplace',
           textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodySmall
-              ?.copyWith(color: Colors.black54),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.black54),
         ),
       ],
     );

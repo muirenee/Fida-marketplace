@@ -154,8 +154,9 @@ class _LoginScreenState extends State<_LoginScreen> {
                   Text(
                     'Fida Marketplace',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium
-                        ?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const Text('Driver', textAlign: TextAlign.center),
                   const SizedBox(height: 8),
@@ -258,7 +259,8 @@ class _NotEnrolledScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                message ?? 'Ask the merchant you deliver for to enroll this Fida account as one of their drivers.',
+                message ??
+                    'Ask the merchant you deliver for to enroll this Fida account as one of their drivers.',
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 10),
@@ -292,13 +294,16 @@ class _DriverHome extends StatefulWidget {
   State<_DriverHome> createState() => _DriverHomeState();
 }
 
-class _DriverHomeState extends State<_DriverHome> {
+class _DriverHomeState extends State<_DriverHome> with WidgetsBindingObserver {
   late Map<String, dynamic> driver;
   List<Map<String, dynamic>> activeDeliveries = [];
   List<Map<String, dynamic>> offers = [];
   bool loading = true;
   String? error;
   StreamSubscription<Position>? positionSubscription;
+  Timer? refreshTimer, locationHeartbeat;
+  Position? lastPosition;
+  bool sendingLocation = false;
   StreamSubscription<dynamic>? pushSubscription;
 
   bool get isOnline => driver['isOnline'] == true;
@@ -312,6 +317,13 @@ class _DriverHomeState extends State<_DriverHome> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted &&
+          !loading &&
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed)
+        _refresh();
+    });
     driver = Map<String, dynamic>.from(widget.initialDriver);
     pushSubscription = FidaPush.messages.stream.listen((_) {
       if (mounted && !loading) _refresh();
@@ -322,9 +334,35 @@ class _DriverHomeState extends State<_DriverHome> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    refreshTimer?.cancel();
+    locationHeartbeat?.cancel();
     positionSubscription?.cancel();
     pushSubscription?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _refresh();
+      if (isOnline && positionSubscription == null) _startLocationUpdates();
+    }
+  }
+
+  Future<void> _sendPosition(Position position) async {
+    if (sendingLocation || !isOnline || !mounted) return;
+    sendingLocation = true;
+    try {
+      await widget.api.updateLocation(position.latitude, position.longitude);
+    } catch (e) {
+      if (mounted)
+        setState(
+          () => error = 'Location upload failed. Retrying while online.',
+        );
+    } finally {
+      sendingLocation = false;
+    }
   }
 
   Future<bool> _ensureLocationPermission() async {
@@ -344,6 +382,29 @@ class _DriverHomeState extends State<_DriverHome> {
       );
       return false;
     }
+    if (permission != LocationPermission.always && mounted) {
+      final settings = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Location during deliveries'),
+          content: const Text(
+            'Fida uses your location while you are online, including when the screen is locked or you use navigation. Customers can see it only during their active delivery. Choose Location → Allow all the time in app settings.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('Stay offline'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('Open settings'),
+            ),
+          ],
+        ),
+      );
+      if (settings == true) await Geolocator.openAppSettings();
+      return false;
+    }
     return true;
   }
 
@@ -353,7 +414,8 @@ class _DriverHomeState extends State<_DriverHome> {
 
     final settings = AndroidSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 25,
+      distanceFilter: 10,
+      intervalDuration: const Duration(seconds: 10),
       foregroundNotificationConfig: const ForegroundNotificationConfig(
         notificationTitle: 'Fida delivery is active',
         notificationText: 'Sharing your location while you are online.',
@@ -361,17 +423,33 @@ class _DriverHomeState extends State<_DriverHome> {
       ),
     );
     positionSubscription =
-        Geolocator.getPositionStream(locationSettings: settings)
-            .listen((position) async {
-              try {
-                await widget.api.updateLocation(
-                  position.latitude,
-                  position.longitude,
-                );
-              } catch (_) {
-                // A later location update retries automatically.
-              }
-            });
+        Geolocator.getPositionStream(locationSettings: settings).listen(
+          (position) {
+            lastPosition = position;
+            _sendPosition(position);
+          },
+          onError: (Object e) {
+            if (mounted)
+              setState(
+                () => error =
+                    'Location updates interrupted. Check location permission and GPS.',
+              );
+          },
+        );
+    locationHeartbeat?.cancel();
+    locationHeartbeat = Timer.periodic(const Duration(seconds: 20), (_) async {
+      if (!isOnline || sendingLocation) return;
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 12),
+          ),
+        );
+        lastPosition = position;
+        await _sendPosition(position);
+      } catch (_) {}
+    });
 
     try {
       final position = await Geolocator.getCurrentPosition(
@@ -415,12 +493,15 @@ class _DriverHomeState extends State<_DriverHome> {
       } else {
         await positionSubscription?.cancel();
         positionSubscription = null;
+        locationHeartbeat?.cancel();
+        lastPosition = null;
       }
       await _refresh();
     } on DriverApiException catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -434,8 +515,9 @@ class _DriverHomeState extends State<_DriverHome> {
       await _refresh();
     } on DriverApiException catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -482,8 +564,9 @@ class _DriverHomeState extends State<_DriverHome> {
       );
     } catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
     }
   }
 
@@ -493,8 +576,9 @@ class _DriverHomeState extends State<_DriverHome> {
       await _refresh();
     } on DriverApiException catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -543,8 +627,9 @@ class _DriverHomeState extends State<_DriverHome> {
       await _refresh();
     } on DriverApiException catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -587,7 +672,64 @@ class _DriverHomeState extends State<_DriverHome> {
             icon: const Icon(Icons.refresh_rounded),
           ),
           IconButton(
-            onPressed: widget.onLogout,
+            tooltip: 'Earnings',
+            onPressed: () async {
+              try {
+                final rows =
+                    await widget.api.request('GET', '/v1/driver/earnings')
+                        as List;
+                if (!context.mounted) return;
+                await showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (c) => SafeArea(
+                    child: ListView(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.all(24),
+                      children: [
+                        const Text(
+                          'Delivery earnings',
+                          style: TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const Text(
+                          'Agreed estimates for completed deliveries. Settlement is handled by your delivery operator.',
+                        ),
+                        if (rows.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Text('No completed deliveries yet.'),
+                          ),
+                        for (final r in rows)
+                          ListTile(
+                            title: Text(r['order']['orderNumber'].toString()),
+                            subtitle: Text(r['deliveredAt'].toString()),
+                            trailing: Text(
+                              r['estimatedPayout'] == null
+                                  ? 'Not configured'
+                                  : '${r['estimatedPayout']} ${r['payoutCurrency'] ?? 'RWF'}',
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              } catch (e) {
+                if (context.mounted)
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('$e')));
+              }
+            },
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+          ),
+          IconButton(
+            onPressed: () async {
+              if (isOnline) await _setOnline(false);
+              if (mounted) await widget.onLogout();
+            },
             icon: const Icon(Icons.logout_rounded),
           ),
         ],
@@ -599,8 +741,8 @@ class _DriverHomeState extends State<_DriverHome> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 90),
           children: [
             const FidaHero(
-              title: 'Every delivery.\nA happy customer.',
-              subtitle: 'Your route, your queue, your next stop.',
+              title: 'Ready to deliver?',
+              subtitle: 'Go online. Pick up. Make someone’s day.',
               icon: Icons.delivery_dining_rounded,
             ),
             _EnrollmentCard(operator: operator, branch: branch),
@@ -636,8 +778,9 @@ class _DriverHomeState extends State<_DriverHome> {
                   Expanded(
                     child: Text(
                       'Active deliveries (${activeDeliveries.length})',
-                      style: Theme.of(context).textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                   if (loading)
@@ -664,8 +807,9 @@ class _DriverHomeState extends State<_DriverHome> {
                 Expanded(
                   child: Text(
                     'Delivery offers',
-                    style: Theme.of(context).textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
                 if (loading && activeDeliveries.isEmpty)
@@ -680,8 +824,9 @@ class _DriverHomeState extends State<_DriverHome> {
               operatorType == 'FIDA'
                   ? 'Accept more pickup-ready orders while you are available.'
                   : 'Accept more pickup-ready orders from your merchant scope while you are available.',
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: Colors.black54),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
             ),
             const SizedBox(height: 10),
             if (!isOnline)
@@ -697,7 +842,8 @@ class _DriverHomeState extends State<_DriverHome> {
             else if (!loading && offers.isEmpty)
               const _EmptyState(
                 icon: Icons.delivery_dining_outlined,
-                text: 'No pickup-ready deliveries are available in your delivery scope right now.',
+                text:
+                    'No pickup-ready deliveries are available in your delivery scope right now.',
               )
             else
               for (final delivery in offers) ...[
@@ -830,12 +976,36 @@ class _OfferCard extends StatelessWidget {
     final tenant = order['tenant'] as Map? ?? {};
     final branch = order['branch'] as Map? ?? {};
     final distance = delivery['distanceToPickupKm'];
+    final payout = delivery['estimatedPayout'];
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const Text(
+              'DELIVERY OFFER',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.5,
+                color: Color(0xFF07855A),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              payout == null
+                  ? 'Pay not configured'
+                  : '${payout} ${delivery['payoutCurrency'] ?? 'RWF'}',
+              style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
+            ),
+            Text(
+              payout == null
+                  ? 'Ask your operator about pay before accepting.'
+                  : 'Estimated earnings · excludes tips',
+              style: const TextStyle(color: Colors.black54),
+            ),
+            const SizedBox(height: 16),
             Row(
               children: [
                 const CircleAvatar(child: Icon(Icons.storefront_rounded)),
@@ -904,13 +1074,22 @@ class _CurrentDeliveryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            DeliveryMap(
+              pickupLatitude: branch['latitude'],
+              pickupLongitude: branch['longitude'],
+              dropoffLatitude: order['deliveryLatitude'],
+              dropoffLongitude: order['deliveryLongitude'],
+              height: 220,
+            ),
+            const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
                   child: Text(
                     'Delivery ${order['orderNumber'] ?? ''}',
-                    style: Theme.of(context).textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
                 Chip(

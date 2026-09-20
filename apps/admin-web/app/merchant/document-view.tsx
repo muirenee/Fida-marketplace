@@ -1,0 +1,7 @@
+'use client';
+type Row=Record<string,any>;
+export function DocumentView({document:d,onClose}:{document:Row;onClose:()=>void}){
+ const p=d.payload,currency=p.currency||'RWF';
+ const amount=(v:unknown)=>`${Number(v||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} ${currency}`;
+ return <div className="mp-overlay mp-document-overlay"><section className="mp-dialog mp-document" role="dialog" aria-modal="true" aria-label={p.title}><div className="mp-row mp-no-print"><button onClick={()=>window.print()}>Print / Save PDF</button><button className="mp-secondary" onClick={onClose}>Close</button></div><header className="mp-document-header"><strong>Fida</strong><h1>{p.title}</h1><p>{d.number}</p><p>Issued {new Date(p.issuedAt||d.issuedAt).toLocaleString()}</p></header><p>From: <strong>{p.issuer}</strong><br/>To: <strong>{p.recipient}</strong><br/>{p.merchantAddress}<br/>Order: {p.orderNumber}</p>{p.originalNumber&&<p>Credit for {p.originalNumber}</p>}<table><thead><tr><th>Description</th><th>Qty</th><th>Amount</th></tr></thead><tbody>{p.lines.map((r:Row,i:number)=><tr key={i}><td>{r.description}</td><td>{r.quantity}</td><td>{amount(r.amount)}</td></tr>)}</tbody></table>{[['Subtotal','subtotal'],['Discount','discount'],['Tax','tax'],['Delivery','deliveryFee'],['Service fee','serviceFee']].map(([name,key])=>p[key]!==undefined&&<div className="mp-row" key={key}><p>{name}</p><p>{amount(p[key])}</p></div>)}<div className="mp-row"><h2>Total</h2><h2>{amount(p.total)}</h2></div><p>{p.note}</p></section></div>;
+}

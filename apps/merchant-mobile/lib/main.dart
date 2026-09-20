@@ -196,8 +196,9 @@ class _LoginScreenState extends State<_LoginScreen> {
                   Text(
                     'Fida Marketplace',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium
-                        ?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const Text('Merchant', textAlign: TextAlign.center),
                   const SizedBox(height: 32),
@@ -343,8 +344,9 @@ class _MerchantOnboardingScreenState extends State<_MerchantOnboardingScreen> {
             const SizedBox(height: 12),
             Text(
               'Start selling on Fida Marketplace',
-              style: Theme.of(context).textTheme.headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 6),
             const Text(
@@ -544,6 +546,9 @@ class _OrdersPage extends StatefulWidget {
 
 class _OrdersPageState extends State<_OrdersPage> {
   StreamSubscription<dynamic>? pushSubscription;
+  Timer? refreshTimer;
+  bool refreshing = false;
+  final Set<String> moving = {};
   List<Map<String, dynamic>> orders = [];
   bool loading = true;
   String? error;
@@ -553,6 +558,12 @@ class _OrdersPageState extends State<_OrdersPage> {
   void initState() {
     super.initState();
     load();
+    refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (mounted &&
+          !refreshing &&
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed)
+        load(silent: true);
+    });
     pushSubscription = FidaPush.messages.stream.listen((_) {
       if (mounted && !loading) load();
     });
@@ -560,13 +571,16 @@ class _OrdersPageState extends State<_OrdersPage> {
 
   @override
   void dispose() {
+    refreshTimer?.cancel();
     pushSubscription?.cancel();
     super.dispose();
   }
 
-  Future<void> load() async {
+  Future<void> load({bool silent = false}) async {
+    if (refreshing) return;
+    refreshing = true;
     setState(() {
-      loading = true;
+      if (!silent) loading = true;
       error = null;
     });
     try {
@@ -575,6 +589,7 @@ class _OrdersPageState extends State<_OrdersPage> {
     } on MerchantApiException catch (e) {
       if (mounted) setState(() => error = e.message);
     } finally {
+      refreshing = false;
       if (mounted) setState(() => loading = false);
     }
   }
@@ -593,6 +608,8 @@ class _OrdersPageState extends State<_OrdersPage> {
   }
 
   Future<void> move(Map<String, dynamic> order, String status) async {
+    if (moving.contains(order['id'])) return;
+    setState(() => moving.add(order['id'].toString()));
     try {
       await widget.api.updateOrderStatus(
         widget.tenantId,
@@ -602,8 +619,11 @@ class _OrdersPageState extends State<_OrdersPage> {
       await load();
     } on MerchantApiException catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => moving.remove(order['id'].toString()));
     }
   }
 
@@ -618,8 +638,8 @@ class _OrdersPageState extends State<_OrdersPage> {
             child: Padding(
               padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
               child: FidaHero(
-                title: 'Good business.\nOne order at a time.',
-                subtitle: 'Your live order queue, ready for action.',
+                title: 'Orders, at a glance.',
+                subtitle: 'New → Preparing → Ready for pickup',
                 icon: Icons.receipt_long_rounded,
               ),
             ),
@@ -829,8 +849,9 @@ class _MerchantAccount extends StatelessWidget {
         Text(
           tenant['name'].toString(),
           textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.w900),
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
         ),
         Text(
           '${tenant['status']} · ${membership['role']}',

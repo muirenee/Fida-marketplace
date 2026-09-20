@@ -1,3 +1,4 @@
+import { normalizeOptions } from '../lib/product-options.js';
 import type { FastifyInstance } from 'fastify';
 import { MembershipRole, Prisma, prisma } from '@fida/database/client';
 import { merchantWriteRoles, requireTenant } from '../lib/tenant.js';
@@ -37,6 +38,7 @@ export async function merchantBusinessRoutes(app: FastifyInstance) {
     const driver = await prisma.driver.findFirst({ where: { id: driverId, operator: { tenantId } } });
     if (!driver) return reply.code(404).send({ error: 'driver_not_found' });
     const data: Prisma.DriverUpdateInput = {};
+    if('branchId' in b){const branchId=text(b.branchId)||null;if(branchId&&!await prisma.branch.findFirst({where:{id:branchId,tenantId}}))return reply.code(400).send({error:'invalid_branch'});data.branch=branchId?{connect:{id:branchId}}:{disconnect:true};}
     if ('displayName' in b) { if (!text(b.displayName)) return reply.code(400).send({ error: 'name_required' }); data.displayName = text(b.displayName); }
     if ('vehiclePlate' in b) data.vehiclePlate = text(b.vehiclePlate, 30) || null;
     if ('vehicleType' in b) {
@@ -51,6 +53,7 @@ export async function merchantBusinessRoutes(app: FastifyInstance) {
     return prisma.$transaction(async tx => {
       await tx.$executeRaw`SELECT 1 FROM "Driver" WHERE id = ${driverId} FOR UPDATE`;
       const active = await tx.delivery.count({ where: { driverId, status: { in: [...activeDelivery] } } });
+      if(data.branch && active>0 && (text(b.branchId)||null)!==driver.branchId)throw Object.assign(new Error('Finish active deliveries before changing branches.'),{statusCode:409});
       if (typeof data.maxConcurrentOrders === 'number' && data.maxConcurrentOrders < active) throw Object.assign(new Error('Capacity cannot be below current active deliveries.'), { statusCode: 409 });
       return tx.driver.update({ where: { id: driverId }, data, include: { user: { select: driverUserSelect }, branch: true } });
     });
@@ -66,7 +69,7 @@ export async function merchantBusinessRoutes(app: FastifyInstance) {
       const common: { name?: string; isActive?: boolean } = {};
       if ('name' in b) { if (!text(b.name)) return reply.code(400).send({ error: 'name_required' }); common.name = text(b.name); }
       if ('isActive' in b) { if (typeof b.isActive !== 'boolean') return reply.code(400).send({ error: 'invalid_status' }); common.isActive = b.isActive; }
-      if (kind === 'categories') return prisma.category.update({ where: { id }, data: common });
+      if (kind === 'categories') { const sortOrder = b.sortOrder === undefined ? undefined : Number(b.sortOrder); if(sortOrder!==undefined && (!Number.isInteger(sortOrder)||Math.abs(sortOrder)>100000))return reply.code(400).send({error:'invalid_sort_order'}); return prisma.category.update({ where: { id }, data: {...common,sortOrder} }); }
       const data: Prisma.ProductUncheckedUpdateInput = { ...common };
       if ('price' in b) {
         const price = Number(b.price);
@@ -87,10 +90,7 @@ export async function merchantBusinessRoutes(app: FastifyInstance) {
         data.imageUrl = url || null;
       }
       if ('options' in b) {
-        if (!Array.isArray(b.options) || b.options.length > 20) return reply.code(400).send({ error: 'invalid_options' });
-        const options = b.options as Record<string, unknown>[];
-        if (new Set(options.map(o => o?.name)).size !== options.length || options.some(o => !o || !text(o.name) || !Number.isFinite(Number(o.price)) || Number(o.price) < 0 || Number(o.price) > 1000000)) return reply.code(400).send({ error: 'invalid_options' });
-        data.options = options.map(o => ({ name: text(o.name), price: Number(o.price) }));
+        data.options = normalizeOptions(b.options);
       }
       return prisma.product.update({ where: { id }, data });
     });

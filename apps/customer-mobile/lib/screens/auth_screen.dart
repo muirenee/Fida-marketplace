@@ -65,11 +65,53 @@ class _AuthScreenState extends State<AuthScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Icon(Icons.storefront_rounded, size: 72),
+                        Container(
+                          height: 180,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF4EA),
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          child: const Stack(
+                            children: [
+                              Positioned(
+                                top: 8,
+                                left: 20,
+                                child: Text(
+                                  '🥑',
+                                  style: TextStyle(fontSize: 60),
+                                ),
+                              ),
+                              Positioned(
+                                top: 42,
+                                right: 24,
+                                child: Text(
+                                  '🍔',
+                                  style: TextStyle(fontSize: 82),
+                                ),
+                              ),
+                              Positioned(
+                                bottom: 4,
+                                left: 36,
+                                child: Text(
+                                  '🥗',
+                                  style: TextStyle(fontSize: 76),
+                                ),
+                              ),
+                              Positioned(
+                                bottom: 14,
+                                right: 18,
+                                child: Text(
+                                  '🍟',
+                                  style: TextStyle(fontSize: 46),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 18),
                         Text(
-                          'Fida Marketplace',
-                          textAlign: TextAlign.center,
+                          'Welcome to Fida',
+                          textAlign: TextAlign.left,
                           style: Theme.of(context).textTheme.headlineMedium
                               ?.copyWith(fontWeight: FontWeight.w800),
                         ),

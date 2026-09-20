@@ -1,3 +1,4 @@
+import { normalizeOptions } from '../lib/product-options.js';
 import { enqueueOrder } from '../lib/notifications.js';
 import { recordCompletion } from '../lib/finance.js';
 import type { FastifyInstance } from 'fastify';
@@ -64,6 +65,7 @@ export async function merchantRoutes(app: FastifyInstance) {
           currency: true,
           isAcceptingOrders: true,
           minimumOrder: true,
+          timezone: true,
         },
       }),
       prisma.branch.count({ where: { tenantId, isActive: true } }),
@@ -78,7 +80,9 @@ export async function merchantRoutes(app: FastifyInstance) {
 
   app.patch('/v1/merchant/settings', { preHandler: requireTenant(merchantAdminRoles) }, async (request, reply) => {
     const body = (request.body ?? {}) as Record<string, unknown>;
-    const data: { isAcceptingOrders?: boolean; minimumOrder?: string } = {};
+    const data: { isAcceptingOrders?: boolean; minimumOrder?: string; name?:string; timezone?:string } = {};
+    if(typeof body.name==='string'){if(!body.name.trim()||body.name.length>160)return reply.code(400).send({error:'invalid_name'});data.name=body.name.trim();}
+    if(typeof body.timezone==='string'){try{new Intl.DateTimeFormat('en',{timeZone:body.timezone}).format();data.timezone=body.timezone;}catch{return reply.code(400).send({error:'invalid_timezone'});}}
 
     if (typeof body.isAcceptingOrders === 'boolean') data.isAcceptingOrders = body.isAcceptingOrders;
     if (body.minimumOrder !== undefined) {
@@ -132,6 +136,8 @@ export async function merchantRoutes(app: FastifyInstance) {
 
     const body = (request.body ?? {}) as Record<string, unknown>;
     const data: {
+      addressLine?:string;
+      city?:string;
       pickupEnabled?: boolean;
       deliveryEnabled?: boolean;
       logisticsMode?: LogisticsMode;
@@ -139,6 +145,8 @@ export async function merchantRoutes(app: FastifyInstance) {
       longitude?: number | null;
     } = {};
 
+    if(typeof body.addressLine==='string')data.addressLine=body.addressLine.trim().slice(0,500);
+    if(typeof body.city==='string')data.city=body.city.trim().slice(0,160);
     if (typeof body.pickupEnabled === 'boolean') data.pickupEnabled = body.pickupEnabled;
     if (typeof body.deliveryEnabled === 'boolean') data.deliveryEnabled = body.deliveryEnabled;
 
@@ -368,8 +376,7 @@ export async function merchantRoutes(app: FastifyInstance) {
 
     const imageUrl = typeof body.imageUrl === 'string' ? body.imageUrl.trim() : null;
     if (imageUrl && !imageUrl.startsWith(`/v1/media/${request.tenantContext!.tenantId}/`)) return reply.code(400).send({ error: 'upload_image_first' });
-    const options = body.options ?? [];
-    if (!Array.isArray(options) || options.length > 20 || options.some(o => !o || typeof o.name !== 'string' || !o.name.trim() || o.name.trim().length > 160 || !Number.isFinite(Number(o.price)) || Number(o.price) < 0 || Number(o.price) > 1000000) || new Set(options.map(o => o.name.trim())).size !== options.length) return reply.code(400).send({ error: 'invalid_options' });
+    const options = normalizeOptions(body.options ?? []);
     const product = await prisma.product.create({
       data: {
         tenantId: request.tenantContext!.tenantId,
@@ -379,7 +386,7 @@ export async function merchantRoutes(app: FastifyInstance) {
         sku: typeof body.sku === 'string' ? body.sku.trim() || null : null,
         price: rawPrice.toFixed(2),
         imageUrl,
-        options: options.map(o => ({ name: o.name.trim(), price: Number(o.price) })),
+        options,
         isAvailable: typeof body.isAvailable === 'boolean' ? body.isAvailable : true,
       },
     });
@@ -436,7 +443,6 @@ export async function merchantRoutes(app: FastifyInstance) {
       const moved = await tx.order.updateMany({ where: { id: order.id, status: order.status }, data: { status: nextStatus } });
       if (!moved.count) throw Object.assign(new Error('Order changed. Refresh and retry.'), { statusCode: 409 });
       await enqueueOrder(tx, order.id, nextStatus);
-      if (nextStatus === OrderStatus.COMPLETED) await recordCompletion(tx, order.id);
 
       if (nextStatus === OrderStatus.REJECTED) {
         await tx.delivery.updateMany({ where: { orderId: order.id }, data: { status: DeliveryStatus.CANCELLED } });
@@ -449,6 +455,7 @@ export async function merchantRoutes(app: FastifyInstance) {
       ) {
         await tx.order.update({ where: { id: order.id }, data: { paymentStatus: PaymentStatus.PAID } });
       }
+      if (nextStatus === OrderStatus.COMPLETED) await recordCompletion(tx, order.id);
       return tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: true, delivery: true } });
     });
 

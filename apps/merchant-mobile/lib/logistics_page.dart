@@ -313,8 +313,9 @@ class _MerchantLogisticsPageState extends State<MerchantLogisticsPage>
         children: [
           Text(
             'Fulfillment',
-            style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w900),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 5),
           const Text(
@@ -393,8 +394,9 @@ class _MerchantLogisticsPageState extends State<MerchantLogisticsPage>
           const SizedBox(height: 22),
           Text(
             'Branch location',
-            style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w900),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 5),
           const Text(
@@ -446,8 +448,9 @@ class _MerchantLogisticsPageState extends State<MerchantLogisticsPage>
               Expanded(
                 child: Text(
                   'Delivery distance bands',
-                  style: Theme.of(context).textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
               FilledButton.icon(
@@ -538,8 +541,9 @@ class _MerchantLogisticsPageState extends State<MerchantLogisticsPage>
           const SizedBox(height: 12),
           Text(
             'Your drivers',
-            style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w900),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 5),
           const Text(

@@ -172,8 +172,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   bool _loading = true;
   String? _error;
   Timer? _trackingTimer;
+  bool _refreshing = false;
+  String? _trackingError;
 
   Future<void> _load({bool silent = false}) async {
+    if (_refreshing) return;
+    _refreshing = true;
     if (!silent) {
       setState(() {
         _loading = true;
@@ -182,10 +186,19 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
     try {
       final value = await widget.api.order(widget.orderId);
-      if (mounted) setState(() => _order = value);
-    } on ApiException catch (e) {
-      if (!silent && mounted) setState(() => _error = e.message);
+      if (mounted)
+        setState(() {
+          _order = value;
+          _trackingError = null;
+        });
+    } catch (e) {
+      if (mounted)
+        setState(() {
+          _trackingError = 'Connection lost. Showing the last update.';
+          if (!silent) _error = e.toString();
+        });
     } finally {
+      _refreshing = false;
       if (!silent && mounted) setState(() => _loading = false);
     }
   }
@@ -194,7 +207,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   void initState() {
     super.initState();
     _load();
-    _trackingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    _trackingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       final status = _order?['status']?.toString();
       if (status != null &&
           !{'COMPLETED', 'CANCELLED', 'REJECTED'}.contains(status)) {
@@ -235,12 +248,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       await widget.api.cancelOrder(order['id'].toString());
       await _load();
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Order cancelled.')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Order cancelled.')));
     } on ApiException catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -316,6 +331,53 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 60),
       children: [
+        Text(
+          switch (status) {
+            'PENDING' => 'Confirming your order',
+            'ACCEPTED' => 'Your order is accepted',
+            'PREPARING' => 'Freshly preparing your order',
+            'READY_FOR_PICKUP' =>
+              isPickup ? 'Ready for pickup' : 'Ready for your courier',
+            'OUT_FOR_DELIVERY' => 'Heading your way…',
+            'COMPLETED' => 'Enjoy your order!',
+            'CANCELLED' => 'Order cancelled',
+            'REJECTED' => 'Order not accepted',
+            _ => 'Your order',
+          },
+          style: const TextStyle(
+            fontSize: 29,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -.5,
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (_trackingError != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text(
+              _trackingError!,
+              style: const TextStyle(color: Colors.deepOrange),
+            ),
+          ),
+        if (!isPickup &&
+            !['COMPLETED', 'CANCELLED', 'REJECTED'].contains(status)) ...[
+          DeliveryMap(
+            driverLatitude: driver?['latitude'],
+            driverLongitude: driver?['longitude'],
+            pickupLatitude: branch['latitude'],
+            pickupLongitude: branch['longitude'],
+            dropoffLatitude: order['deliveryLatitude'],
+            dropoffLongitude: order['deliveryLongitude'],
+            height: 320,
+            stale:
+                _trackingError != null ||
+                DateTime.tryParse('${driver?['lastSeenAt']}')?.isBefore(
+                      DateTime.now().subtract(const Duration(minutes: 2)),
+                    ) ==
+                    true,
+          ),
+          const SizedBox(height: 14),
+        ],
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -330,8 +392,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   Expanded(
                     child: Text(
                       merchant['name']?.toString() ?? 'Merchant',
-                      style: Theme.of(context).textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w900),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                   _StatusBadge(status: order['status'].toString()),
@@ -347,11 +410,51 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           ),
         ),
         const SizedBox(height: 22),
+        if (status == 'COMPLETED')
+          FilledButton.tonalIcon(
+            icon: const Icon(Icons.receipt_long),
+            label: const Text('View / share receipt'),
+            onPressed: () async {
+              try {
+                final doc =
+                    (await widget.api.request(
+                              'GET',
+                              '/v1/customer/orders/${order['id']}/receipt',
+                            )
+                            as Map)
+                        .cast<String, dynamic>();
+                if (!context.mounted) return;
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => BusinessDocumentScreen(document: doc),
+                  ),
+                );
+                if (!context.mounted) return;
+                final credits = doc['creditNotes'] as List? ?? [];
+                if (credits.isNotEmpty)
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => BusinessDocumentScreen(
+                        document: (credits.last as Map).cast<String, dynamic>(),
+                      ),
+                    ),
+                  );
+              } catch (e) {
+                if (context.mounted)
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('$e')));
+              }
+            },
+          ),
         OrderActions(api: widget.api, order: order),
         Text(
           isPickup ? 'Order progress' : 'Delivery progress',
-          style: Theme.of(context).textTheme.titleMedium
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 10),
         _Progress(status: order['status'].toString()),
@@ -461,7 +564,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   ],
                   const SizedBox(height: 4),
                   Text(
-                    'This screen refreshes the driver position automatically every 15 seconds.',
+                    'The map updates every 5 seconds while this order is active.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -472,8 +575,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         const SizedBox(height: 22),
         Text(
           'Items',
-          style: Theme.of(context).textTheme.titleMedium
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
         ),
         for (final rawItem in items)
           ListTile(
@@ -500,6 +604,16 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             label: 'Service fee',
             value: money(order['serviceFee'], currency: currency),
           ),
+        if (asDouble(order['discount']) > 0)
+          _PriceRow(
+            label: 'Discount',
+            value: '- ${money(order['discount'], currency: currency)}',
+          ),
+        if (asDouble(order['tax']) > 0)
+          _PriceRow(
+            label: 'Tax',
+            value: money(order['tax'], currency: currency),
+          ),
         const SizedBox(height: 6),
         _PriceRow(
           label: 'Total',
@@ -509,8 +623,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         const SizedBox(height: 22),
         Text(
           isPickup ? 'Pickup from' : 'Deliver to',
-          style: Theme.of(context).textTheme.titleMedium
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 6),
         if (isPickup)

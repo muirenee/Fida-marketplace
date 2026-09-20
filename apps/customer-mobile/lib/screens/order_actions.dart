@@ -92,7 +92,9 @@ class _OrderActionsState extends State<OrderActions> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                review ? 'Thank you for your review.' : 'Your case has been sent to the merchant.',
+                                review
+                                    ? 'Thank you for your review.'
+                                    : 'Your case has been sent to the merchant.',
                               ),
                             ),
                           );
@@ -148,8 +150,9 @@ class _OrderActionsState extends State<OrderActions> {
         );
     } catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
     }
   }
 
@@ -186,8 +189,9 @@ class _OrderActionsState extends State<OrderActions> {
                         );
                     } catch (e) {
                       if (context.mounted)
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(SnackBar(content: Text('$e')));
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text('$e')));
                     } finally {
                       if (mounted) setState(() => busy = false);
                     }

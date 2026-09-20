@@ -14,10 +14,13 @@ class CheckoutScreen extends StatefulWidget {
     required this.merchant,
     required this.cart,
     required this.products,
+    this.initialFulfillment = 'DELIVERY',
+    this.orderNote = '',
   });
 
   final ApiClient api;
   final Map<String, dynamic> merchant;
+  final String initialFulfillment, orderNote;
   final Map<String, int> cart;
   final Map<String, Map<String, dynamic>> products;
 
@@ -65,6 +68,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   void initState() {
     super.initState();
+    _fulfillment = widget.initialFulfillment;
     if (!_deliveryEnabled && _pickupEnabled) _fulfillment = 'PICKUP';
     _loadAddresses();
     _loadPaymentMethods();
@@ -278,7 +282,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           }
           if (_latitude == null || _longitude == null) {
             setState(
-              () => _error = 'Use your location so the merchant can price and deliver the order.',
+              () => _error =
+                  'Use your location so the merchant can price and deliver the order.',
             );
             return;
           }
@@ -311,7 +316,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           'items': widget.cart.entries
               .map(
                 (e) => {
-                  'productId': e.key,
+                  'productId': widget.products[e.key]?['productId'] ?? e.key,
                   'quantity': e.value,
                   'options': widget.products[e.key]?['selectedOptions'] ?? [],
                 },
@@ -364,7 +369,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         items: widget.cart.entries
             .map(
               (entry) => {
-                'productId': entry.key,
+                'productId':
+                    widget.products[entry.key]?['productId'] ?? entry.key,
                 'quantity': entry.value,
                 'options': widget.products[entry.key]?['selectedOptions'] ?? [],
               },
@@ -376,10 +382,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         checkoutKey: _checkoutKey,
         fulfillmentType: _fulfillment,
         addressId: addressId,
-        deliveryInstructions:
-            _isDelivery && _newAddress && _instructions.text.trim().isNotEmpty
-            ? _instructions.text.trim()
-            : null,
+        deliveryInstructions: [
+          if (widget.orderNote.isNotEmpty) widget.orderNote,
+          if (_isDelivery && _instructions.text.trim().isNotEmpty)
+            _instructions.text.trim(),
+        ].join(' '),
       );
 
       if (!mounted) return;
@@ -450,8 +457,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               children: [
                 Text(
                   'How would you like it?',
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -491,16 +499,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 if (_isDelivery) ...[
                   Text(
                     'Delivery location',
-                    style: Theme.of(context).textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     _distanceKm == null
                         ? 'The merchant sets the delivery price according to distance.'
                         : '${_distanceKm!.toStringAsFixed(1)} km from ${branch?['name'] ?? 'the branch'}',
-                    style: Theme.of(context).textTheme.bodyMedium
-                        ?.copyWith(color: Colors.black54),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: Colors.black54),
                   ),
                   const SizedBox(height: 12),
                   if (_addresses.isNotEmpty)
@@ -635,8 +645,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 const SizedBox(height: 26),
                 Text(
                   'Payment',
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -693,8 +704,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 const SizedBox(height: 26),
                 Text(
                   'Your order',
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 10),
                 for (final entry in widget.cart.entries)
@@ -727,8 +739,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     _deliveryPrice == 0
                         ? 'Free delivery for this location.'
                         : 'The selected delivery option includes ${money(_deliveryPrice!, currency: currency)} based on distance.',
-                    style: Theme.of(context).textTheme.bodySmall
-                        ?.copyWith(color: Colors.black54),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.black54),
                   ),
                 ],
                 if (_error != null) ...[
@@ -834,8 +847,9 @@ class _PriceLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = strong
-        ? Theme.of(context).textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.w900)
+        ? Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)
         : null;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),

@@ -1,3 +1,5 @@
+import { issueRefundDocuments } from '../lib/documents.js';
+import { paySettings, driverPayout } from '../lib/driver-pay.js';
 import type { FastifyInstance } from 'fastify';
 import { Prisma, prisma } from '@fida/database/client';
 import { authenticate, requirePlatformAdmin } from '../lib/auth.js';
@@ -6,6 +8,17 @@ import { enqueueOrder } from '../lib/notifications.js';
 const active = ['ASSIGNED','AT_PICKUP','PICKED_UP','AT_DROPOFF'] as const;
 const input=(v:unknown,n=2000)=>typeof v==='string'?v.trim().slice(0,n):'';
 export async function businessOperationsRoutes(app:FastifyInstance){
+ app.get('/v1/merchant/driver-pay',{preHandler:requireTenant(['OWNER','ADMIN'])},async req=>prisma.deliveryOperator.findUnique({where:{tenantId:req.tenantContext!.tenantId},select:{driverBasePay:true,driverPerKmPay:true}}));
+ app.patch('/v1/merchant/driver-pay',{preHandler:requireTenant(['OWNER','ADMIN'])},async req=>{
+  const tenantId=req.tenantContext!.tenantId,data=paySettings((req.body??{}) as Record<string,unknown>);
+  return prisma.deliveryOperator.upsert({where:{tenantId},update:data,create:{tenantId,type:'MERCHANT',name:`${req.tenantContext!.tenantName} delivery`,...data}});
+ });
+ app.patch('/v1/admin/business/operators/:id/pay',{preHandler:requirePlatformAdmin},async(req,reply)=>{
+  const {id}=req.params as {id:string};
+  if(!await prisma.deliveryOperator.findFirst({where:{id,type:'FIDA'}}))return reply.code(404).send({error:'fleet_not_found'});
+  return prisma.deliveryOperator.update({where:{id},data:paySettings((req.body??{})as Record<string,unknown>)});
+ });
+
  app.post('/v1/customer/orders/:id/refund',{preHandler:authenticate},async(req,reply)=>{
   const {id}=req.params as {id:string};const b=(req.body??{})as Record<string,unknown>;
   const order=await prisma.order.findFirst({where:{id,customerId:req.authUser!.id,paymentStatus:'PAID'}});
@@ -35,6 +48,7 @@ export async function businessOperationsRoutes(app:FastifyInstance){
     if(commission)await tx.financeEntry.create({data:{tenantId:refund.tenantId,orderId:refund.orderId,kind:'COMMISSION_REVERSAL',amount:commission.amount.negated(),reference:`refund:${id}:commission`,actorId:req.authUser!.id}});
     const payable=await tx.financeEntry.findUnique({where:{reference:`${refund.orderId}:MERCHANT_PAYABLE`}});
     if(payable)await tx.financeEntry.create({data:{tenantId:refund.tenantId,orderId:refund.orderId,kind:'PAYOUT_REVERSAL',amount:payable.amount.negated(),reference:`refund:${id}:payout`,actorId:req.authUser!.id}});
+    await issueRefundDocuments(tx,refund.orderId);
     await enqueueOrder(tx,refund.orderId,'REFUNDED');
    }
    return tx.refundRequest.findUniqueOrThrow({where:{id}});
@@ -69,7 +83,9 @@ export async function businessOperationsRoutes(app:FastifyInstance){
    const currentDriver=await tx.driver.findFirst({where:{id:driverId,isActive:true,isOnline:true,isAvailable:true,user:{isActive:true},operator:{type:'FIDA',isActive:true}}});
    if(!currentDriver)throw Object.assign(new Error('Driver availability changed.'),{statusCode:409});
    const count=await tx.delivery.count({where:{driverId,status:{in:[...active]}}});if(count>=currentDriver.maxConcurrentOrders)throw Object.assign(new Error('Driver capacity reached.'),{statusCode:409});
-   const moved=await tx.delivery.updateMany({where:{id:deliveryId,driverId:null,status:'UNASSIGNED',order:{status:'READY_FOR_PICKUP',branch:{logisticsMode:{in:['FIDA','HYBRID']}}}},data:{driverId,operatorId:driver.operatorId,status:'ASSIGNED',assignedAt:new Date()}});
+   const offered=await tx.delivery.findUniqueOrThrow({where:{id:deliveryId},include:{order:{include:{tenant:true}}}});
+   const operator=await tx.deliveryOperator.findUniqueOrThrow({where:{id:currentDriver.operatorId!}});
+   const moved=await tx.delivery.updateMany({where:{id:deliveryId,driverId:null,status:'UNASSIGNED',order:{status:'READY_FOR_PICKUP',branch:{logisticsMode:{in:['FIDA','HYBRID']}}}},data:{driverId,operatorId:driver.operatorId,status:'ASSIGNED',assignedAt:new Date(),estimatedPayout:driverPayout(operator,offered.order.deliveryDistanceKm),payoutCurrency:offered.order.tenant.currency}});
    if(!moved.count)throw Object.assign(new Error('This delivery is no longer available.'),{statusCode:409});
    const delivery=await tx.delivery.findUniqueOrThrow({where:{id:deliveryId}});await enqueueOrder(tx,delivery.orderId,'DRIVER_ASSIGNED');return delivery;
   });

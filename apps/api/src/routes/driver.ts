@@ -1,3 +1,4 @@
+import { driverPayout } from '../lib/driver-pay.js';
 import { planStops, type Stop } from '../lib/route-plan.js';
 import { enqueueOrder } from '../lib/notifications.js';
 import { recordCompletion } from '../lib/finance.js';
@@ -101,6 +102,10 @@ export async function driverRoutes(app: FastifyInstance) {
     return {method:'nearest-stop',stops:planStops(stops,driver.latitude===null?null:Number(driver.latitude),driver.longitude===null?null:Number(driver.longitude))};
   });
 
+  app.get('/v1/driver/earnings',async(request,reply)=>{
+    const driver=await requireDriver(request,reply);if(!driver)return;
+    return prisma.delivery.findMany({where:{driverId:driver.id,status:'DELIVERED'},select:{id:true,estimatedPayout:true,payoutCurrency:true,deliveredAt:true,order:{select:{orderNumber:true}}},orderBy:{deliveredAt:'desc'},take:100});
+  });
   app.get('/v1/driver/profile', async (request, reply) => {
     const driver = await requireDriver(request, reply);
     if (!driver) return;
@@ -128,6 +133,8 @@ export async function driverRoutes(app: FastifyInstance) {
     if (!driver) return;
 
     const body = (request.body ?? {}) as Record<string, unknown>;
+    if (!driver.isOnline) return reply.code(409).send({ error: 'driver_offline' });
+    if(typeof body.latitude !== 'number' || typeof body.longitude !== 'number')return reply.code(400).send({error:'invalid_location'});
     const latitude = Number(body.latitude);
     const longitude = Number(body.longitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
@@ -156,7 +163,7 @@ export async function driverRoutes(app: FastifyInstance) {
       include: {
         order: {
           include: {
-            tenant: { select: { id: true, name: true, slug: true } },
+            tenant: { select: { id: true, name: true, slug: true, currency: true } },
             branch: { select: { id: true, name: true, addressLine: true, city: true, latitude: true, longitude: true } },
             items: { select: { id: true, productName: true, quantity: true } },
           },
@@ -176,7 +183,7 @@ export async function driverRoutes(app: FastifyInstance) {
         driverLat !== null && driverLon !== null && branchLat !== null && branchLon !== null
           ? Number(haversineKm(driverLat, driverLon, branchLat, branchLon).toFixed(1))
           : null;
-      return { ...delivery, distanceToPickupKm: distanceKm };
+      return { ...delivery, distanceToPickupKm: distanceKm, estimatedPayout: driverPayout(driver.operator!,delivery.order.deliveryDistanceKm), payoutCurrency: delivery.order.tenant.currency };
     });
   });
 
@@ -192,7 +199,7 @@ export async function driverRoutes(app: FastifyInstance) {
       include: {
         order: {
           include: {
-            tenant: { select: { id: true, name: true, slug: true } },
+            tenant: { select: { id: true, name: true, slug: true, currency: true } },
             branch: true,
             customer: { select: { firstName: true, lastName: true, phone: true } },
             items: true,
@@ -215,7 +222,7 @@ export async function driverRoutes(app: FastifyInstance) {
       include: {
         order: {
           include: {
-            tenant: { select: { id: true, name: true, slug: true } },
+            tenant: { select: { id: true, name: true, slug: true, currency: true } },
             branch: true,
             customer: { select: { firstName: true, lastName: true, phone: true } },
             items: true,
@@ -245,9 +252,11 @@ export async function driverRoutes(app: FastifyInstance) {
       if (currentDriver.branchId !== driver.branchId || currentDriver.operatorId !== driver.operatorId) throw Object.assign(new Error('Driver assignment changed. Refresh and retry.'), { statusCode: 409 });
       const active = await tx.delivery.count({ where: { driverId: driver.id, status: { in: ['ASSIGNED','AT_PICKUP','PICKED_UP','AT_DROPOFF'] } } });
       if (active >= currentDriver.maxConcurrentOrders) throw Object.assign(new Error('Delivery capacity reached. Complete a delivery first.'), { statusCode: 409 });
+      const offered = await tx.delivery.findUniqueOrThrow({where:{id:delivery.id},include:{order:{include:{tenant:true}}}});
+      const payOperator = await tx.deliveryOperator.findUniqueOrThrow({where:{id:currentDriver.operatorId!}});
       const claimed = await tx.delivery.updateMany({
         where: { id: delivery.id, driverId: null, status: DeliveryStatus.UNASSIGNED },
-        data: { driverId: driver.id, operatorId: driver.operatorId, status: DeliveryStatus.ASSIGNED, assignedAt: new Date() },
+        data: { driverId: driver.id, operatorId: driver.operatorId, status: DeliveryStatus.ASSIGNED, assignedAt: new Date(), estimatedPayout: driverPayout(payOperator,offered.order.deliveryDistanceKm), payoutCurrency: offered.order.tenant.currency },
       });
       if (claimed.count !== 1) return null;
       const claimedDelivery = await tx.delivery.findUniqueOrThrow({ where: { id: delivery.id } });
@@ -310,7 +319,6 @@ export async function driverRoutes(app: FastifyInstance) {
 
       if (!changed.count) throw Object.assign(new Error('Delivery changed. Refresh and retry.'), { statusCode: 409 });
       await enqueueOrder(tx, delivery.orderId, nextStatus);
-      if (nextStatus === DeliveryStatus.DELIVERED) await recordCompletion(tx, delivery.orderId);
       if (orderStatus) await tx.order.update({ where: { id: delivery.orderId }, data: { status: orderStatus } });
 
       if (nextStatus === DeliveryStatus.DELIVERED) {
@@ -318,6 +326,7 @@ export async function driverRoutes(app: FastifyInstance) {
           where: { id: delivery.orderId, paymentMethod: PaymentMethod.CASH, paymentStatus: PaymentStatus.PENDING },
           data: { paymentStatus: PaymentStatus.PAID },
         });
+        await recordCompletion(tx, delivery.orderId);
         await tx.driver.update({ where: { id: driver.id }, data: { lastSeenAt: now } });
       }
       return tx.delivery.findUniqueOrThrow({ where: { id: delivery.id } });

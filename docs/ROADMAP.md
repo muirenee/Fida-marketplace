@@ -4,9 +4,9 @@ Updated: 19 September 2026
 
 ## Candidate implementation status
 
-The `feature/marketplace-business-delivery` branch implements a substantial 0.6 candidate; it has not been deployed or built into new APKs. See [release handoff](RELEASE-0.6.md) for exact implemented features, validation, configuration and remaining work. Existing milestone checkboxes below describe the previously released baseline and are deliberately not marked complete until the candidate passes release gates.
+The 0.6 candidate is deployed and the user confirmed the merchant-list and portal-save fixes work. The 0.7 source adds the customer UI redesign, grouped required modifiers, multiple configurations per cart, embedded live map, background location permission flow, configured driver pay estimates, commercial receipts/commission invoices and portal controls. See [0.7 handoff](RELEASE-0.7.md) for exact scope, deployment and limitations. Milestone checkboxes below remain historical until physical-device and external-provider acceptance is complete.
 
-Implemented candidate work includes branch hours, product images and optional add-ons, favorites/search, scheduled orders/promos/tax, Firebase push infrastructure, driver creation/editing/capacity, PIN delivery proof, external turn-by-turn navigation, nearest-stop ordering, Fida fleet dispatch, payment adapter, finance/refund records, reviews and support. Required variant groups, traffic-aware optimization, driver earnings/payouts and full conversion analytics remain open.
+Traffic-aware embedded routes/ETAs, EBM fiscal integration, automated financial transfers, subscription/social authentication and full conversion analytics are not implemented. Do not describe the platform as full Uber Eats feature parity.
 
 ## M0 — Foundation
 - [x] Monorepo structure

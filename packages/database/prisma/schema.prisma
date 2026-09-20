@@ -309,6 +309,8 @@ model OrderItem {
 }
 
 model DeliveryOperator {
+  driverBasePay Decimal? @db.Decimal(12, 2)
+  driverPerKmPay Decimal? @db.Decimal(12, 2)
   id        String               @id @default(cuid())
   type      DeliveryOperatorType
   name      String
@@ -348,6 +350,8 @@ model Driver {
 }
 
 model Delivery {
+  estimatedPayout Decimal? @db.Decimal(12, 2)
+  payoutCurrency String?
   id          String            @id @default(cuid())
   orderId     String            @unique
   driverId    String?
@@ -498,4 +502,18 @@ model RefundRequest {
  createdAt DateTime @default(now())
  updatedAt DateTime @updatedAt
  @@index([tenantId, status])
+}
+
+model BusinessDocument {
+  id String @id @default(cuid())
+  number String @unique
+  kind String
+  orderId String
+  tenantId String
+  customerId String
+  payload Json
+  issuedAt DateTime @default(now())
+  @@unique([orderId, kind])
+  @@index([tenantId, issuedAt])
+  @@index([customerId, kind])
 }

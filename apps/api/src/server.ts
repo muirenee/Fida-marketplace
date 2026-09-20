@@ -1,3 +1,4 @@
+import { documentRoutes } from './routes/documents.js';
 import { businessOperationsRoutes } from './routes/business-operations.js';
 import { paymentRoutes } from './routes/payments.js';
 import { growthRoutes } from './routes/growth.js';
@@ -81,6 +82,7 @@ await app.register(merchantBusinessRoutes);
 await app.register(mediaRoutes);
 await app.register(businessOperationsRoutes);
 await app.register(paymentRoutes);
+await app.register(documentRoutes);
 await app.register(growthRoutes);
 await app.register(notificationRoutes);
 if (process.env.APP_ENV !== 'test') startNotificationWorker(app);

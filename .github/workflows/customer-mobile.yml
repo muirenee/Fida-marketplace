@@ -69,6 +69,19 @@ jobs:
         working-directory: apps/customer-mobile
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
+      - name: Test customer ordering UX
+        working-directory: apps/customer-mobile
+        run: flutter test test/experience_test.dart
+
+      - name: Upload UI previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fida-customer-ui-previews
+          path: apps/customer-mobile/build/ui-previews/*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Detect release signing
         id: signing
         shell: bash

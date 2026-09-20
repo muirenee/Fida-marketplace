@@ -1,3 +1,4 @@
+import { branchIsOpen } from '../lib/business-hours.js';
 import type { FastifyInstance } from 'fastify';
 import { MerchantType, Prisma, TenantStatus, prisma } from '@fida/database/client';
 
@@ -8,6 +9,7 @@ const branchSelect = {
   addressLine: true,
   latitude: true,
   longitude: true,
+  isAcceptingOrders: true,
   pickupEnabled: true,
   deliveryEnabled: true,
   logisticsMode: true,
@@ -44,7 +46,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       where.merchantType = requestedType as MerchantType;
     }
 
-    return prisma.tenant.findMany({
+    const merchants = await prisma.tenant.findMany({
       where,
       select: {
         id: true,
@@ -53,6 +55,8 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         merchantType: true,
         currency: true,
         minimumOrder: true,
+        timezone: true,
+        products: { where: { isActive: true, isAvailable: true, deletedAt: null, imageUrl: { not: null }, OR: [{ categoryId: null }, { category: { isActive: true, deletedAt: null } }] }, select: {imageUrl: true}, orderBy: {name: 'asc'}, take: 1 },
         branches: {
           where: { isActive: true, isAcceptingOrders: true },
           select: branchSelect,
@@ -60,6 +64,17 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       },
       orderBy: { name: 'asc' },
     });
+    const ids = merchants.map(m => m.id);
+    const [ratings, promos] = await Promise.all([
+      prisma.review.groupBy({by:['tenantId'],where:{tenantId:{in:ids}},_avg:{rating:true},_count:{rating:true}}),
+      prisma.promotion.findMany({where:{tenantId:{in:ids},isActive:true,expiresAt:{gt:new Date()}},select:{tenantId:true,code:true,percent:true,minimumOrder:true,maxDiscount:true,usedCount:true,maxUses:true}}),
+    ]);
+    return merchants.map(({products,...m}) => ({...m, imageUrl:products[0]?.imageUrl ?? null,
+      rating:ratings.find(r=>r.tenantId===m.id)?._avg.rating ?? null,
+      reviewCount:ratings.find(r=>r.tenantId===m.id)?._count.rating ?? 0,
+      promotions:promos.filter(p=>p.tenantId===m.id && p.usedCount<p.maxUses).map(({usedCount,maxUses,tenantId,...p})=>p),
+      branches:m.branches.map(b=>({...b,isOpen:branchIsOpen(b,m.timezone)})),
+    }));
   });
 
   app.get('/v1/marketplace/merchants/:slug', async (request, reply) => {
@@ -77,6 +92,8 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         merchantType: true,
         currency: true,
         minimumOrder: true,
+        timezone: true,
+        products: { where: { isActive: true, isAvailable: true, deletedAt: null, imageUrl: { not: null }, OR: [{ categoryId: null }, { category: { isActive: true, deletedAt: null } }] }, select: {imageUrl: true}, orderBy: {name: 'asc'}, take: 1 },
         branches: {
           where: { isActive: true, isAcceptingOrders: true },
           select: branchSelect,
@@ -101,6 +118,13 @@ export async function marketplaceRoutes(app: FastifyInstance) {
 
     if (!merchant) return reply.code(404).send({ error: 'merchant_not_found' });
     const uncategorised = await prisma.product.findMany({ where: { tenantId: merchant.id, categoryId: null, isActive: true, isAvailable: true, deletedAt: null }, select: { id: true, name: true, description: true, price: true, imageUrl: true, options: true } });
-    return { ...merchant, categories: [...merchant.categories, ...(uncategorised.length ? [{ id: 'uncategorised', name: 'More to discover', slug: 'uncategorised', products: uncategorised }] : [])] };
+    const [reviews,promotions] = await Promise.all([
+      prisma.review.aggregate({where:{tenantId:merchant.id},_avg:{rating:true},_count:{rating:true}}),
+      prisma.promotion.findMany({where:{tenantId:merchant.id,isActive:true,expiresAt:{gt:new Date()}},select:{code:true,percent:true,minimumOrder:true,maxDiscount:true,maxUses:true,usedCount:true}}),
+    ]);
+    const {products,...publicMerchant}=merchant;
+    return { ...publicMerchant, imageUrl:products[0]?.imageUrl??null, rating:reviews._avg.rating, reviewCount:reviews._count.rating,
+      promotions:promotions.filter(p=>p.usedCount<p.maxUses).map(({maxUses,usedCount,...p})=>p),
+      branches:merchant.branches.map(b=>({...b,isOpen:branchIsOpen(b,merchant.timezone)})), categories: [...merchant.categories, ...(uncategorised.length ? [{ id: 'uncategorised', name: 'More to discover', slug: 'uncategorised', products: uncategorised }] : [])] };
   });
 }

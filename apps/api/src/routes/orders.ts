@@ -22,29 +22,19 @@ function orderNumber() {
 }
 
 function parseItems(value: unknown) {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 50) return null;
-
-  const quantities = new Map<string, number>();
-  for (const item of value) {
-    if (!item || typeof item !== 'object') return null;
-    const row = item as Record<string, unknown>;
-    const productId = typeof row.productId === 'string' ? row.productId.trim() : '';
-    const quantity = typeof row.quantity === 'number' ? row.quantity : NaN;
-    if (!productId || !Number.isInteger(quantity) || quantity < 1 || quantity > 50) return null;
-
-    const nextQuantity = (quantities.get(productId) ?? 0) + quantity;
-    if (nextQuantity > 50) return null;
-    quantities.set(productId, nextQuantity);
-  }
-
-  return quantities;
-}
-
-function choices(items: unknown, productId: string): unknown {
-  if(!Array.isArray(items))return undefined;
-  const matches=items.filter(i=>i?.productId===productId);
-  if(matches.length>1&&matches.some(i=>i.options?.length))throw Object.assign(new Error('Use one configured line per product.'),{statusCode:400});
-  return matches[0]?.options;
+ if (!Array.isArray(value) || !value.length || value.length > 50) return null;
+ const totals = new Map<string, number>();
+ const lines: {productId: string; quantity: number; options: unknown}[] = [];
+ for (const raw of value) {
+  if (!raw || typeof raw !== 'object') return null;
+  const id = typeof raw.productId === 'string' ? raw.productId.trim() : '';
+  if (!id || !Number.isInteger(raw.quantity) || raw.quantity < 1 || raw.quantity > 50) return null;
+  const total = (totals.get(id) ?? 0) + raw.quantity;
+  if (total > 50) return null;
+  totals.set(id, total);
+  lines.push({productId: id, quantity: raw.quantity, options: raw.options});
+ }
+ return {lines, ids: [...totals.keys()]};
 }
 
 function validCoordinate(latitude: number, longitude: number) {
@@ -56,9 +46,9 @@ export async function orderRoutes(app: FastifyInstance) {
     const b=(request.body??{})as Record<string,unknown>;
     const quantities=parseItems(b.items),tenantId=typeof b.tenantId==='string'?b.tenantId:'';
     if(!quantities||!tenantId)return reply.code(400).send({error:'invalid_items'});
-    const products=await prisma.product.findMany({where:{id:{in:[...quantities.keys()]},tenantId,isActive:true,isAvailable:true,deletedAt:null,OR:[{categoryId:null},{category:{isActive:true,deletedAt:null}}]}});
-    if(products.length!==quantities.size)return reply.code(409).send({error:'product_unavailable'});
-    const subtotal=products.reduce((sum,p)=>sum.plus(selectedOptions(p,choices(b.items,p.id)).price.mul(quantities.get(p.id)!)),new Prisma.Decimal(0));
+    const products=await prisma.product.findMany({where:{id:{in:quantities.ids},tenantId,isActive:true,isAvailable:true,deletedAt:null,OR:[{categoryId:null},{category:{isActive:true,deletedAt:null}}]}});
+    if(products.length!==quantities.ids.length)return reply.code(409).send({error:'product_unavailable'});
+    const subtotal=quantities.lines.reduce((sum,line)=>sum.plus(selectedOptions(products.find(p=>p.id===line.productId)!,line.options).price.mul(line.quantity)),new Prisma.Decimal(0));
     const branch=await prisma.branch.findFirst({where:{id:String(b.branchId??''),tenantId,isActive:true}});
     if(!branch)return reply.code(404).send({error:'branch_not_found'});
     let fee=new Prisma.Decimal(0);
@@ -186,7 +176,7 @@ export async function orderRoutes(app: FastifyInstance) {
 
     if (!branchIsOpen(branch, tenant.timezone, scheduledFor ?? new Date())) return reply.code(409).send({ error: 'branch_closed', message: 'This branch is closed at the requested time.' });
 
-    const productIds = [...quantities.keys()];
+    const productIds = quantities.ids;
     const products = await prisma.product.findMany({
       where: { id: { in: productIds }, tenantId, isActive: true, isAvailable: true, deletedAt: null, OR: [{ categoryId: null }, { category: { isActive: true, deletedAt: null } }] },
       select: { id: true, name: true, price: true, options: true },
@@ -197,9 +187,10 @@ export async function orderRoutes(app: FastifyInstance) {
     }
 
     let subtotal = new Prisma.Decimal(0);
-    const itemData = products.map((product) => {
-      const quantity = quantities.get(product.id)!;
-      const configured = selectedOptions(product, choices(body.items, product.id));
+    const itemData = quantities.lines.map((line) => {
+      const product = products.find(p => p.id === line.productId)!;
+      const quantity = line.quantity;
+      const configured = selectedOptions(product, line.options);
       const lineTotal = configured.price.mul(quantity);
       subtotal = subtotal.plus(lineTotal);
       return {
@@ -218,7 +209,7 @@ export async function orderRoutes(app: FastifyInstance) {
     let deliveryAddress: string | null = null;
     let deliveryLatitude: number | null = null;
     let deliveryLongitude: number | null = null;
-    let deliveryInstructions: string | null = null;
+    let deliveryInstructions: string | null = typeof body.deliveryInstructions === 'string' ? body.deliveryInstructions.trim().slice(0,2000) || null : null;
     let deliveryFee = new Prisma.Decimal(0);
     let deliveryDistanceKm: number | null = null;
 
@@ -227,7 +218,7 @@ export async function orderRoutes(app: FastifyInstance) {
       deliveryAddress = typeof body.deliveryAddress === 'string' ? body.deliveryAddress.trim() : '';
       deliveryLatitude = typeof body.deliveryLatitude === 'number' ? body.deliveryLatitude : null;
       deliveryLongitude = typeof body.deliveryLongitude === 'number' ? body.deliveryLongitude : null;
-      deliveryInstructions = typeof body.deliveryInstructions === 'string' ? body.deliveryInstructions.trim() || null : null;
+
 
       if (addressId) {
         const savedAddress = await prisma.customerAddress.findFirst({ where: { id: addressId, userId: request.authUser!.id } });
@@ -311,8 +302,8 @@ export async function orderRoutes(app: FastifyInstance) {
     return prisma.order.findMany({
       where: { customerId: request.authUser!.id },
       include: {
-        tenant: { select: { id: true, name: true, slug: true } },
-        branch: { select: { id: true, name: true, city: true } },
+        tenant: { select: { id: true, name: true, slug: true, currency: true } },
+        branch: { select: { id: true, name: true, city: true, addressLine: true, latitude: true, longitude: true } },
         items: true,
         delivery: true,
       },
@@ -326,8 +317,8 @@ export async function orderRoutes(app: FastifyInstance) {
     const order = await prisma.order.findFirst({
       where: { id: orderId, customerId: request.authUser!.id },
       include: {
-        tenant: { select: { id: true, name: true, slug: true } },
-        branch: { select: { id: true, name: true, city: true } },
+        tenant: { select: { id: true, name: true, slug: true, currency: true } },
+        branch: { select: { id: true, name: true, city: true, addressLine: true, latitude: true, longitude: true } },
         items: true,
         delivery: { include: { driver: { include: { user: { select: { firstName: true, lastName: true, phone: true } } } } } },
       },
@@ -345,8 +336,8 @@ export async function orderRoutes(app: FastifyInstance) {
             driver: order.delivery.driver
               ? {
                   ...order.delivery.driver,
-                  latitude: order.delivery.driver.latitude === null ? null : Number(order.delivery.driver.latitude),
-                  longitude: order.delivery.driver.longitude === null ? null : Number(order.delivery.driver.longitude),
+                  latitude: ['COMPLETED','CANCELLED','REJECTED'].includes(order.status) || order.delivery.driver.latitude === null ? null : Number(order.delivery.driver.latitude),
+                  longitude: ['COMPLETED','CANCELLED','REJECTED'].includes(order.status) || order.delivery.driver.longitude === null ? null : Number(order.delivery.driver.longitude),
                 }
               : null,
           }

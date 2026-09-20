@@ -1,514 +1,674 @@
-import 'package:fida_mobile_common/fida_mobile_common.dart';
+import 'dart:convert';
 import 'package:flutter/material.dart';
-
+import 'package:fida_mobile_common/fida_mobile_common.dart';
 import '../core/api_client.dart';
 import '../ui/format.dart';
-import 'checkout_screen.dart';
+import 'product_screen.dart';
+import 'cart_screen.dart';
 
 class MerchantScreen extends StatefulWidget {
-  const MerchantScreen({super.key, required this.api, required this.slug});
-
+  const MerchantScreen({
+    super.key,
+    required this.api,
+    required this.slug,
+    this.initialFulfillment = 'DELIVERY',
+  });
   final ApiClient api;
-  final String slug;
-
+  final String slug, initialFulfillment;
   @override
   State<MerchantScreen> createState() => _MerchantScreenState();
 }
 
 class _MerchantScreenState extends State<MerchantScreen> {
-  Map<String, dynamic>? _merchant;
-  final Map<String, int> _cart = {};
-  final Map<String, Map<String, dynamic>> _products = {};
-  bool _favorite = false;
-  bool _savingFavorite = false;
-  bool _loading = true;
-  String? _error;
-
+  Map<String, dynamic>? merchant;
+  final Map<String, int> cart = {};
+  final Map<String, Map<String, dynamic>> products = {};
+  String? error, category;
+  String query = '', mode = 'DELIVERY';
+  bool loading = true, favorite = false, savingFavorite = false;
+  int branchIndex = 0;
   @override
   void initState() {
     super.initState();
-    _load();
+    mode = widget.initialFulfillment;
+    load();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> load() async {
     try {
-      final merchant = await widget.api.merchant(widget.slug);
-      try {
-        final favorites =
-            await widget.api.request('GET', '/v1/customer/favorites') as List;
-        _favorite = favorites.any((f) => f['id'] == merchant['id']);
-      } catch (_) {}
-      final products = <String, Map<String, dynamic>>{};
-      for (final rawCategory in merchant['categories'] as List? ?? const []) {
-        final category = (rawCategory as Map).cast<String, dynamic>();
-        for (final rawProduct in category['products'] as List? ?? const []) {
-          final product = (rawProduct as Map).cast<String, dynamic>();
-          product['basePrice'] = product['price'];
-          product['baseName'] = product['name'];
-          products[product['id'].toString()] = product;
-        }
-      }
+      final m = await widget.api.merchant(widget.slug);
       if (!mounted) return;
       setState(() {
-        _merchant = merchant;
-        _products
-          ..clear()
-          ..addAll(products);
+        merchant = m;
+        loading = false;
+        error = null;
+        final bs = m['branches'] as List? ?? [];
+        if (branchIndex >= bs.length) branchIndex = 0;
+        if (bs.isNotEmpty &&
+            bs[branchIndex][mode == 'DELIVERY'
+                    ? 'deliveryEnabled'
+                    : 'pickupEnabled'] !=
+                true)
+          mode = bs[branchIndex]['pickupEnabled'] == true
+              ? 'PICKUP'
+              : 'DELIVERY';
       });
-    } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    } catch (_) {
-      if (mounted) setState(() => _error = 'Unable to load this merchant.');
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      try {
+        final saved =
+            await widget.api.request('GET', '/v1/customer/favorites') as List;
+        if (mounted)
+          setState(() => favorite = saved.any((f) => f['id'] == m['id']));
+      } catch (_) {}
+    } catch (e) {
+      if (mounted)
+        setState(() {
+          error = '$e';
+          loading = false;
+        });
     }
   }
 
-  int get _cartCount => _cart.values.fold(0, (sum, quantity) => sum + quantity);
-
-  double get _subtotal {
-    var amount = 0.0;
-    for (final entry in _cart.entries) {
-      amount += asDouble(_products[entry.key]?['price']) * entry.value;
-    }
-    return amount;
-  }
-
-  void _changeQuantity(String productId, int delta) {
-    setState(() {
-      final next = (_cart[productId] ?? 0) + delta;
-      if (next <= 0) {
-        _cart.remove(productId);
-      } else if (next <= 50) {
-        _cart[productId] = next;
-      }
-    });
-  }
-
-  Future<void> _configure(String id) async {
-    final product = _products[id]!;
-    final options = product['options'] as List? ?? [];
-    final selected = Set<String>.from(
-      product['selectedOptions'] as List? ?? [],
-    );
-    final save = await showDialog<bool>(
-      context: context,
-      builder: (c) => StatefulBuilder(
-        builder: (ctx, update) => AlertDialog(
-          title: Text(product['baseName'].toString()),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final option in options)
-                  CheckboxListTile(
-                    value: selected.contains(option['name']),
-                    title: Text(option['name'].toString()),
-                    subtitle: Text('+ ${money(option['price'])}'),
-                    onChanged: (v) => update(() {
-                      if (v == true) {
-                        selected.add(option['name'].toString());
-                      } else {
-                        selected.remove(option['name']);
-                      }
-                    }),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(c, true),
-              child: const Text('Apply choices'),
-            ),
-          ],
+  Future<void> add(Map<String, dynamic> p) async {
+    final result = await Navigator.push<Map>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProductScreen(
+          product: p,
+          currency: merchant?['currency']?.toString() ?? 'RWF',
         ),
       ),
     );
-    if (save == true && mounted)
-      setState(() {
-        product['selectedOptions'] = selected.toList();
-        product['price'] =
-            asDouble(product['basePrice']) +
-            options
-                .where((o) => selected.contains(o['name']))
-                .fold<double>(0, (sum, o) => sum + asDouble(o['price']));
-        product['name'] =
-            '${product['baseName']}${selected.isEmpty ? '' : ' (${selected.join(', ')})'}';
-      });
-  }
-
-  Future<void> _checkout() async {
-    final merchant = _merchant;
-    if (merchant == null || _cart.isEmpty) return;
-    final minimum = asDouble(merchant['minimumOrder']);
-    if (_subtotal < minimum) {
+    if (result == null || !mounted) return;
+    final configured = (result['product'] as Map).cast<String, dynamic>();
+    final key = jsonEncode([
+      configured['productId'],
+      configured['selectedOptions'],
+    ]);
+    final count = result['quantity'] as int;
+    final totalForProduct = cart.entries
+        .where((e) => products[e.key]?['productId'] == configured['productId'])
+        .fold<int>(0, (sum, e) => sum + e.value);
+    if (totalForProduct + count > 50) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Minimum order is ${money(minimum, currency: merchant['currency']?.toString() ?? 'RWF')}.',
-          ),
+        const SnackBar(
+          content: Text('Maximum 50 of the same product per order.'),
         ),
       );
       return;
     }
+    setState(() {
+      products[key] = configured;
+      cart[key] = (cart[key] ?? 0) + count;
+    });
+  }
 
-    final placed = await Navigator.of(context).push<bool>(
+  Future<void> viewCart() async {
+    final branches = merchant!['branches'] as List? ?? [];
+    if (branches.isEmpty) return;
+    final placed = await Navigator.push<bool>(
+      context,
       MaterialPageRoute(
-        builder: (_) => CheckoutScreen(
+        builder: (_) => CartScreen(
           api: widget.api,
-          merchant: merchant,
-          cart: Map.of(_cart),
-          products: Map.of(_products),
+          merchant: {
+            ...merchant!,
+            'branches': [branches[branchIndex]],
+          },
+          cart: cart,
+          products: products,
+          fulfillment: mode,
         ),
       ),
     );
-    if (placed == true && mounted) {
-      setState(() => _cart.clear());
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order sent to the merchant.')),
-      );
-    }
+    if (mounted)
+      setState(() {
+        if (placed == true) {
+          cart.clear();
+          products.clear();
+        }
+      });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
+    if (loading)
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    if (_error != null || _merchant == null) {
+    if (merchant == null)
       return Scaffold(
         appBar: AppBar(),
         body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.store_mall_directory_outlined, size: 50),
-                const SizedBox(height: 12),
-                Text(
-                  _error ?? 'Merchant unavailable',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                FilledButton(onPressed: _load, child: const Text('Retry')),
-              ],
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(error ?? 'Unable to open store'),
+              TextButton(onPressed: load, child: const Text('Retry')),
+            ],
           ),
         ),
       );
-    }
-
-    final merchant = _merchant!;
-    final currency = merchant['currency']?.toString() ?? 'RWF';
-    final categories = merchant['categories'] as List? ?? const [];
-    final branches = merchant['branches'] as List? ?? const [];
-    final firstBranch = branches.isNotEmpty && branches.first is Map
-        ? branches.first as Map
-        : null;
-    final pickupEnabled = firstBranch?['pickupEnabled'] == true;
-    final deliveryEnabled = firstBranch?['deliveryEnabled'] == true;
-    final zones = firstBranch?['deliveryZones'] as List? ?? const [];
-    final hasFreeZone = zones.any(
-      (zone) => zone is Map && asDouble(zone['fee']) == 0,
-    );
-
+    final m = merchant!, currency = m['currency']?.toString() ?? 'RWF';
+    final categories = m['categories'] as List? ?? [],
+        branches = m['branches'] as List? ?? [];
+    final branch = branches.isEmpty
+        ? <String, dynamic>{}
+        : branches[branchIndex] as Map;
+    final count = cart.values.fold<int>(0, (a, b) => a + b),
+        subtotal = cart.entries.fold<double>(
+          0,
+          (sum, e) => sum + asDouble(products[e.key]?['price']) * e.value,
+        );
+    final promos = m['promotions'] as List? ?? [];
     return Scaffold(
-      appBar: AppBar(
-        title: Text(merchant['name'].toString()),
-        actions: [
-          IconButton(
-            tooltip: _favorite ? 'Remove favourite' : 'Save favourite',
-            onPressed: _savingFavorite
-                ? null
-                : () async {
-                    setState(() => _savingFavorite = true);
-                    try {
-                      await widget.api.request(
-                        _favorite ? 'DELETE' : 'PUT',
-                        '/v1/customer/favorites/${merchant['id']}',
-                      );
-                      if (mounted) setState(() => _favorite = !_favorite);
-                    } catch (e) {
-                      if (mounted)
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(SnackBar(content: Text('$e')));
-                    } finally {
-                      if (mounted) setState(() => _savingFavorite = false);
-                    }
-                  },
-            icon: Icon(
-              _favorite ? Icons.favorite : Icons.favorite_border,
-              color: const Color(0xFF07855A),
-            ),
-          ),
-        ],
-      ),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: load,
         child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
+            SliverAppBar(
+              expandedHeight: 235,
+              pinned: true,
+              leading: Padding(
+                padding: const EdgeInsets.all(5),
+                child: IconButton.filledTonal(
+                  onPressed: () async {
+                    if (cart.isNotEmpty) {
+                      final leave = await showDialog<bool>(
+                        context: context,
+                        builder: (c) => AlertDialog(
+                          title: const Text('Leave this cart?'),
+                          content: const Text(
+                            'Your current cart will be cleared.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(c, false),
+                              child: const Text('Keep shopping'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(c, true),
+                              child: const Text('Leave'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (leave != true) return;
+                    }
+                    if (context.mounted) Navigator.pop(context);
+                  },
+                  icon: const Icon(Icons.arrow_back),
+                ),
+              ),
+              actions: [
+                IconButton.filledTonal(
+                  tooltip: 'Save store',
+                  onPressed: savingFavorite
+                      ? null
+                      : () async {
+                          setState(() => savingFavorite = true);
+                          try {
+                            await widget.api.request(
+                              favorite ? 'DELETE' : 'PUT',
+                              '/v1/customer/favorites/${m['id']}',
+                            );
+                            if (mounted) setState(() => favorite = !favorite);
+                          } catch (e) {
+                            if (mounted)
+                              ScaffoldMessenger.of(
+                                context,
+                              ).showSnackBar(SnackBar(content: Text('$e')));
+                          } finally {
+                            if (mounted) setState(() => savingFavorite = false);
+                          }
+                        },
+                  icon: Icon(favorite ? Icons.favorite : Icons.favorite_border),
+                ),
+                const SizedBox(width: 12),
+              ],
+              flexibleSpace: FlexibleSpaceBar(
+                background: FoodCover(
+                  url: m['imageUrl']?.toString(),
+                  baseUrl: ApiClient.baseUrl,
+                  height: 270,
+                  radius: 0,
+                  label: m['name'].toString(),
+                ),
+              ),
+            ),
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      m['name'].toString(),
+                      style: const TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -.7,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      m['rating'] == null
+                          ? 'New on Fida'
+                          : '${asDouble(m['rating']).toStringAsFixed(1)} ★ (${m['reviewCount']} reviews)',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      [
+                        branch['addressLine'],
+                        branch['city'],
+                      ].whereType<String>().join(', '),
+                      style: const TextStyle(color: Colors.black54),
+                    ),
+                    if (branches.length > 1)
+                      DropdownButton<int>(
+                        isExpanded: true,
+                        value: branchIndex,
+                        items: [
+                          for (var i = 0; i < branches.length; i++)
+                            DropdownMenuItem(
+                              value: i,
+                              child: Text(branches[i]['name'].toString()),
+                            ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null)
+                            setState(() {
+                              branchIndex = v;
+                              if (branches[v][mode == 'DELIVERY'
+                                      ? 'deliveryEnabled'
+                                      : 'pickupEnabled'] !=
+                                  true)
+                                mode = branches[v]['pickupEnabled'] == true
+                                    ? 'PICKUP'
+                                    : 'DELIVERY';
+                            });
+                        },
+                      ),
+                    const SizedBox(height: 18),
+                    SegmentedButton<String>(
+                      segments: [
+                        if (branch['deliveryEnabled'] == true)
+                          const ButtonSegment(
+                            value: 'DELIVERY',
+                            label: Text('Delivery'),
+                            icon: Icon(Icons.delivery_dining),
+                          ),
+                        if (branch['pickupEnabled'] == true)
+                          const ButtonSegment(
+                            value: 'PICKUP',
+                            label: Text('Pickup'),
+                            icon: Icon(Icons.shopping_bag_outlined),
+                          ),
+                        if (branch['pickupEnabled'] != true &&
+                            branch['deliveryEnabled'] != true)
+                          const ButtonSegment(
+                            value: 'DELIVERY',
+                            label: Text('Unavailable'),
+                            enabled: false,
+                          ),
+                      ],
+                      selected: {mode},
+                      onSelectionChanged: (s) => setState(() => mode = s.first),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(15),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: const Color(0xFFEAEAEA)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
                         children: [
-                          const Icon(Icons.storefront_rounded, size: 42),
-                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  merchant['name'].toString(),
-                                  style: Theme.of(context).textTheme.titleLarge
-                                      ?.copyWith(fontWeight: FontWeight.w900),
+                                  mode == 'PICKUP'
+                                      ? 'Free pickup'
+                                      : 'Delivery by distance',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
+                                const SizedBox(height: 5),
+                                const Text(
+                                  'Fee confirmed at checkout',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: Column(
+                              children: [
                                 Text(
-                                  merchant['merchantType']
-                                      .toString()
-                                      .replaceAll('_', ' ')
-                                      .toLowerCase(),
+                                  branch['isOpen'] == false
+                                      ? 'Closed now'
+                                      : 'Accepting orders',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                  asDouble(m['minimumOrder']) > 0
+                                      ? 'Min ${money(m['minimumOrder'], currency: currency)}'
+                                      : 'No minimum order',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.black54,
+                                  ),
                                 ),
                               ],
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 14),
-                      Wrap(
-                        spacing: 14,
-                        runSpacing: 8,
+                    ),
+                    for (final promo in promos)
+                      Container(
+                        margin: const EdgeInsets.only(top: 12),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFE5D8),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.local_offer,
+                              color: Color(0xFFB24725),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                '${promo['percent']}% off · Use ${promo['code']}\nMin ${money(promo['minimumOrder'], currency: currency)} · Max ${money(promo['maxDiscount'], currency: currency)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SectionHeading('Explore the menu'),
+                    TextField(
+                      onChanged: (v) => setState(() => query = v.toLowerCase()),
+                      decoration: const InputDecoration(
+                        hintText: 'Search this menu',
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
                         children: [
-                          if (pickupEnabled)
-                            const _Info(
-                              icon: Icons.shopping_bag_outlined,
-                              text: 'Pickup',
-                            ),
-                          if (deliveryEnabled)
-                            _Info(
-                              icon: Icons.delivery_dining_rounded,
-                              text: hasFreeZone
-                                  ? 'Free delivery nearby'
-                                  : 'Delivery by distance',
-                            ),
-                          if (asDouble(merchant['minimumOrder']) > 0)
-                            _Info(
-                              icon: Icons.receipt_long_outlined,
-                              text:
-                                  'Min ${money(merchant['minimumOrder'], currency: currency)}',
-                            ),
-                          if (firstBranch != null)
-                            _Info(
-                              icon: Icons.location_on_outlined,
-                              text:
-                                  firstBranch['city']?.toString() ??
-                                  firstBranch['name'].toString(),
+                          ChoiceChip(
+                            label: const Text('All'),
+                            selected: category == null,
+                            onSelected: (_) => setState(() => category = null),
+                          ),
+                          for (final c in categories)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: ChoiceChip(
+                                label: Text(c['name'].toString()),
+                                selected: category == c['id'],
+                                onSelected: (_) => setState(
+                                  () => category = c['id'].toString(),
+                                ),
+                              ),
                             ),
                         ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (query.isEmpty && category == null && categories.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 20, bottom: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SectionHeading('From the menu'),
+                      SizedBox(
+                        height: 230,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: [
+                            for (final raw
+                                in categories
+                                    .expand((c) => c['products'] as List? ?? [])
+                                    .take(8))
+                              Padding(
+                                padding: const EdgeInsets.only(right: 14),
+                                child: SizedBox(
+                                  width: 170,
+                                  child: InkWell(
+                                    onTap: () => add(
+                                      (raw as Map).cast<String, dynamic>(),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Stack(
+                                          children: [
+                                            FoodCover(
+                                              url: raw['imageUrl']?.toString(),
+                                              baseUrl: ApiClient.baseUrl,
+                                              height: 156,
+                                              label: raw['name'].toString(),
+                                            ),
+                                            Positioned(
+                                              right: 4,
+                                              bottom: 4,
+                                              child: IconButton.filledTonal(
+                                                onPressed: () => add(
+                                                  (raw as Map)
+                                                      .cast<String, dynamic>(),
+                                                ),
+                                                icon: const Icon(Icons.add),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          raw['name'].toString(),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 17,
+                                          ),
+                                        ),
+                                        Text(
+                                          money(
+                                            raw['price'],
+                                            currency: currency,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
-            ),
+            for (final c in categories.where(
+              (c) => category == null || category == c['id'],
+            )) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: SectionHeading(c['name'].toString()),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverList.list(
+                  children: [
+                    for (final raw in (c['products'] as List? ?? []).where(
+                      (p) => '${p['name']} ${p['description'] ?? ''}'
+                          .toLowerCase()
+                          .contains(query),
+                    ))
+                      Builder(
+                        builder: (_) {
+                          final p = (raw as Map).cast<String, dynamic>();
+                          return InkWell(
+                            onTap: () => add(p),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              decoration: const BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(color: Color(0xFFEEEEEE)),
+                                ),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          p['name'].toString(),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 18,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 5),
+                                        Text(
+                                          money(p['price'], currency: currency),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          p['description']?.toString() ?? '',
+                                          maxLines: 3,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                        if ((p['options'] as List? ?? [])
+                                            .isNotEmpty)
+                                          const Padding(
+                                            padding: EdgeInsets.only(top: 5),
+                                            child: Text(
+                                              'Customise',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Color(0xFF07855A),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  SizedBox(
+                                    width: 112,
+                                    height: 118,
+                                    child: Stack(
+                                      children: [
+                                        ProductPhoto(
+                                          url: p['imageUrl']?.toString(),
+                                          baseUrl: ApiClient.baseUrl,
+                                          size: 112,
+                                        ),
+                                        Positioned(
+                                          right: 3,
+                                          bottom: 0,
+                                          child: IconButton.filledTonal(
+                                            tooltip: 'Add ${p['name']}',
+                                            onPressed: () => add(p),
+                                            icon: const Icon(Icons.add),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ],
             if (categories.isEmpty)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(child: Text('No products are available yet.')),
-              )
-            else
-              for (final rawCategory in categories) ...[
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-                    child: Text(
-                      (rawCategory as Map)['name'].toString(),
-                      style: Theme.of(context).textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w800),
-                    ),
-                  ),
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Text('The merchant is updating their menu.'),
                 ),
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  sliver: SliverList.separated(
-                    itemCount:
-                        ((rawCategory as Map)['products'] as List? ?? const [])
-                            .length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final product =
-                          (((rawCategory)['products'] as List)[index] as Map)
-                              .cast<String, dynamic>();
-                      final id = product['id'].toString();
-                      final quantity = _cart[id] ?? 0;
-                      return Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Row(
-                            children: [
-                              ProductPhoto(
-                                url: product['imageUrl']?.toString(),
-                                baseUrl: ApiClient.baseUrl,
-                                size: 88,
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      product['name'].toString(),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    if ((product['options'] as List? ?? [])
-                                        .isNotEmpty)
-                                      TextButton(
-                                        onPressed: () => _configure(id),
-                                        child: const Text('Choose options'),
-                                      ),
-                                    if ((product['description'] ?? '')
-                                        .toString()
-                                        .isNotEmpty) ...[
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        product['description'].toString(),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                    const SizedBox(height: 5),
-                                    Text(
-                                      money(
-                                        product['price'],
-                                        currency: currency,
-                                      ),
-                                      style: TextStyle(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (quantity == 0)
-                                IconButton.filledTonal(
-                                  onPressed: () => _changeQuantity(id, 1),
-                                  icon: const Icon(Icons.add_rounded),
-                                )
-                              else
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      onPressed: () => _changeQuantity(id, -1),
-                                      icon: const Icon(
-                                        Icons.remove_circle_outline,
-                                      ),
-                                    ),
-                                    Text(
-                                      '$quantity',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    IconButton(
-                                      onPressed: () => _changeQuantity(id, 1),
-                                      icon: const Icon(
-                                        Icons.add_circle_outline,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            const SliverToBoxAdapter(child: SizedBox(height: 110)),
+              ),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
         ),
       ),
-      bottomNavigationBar: _cart.isEmpty
+      bottomNavigationBar: cart.isEmpty
           ? null
           : SafeArea(
               minimum: const EdgeInsets.all(16),
               child: FilledButton(
-                onPressed: _checkout,
+                onPressed: viewCart,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   child: Row(
                     children: [
-                      CircleAvatar(
-                        radius: 14,
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .onPrimary,
-                        foregroundColor: Theme.of(context).colorScheme.primary,
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text('$count'),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
                         child: Text(
-                          '$_cartCount',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
+                          'View cart',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      const Text(
-                        'View cart',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      const Spacer(),
                       Text(
-                        money(_subtotal, currency: currency),
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+                        money(subtotal, currency: currency),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ],
                   ),
                 ),
               ),
             ),
-    );
-  }
-}
-
-class _Info extends StatelessWidget {
-  const _Info({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [Icon(icon, size: 18), const SizedBox(width: 5), Text(text)],
     );
   }
 }

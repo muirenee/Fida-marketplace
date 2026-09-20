@@ -1,3 +1,4 @@
+import { issueOrderDocuments } from './documents.js';
 import { Prisma } from '@fida/database/client';
 export async function recordCompletion(tx: Prisma.TransactionClient, orderId: string) {
  const o=await tx.order.findUniqueOrThrow({where:{id:orderId},include:{delivery:{include:{operator:true}}}});
@@ -5,4 +6,5 @@ export async function recordCompletion(tx: Prisma.TransactionClient, orderId: st
  if(o.paymentMethod !== 'CASH') entries.push({kind:'MERCHANT_PAYABLE',amount:o.subtotal.minus(o.discount).plus(o.tax).minus(o.platformCommissionAmount).plus(o.delivery?.operator?.type==='FIDA'?0:o.deliveryFee)});
  if(o.delivery?.operator?.type==='FIDA')entries.push({kind:'FIDA_DELIVERY_REVENUE',amount:o.deliveryFee});
  for(const e of entries)await tx.financeEntry.upsert({where:{reference:`${orderId}:${e.kind}`},update:{},create:{tenantId:o.tenantId,orderId,reference:`${orderId}:${e.kind}`,...e}});
+ await issueOrderDocuments(tx,orderId);
 }

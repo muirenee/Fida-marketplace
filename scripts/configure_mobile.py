@@ -13,7 +13,7 @@ tree = ET.parse(manifest)
 root = tree.getroot()
 permissions = ['android.permission.INTERNET', 'android.permission.POST_NOTIFICATIONS']
 if role == 'driver':
-    permissions += ['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION', 'android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_LOCATION']
+    permissions += ['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION', 'android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_LOCATION', 'android.permission.ACCESS_BACKGROUND_LOCATION']
 for permission in permissions:
     if not any(el.get(f'{{{android}}}name') == permission for el in root.findall('uses-permission')):
         ET.SubElement(root, 'uses-permission', {f'{{{android}}}name': permission})

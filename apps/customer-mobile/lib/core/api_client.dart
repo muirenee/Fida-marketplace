@@ -225,6 +225,7 @@ class ApiClient {
   Future<List<Map<String, dynamic>>> merchants({
     String? city,
     String? type,
+    String? search,
   }) async {
     final response = await _send(
       'GET',
@@ -232,6 +233,7 @@ class ApiClient {
       query: {
         if (city != null && city.trim().isNotEmpty) 'city': city.trim(),
         if (type != null && type.isNotEmpty) 'type': type,
+        if (search != null && search.trim().isNotEmpty) 'q': search.trim(),
       },
     );
     if (response.statusCode != 200) throw _error(response);

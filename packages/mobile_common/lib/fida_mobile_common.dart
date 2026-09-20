@@ -1,3 +1,6 @@
+export 'document_screen.dart';
+export 'delivery_map.dart';
+export 'food_ui.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -18,7 +21,7 @@ ThemeData fidaTheme() {
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    scaffoldBackgroundColor: const Color(0xFFF7F9F5),
+    scaffoldBackgroundColor: Colors.white,
     appBarTheme: const AppBarTheme(
       backgroundColor: Colors.white,
       elevation: 0,
@@ -32,7 +35,7 @@ ThemeData fidaTheme() {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: const Color(0xFFF0F4EF),
+      fillColor: const Color(0xFFF3F3F3),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,
@@ -40,8 +43,10 @@ ThemeData fidaTheme() {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        minimumSize: const Size(48, 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        backgroundColor: const Color(0xFF111111),
+        foregroundColor: Colors.white,
+        minimumSize: const Size(48, 52),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         textStyle: const TextStyle(fontWeight: FontWeight.w800),
       ),
     ),
