@@ -30,18 +30,6 @@ export async function POST(request: NextRequest) {
   }
 
   const data = JSON.parse(text) as AuthPayload;
-  const me = await fetch(`${backendBaseUrl}/v1/auth/me`, { headers: { authorization: `Bearer ${data.accessToken}` }, cache: 'no-store' });
-  const profile = await me.json() as { memberships?: unknown[] };
-  if (!me.ok || !profile.memberships?.length) {
-    await fetch(`${backendBaseUrl}/v1/auth/logout`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ refreshToken: data.refreshToken }),
-      cache: 'no-store',
-    }).catch(() => undefined);
-    return NextResponse.json({ error: 'merchant_membership_required' }, { status: 403 });
-  }
-
   const response = NextResponse.json({ user: data.user });
   response.cookies.set(accessCookieName, data.accessToken, {
     httpOnly: true,

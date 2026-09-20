@@ -332,6 +332,8 @@ class ApiClient {
     String? checkoutKey,
     String? deliveryAddress,
     String? deliveryInstructions,
+    String? cookingInstructions,
+    double? confirmedTotal,
   }) async {
     final response = await _send(
       'POST',
@@ -339,6 +341,8 @@ class ApiClient {
       authenticated: true,
       body: {
         'tenantId': tenantId,
+        if (cookingInstructions != null) 'cookingInstructions': cookingInstructions,
+        if (confirmedTotal != null) 'confirmedTotal': confirmedTotal,
         if (promoCode != null) 'promoCode': promoCode,
         if (scheduledFor != null) 'scheduledFor': scheduledFor,
         if (checkoutKey != null) 'checkoutKey': checkoutKey,

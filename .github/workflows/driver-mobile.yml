@@ -69,6 +69,10 @@ jobs:
         working-directory: apps/driver-mobile
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
+      - name: Test driver earnings history
+        working-directory: apps/driver-mobile
+        run: flutter test test/earnings_test.dart
+
       - name: Detect release signing
         id: signing
         shell: bash
@@ -100,7 +104,7 @@ jobs:
         if: steps.signing.outputs.enabled == 'true'
         working-directory: apps/driver-mobile
         run: |
-          BUILD_NUMBER=$((10000 + GITHUB_RUN_NUMBER))
+          BUILD_NUMBER=$(($(date -u +%s) - 1577836800))
           flutter build apk --release --build-number="${BUILD_NUMBER}" --dart-define=FIDA_API_BASE_URL=https://marketplaceadmin.fidalix.com --dart-define-from-file=firebase-defines.json
 
       - name: Upload signed release APK

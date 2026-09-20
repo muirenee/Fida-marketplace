@@ -27,16 +27,22 @@ export async function verifyPayment(transactionId: string) {
  return true;
 }
 export async function paymentRoutes(app: FastifyInstance) {
- app.get('/v1/payments/methods',async()=>({methods:process.env.FLUTTERWAVE_SECRET_KEY&&process.env.FLUTTERWAVE_WEBHOOK_SECRET?['CASH','MOBILE_MONEY','CARD']:['CASH']}));
+ app.get('/v1/payments/methods',async req=>{
+  const {tenantId}=req.query as {tenantId?:string};
+  const merchant=tenantId?await prisma.tenant.findFirst({where:{id:tenantId,status:'ACTIVE'},select:{paymentSubaccount:true}}):null;
+  return {methods:merchant?.paymentSubaccount&&process.env.FLUTTERWAVE_SECRET_KEY&&process.env.FLUTTERWAVE_WEBHOOK_SECRET?['CASH','MOBILE_MONEY','CARD']:['CASH']};
+ });
  app.post('/v1/customer/orders/:id/payment',{preHandler:authenticate},async(req,reply)=>{
   if(!process.env.FLUTTERWAVE_SECRET_KEY||!process.env.FLUTTERWAVE_WEBHOOK_SECRET)return reply.code(503).send({error:'payments_not_configured'});
   const {id}=req.params as {id:string};
-  const order=await prisma.order.findFirst({where:{id,customerId:req.authUser!.id},include:{tenant:{select:{currency:true}},customer:{select:{email:true,phone:true,firstName:true,lastName:true}}}});
+  const order=await prisma.order.findFirst({where:{id,customerId:req.authUser!.id},include:{tenant:{select:{currency:true,paymentSubaccount:true}},customer:{select:{email:true,phone:true,firstName:true,lastName:true}}}});
   if(!order)return reply.code(404).send({error:'order_not_found'});
   if(order.paymentMethod==='CASH'||order.paymentStatus==='PAID'||order.status!=='PENDING')return reply.code(409).send({error:'order_not_payable'});
-  const attempt=await prisma.paymentAttempt.upsert({where:{orderId:id},update:{},create:{orderId:id,customerId:req.authUser!.id,reference:`fida-${id}`,provider:'FLUTTERWAVE'}});
+  if(!order.tenant.paymentSubaccount)return reply.code(409).send({error:'merchant_payment_destination_required'});
+  const attempt=await prisma.paymentAttempt.upsert({where:{orderId:id},update:{},create:{orderId:id,customerId:req.authUser!.id,reference:`fida-${id}`,provider:'FLUTTERWAVE',settlementMode:'MERCHANT_DIRECT',destinationSubaccount:order.tenant.paymentSubaccount}});
+  if(attempt.settlementMode!=='MERCHANT_DIRECT'||!attempt.destinationSubaccount)return reply.code(409).send({error:'legacy_payment_review_required',message:'This older payment attempt needs administrator review before payment.'});
   if(attempt.checkoutUrl)return {url:attempt.checkoutUrl};
-  const data=await flutterwave('payments',{tx_ref:attempt.reference,amount:order.total.toString(),currency:order.tenant.currency,redirect_url:`${process.env.PUBLIC_BASE_URL??'https://marketplaceadmin.fidalix.com'}/v1/payments/return`,payment_options:order.paymentMethod==='CARD'?'card':'mobilemoneyrwanda',customer:{email:order.customer.email,phonenumber:order.customer.phone,name:[order.customer.firstName,order.customer.lastName].filter(Boolean).join(' ')},customizations:{title:'Fida Marketplace',description:order.orderNumber}});
+  const data=await flutterwave('payments',{subaccounts:[{id:attempt.destinationSubaccount,transaction_charge_type:'flat',transaction_charge:0}],tx_ref:attempt.reference,amount:order.total.toString(),currency:order.tenant.currency,redirect_url:`${process.env.PUBLIC_BASE_URL??'https://marketplaceadmin.fidalix.com'}/v1/payments/return`,payment_options:order.paymentMethod==='CARD'?'card':'mobilemoneyrwanda',customer:{email:order.customer.email,phonenumber:order.customer.phone,name:[order.customer.firstName,order.customer.lastName].filter(Boolean).join(' ')},customizations:{title:'Fida Marketplace',description:order.orderNumber}});
   const link=String(data.link??'');if(!link.startsWith('https://'))throw Error('Invalid checkout URL');
   await prisma.paymentAttempt.update({where:{id:attempt.id},data:{checkoutUrl:link}});return {url:link};
  });

@@ -11,6 +11,8 @@ import { requirePlatformAdmin } from '../lib/auth.js';
 
 const manageableStatuses = [
   TenantStatus.PENDING,
+  TenantStatus.PENDING_APPROVAL,
+  TenantStatus.REJECTED,
   TenantStatus.ACTIVE,
   TenantStatus.SUSPENDED,
   TenantStatus.CLOSED,
@@ -31,7 +33,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/v1/admin/overview', { preHandler: requirePlatformAdmin }, async () => {
     const [tenants, pendingTenants, users, drivers, onlineDrivers, orders] = await Promise.all([
       prisma.tenant.count(),
-      prisma.tenant.count({ where: { status: TenantStatus.PENDING } }),
+      prisma.tenant.count({ where: { status: {in:[TenantStatus.PENDING,TenantStatus.PENDING_APPROVAL]} } }),
       prisma.user.count(),
       prisma.driver.count({ where: { isActive: true } }),
       prisma.driver.count({ where: { isActive: true, isOnline: true } }),
@@ -314,6 +316,9 @@ export async function adminRoutes(app: FastifyInstance) {
     const existing = await prisma.tenant.findUnique({ where: { id: params.tenantId } });
     if (!existing) return reply.code(404).send({ error: 'tenant_not_found' });
 
+    if (await prisma.merchantApplication.findUnique({where:{tenantId:existing.id}}) && ['PENDING_APPROVAL','REJECTED'].includes(existing.status)) {
+      return reply.code(409).send({error:'application_review_required',message:'Use the merchant application review board.'});
+    }
     const status = requestedStatus as TenantStatus;
     return prisma.tenant.update({
       where: { id: params.tenantId },

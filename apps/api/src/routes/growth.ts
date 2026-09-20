@@ -41,16 +41,6 @@ export async function growthRoutes(app: FastifyInstance) {
   if(!txt(b.resolution))return reply.code(400).send({error:'resolution_required'});
   const r=await prisma.supportCase.updateMany({where:{id,tenantId:req.tenantContext!.tenantId},data:{status:'RESOLVED',resolution:txt(b.resolution)}});if(!r.count)return reply.code(404).send({error:'case_not_found'});return {resolved:true};
  });
- app.get('/v1/merchant/promotions',{preHandler:requireTenant()},async req=>prisma.promotion.findMany({where:{tenantId:req.tenantContext!.tenantId},orderBy:{expiresAt:'desc'}}));
- app.post('/v1/merchant/promotions',{preHandler:requireTenant(merchantWriteRoles)},async(req,reply)=>{
-  const b=(req.body??{})as Record<string,unknown>;const code=txt(b.code,32).toUpperCase(),percent=Number(b.percent),maxUses=Number(b.maxUses),maxDiscount=Number(b.maxDiscount),minimumOrder=Number(b.minimumOrder??0),expiresAt=new Date(String(b.expiresAt));
-  if(!/^[A-Z0-9_-]{3,32}$/.test(code)||!Number.isInteger(percent)||percent<1||percent>100||!Number.isInteger(maxUses)||maxUses<1||maxUses>100000||!Number.isFinite(maxDiscount)||maxDiscount<=0||maxDiscount>100000000||!Number.isFinite(minimumOrder)||minimumOrder<0||!Number.isFinite(expiresAt.getTime())||expiresAt<=new Date())return reply.code(400).send({error:'invalid_promotion'});
-  return prisma.promotion.create({data:{tenantId:req.tenantContext!.tenantId,code,percent,maxUses,maxDiscount,minimumOrder,expiresAt}});
- });
- app.patch('/v1/merchant/promotions/:id',{preHandler:requireTenant(merchantWriteRoles)},async(req,reply)=>{
-  const {id}=req.params as {id:string};const b=(req.body??{})as Record<string,unknown>;if(typeof b.isActive!=='boolean')return reply.code(400).send({error:'invalid_status'});
-  const r=await prisma.promotion.updateMany({where:{id,tenantId:req.tenantContext!.tenantId},data:{isActive:b.isActive}});if(!r.count)return reply.code(404).send({error:'not_found'});return {updated:true};
- });
  app.get('/v1/merchant/finance',{preHandler:requireTenant(['OWNER','ADMIN'])},async req=>prisma.financeEntry.findMany({where:{tenantId:req.tenantContext!.tenantId},orderBy:{createdAt:'desc'},take:500}));
  app.post('/v1/admin/finance/remittances',{preHandler:requirePlatformAdmin},async(req,reply)=>{
   const b=(req.body??{})as Record<string,unknown>;const amount=Number(b.amount),tenantId=txt(b.tenantId),reference=txt(b.reference,120);

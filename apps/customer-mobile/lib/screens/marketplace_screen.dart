@@ -214,7 +214,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      '${promos.first['percent']}% off · ${promos.first['code']}',
+                      promotionDescription(promos.first as Map, m['currency']?.toString() ?? 'RWF'),
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,

@@ -25,6 +25,7 @@ class _CatalogPageState extends State<CatalogPage> {
   String? error;
   bool showCategories = false;
   String search = '';
+  bool get canStock => canEdit || widget.role == 'KITCHEN_CREW';
   bool get canEdit => ['OWNER', 'ADMIN', 'MANAGER'].contains(widget.role);
   @override
   void initState() {
@@ -605,6 +606,9 @@ class _CatalogPageState extends State<CatalogPage> {
                         ),
                       ],
                     ),
+                    if (!canEdit && canStock && !showCategories)
+                      SwitchListTile(title: const Text('In stock'), value: row['isAvailable'] == true,
+                        onChanged: busy ? null : (value) => mutate('products', {...row, 'id': '${row['id']}/stock'}, 'PATCH', {'isAvailable': value})),
                     if (canEdit) ...[
                       const Divider(height: 24),
                       Wrap(

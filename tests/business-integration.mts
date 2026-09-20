@@ -39,6 +39,13 @@ const request=async(method:string,url:string,user=owner,payload?:unknown,expecte
 const checkout={tenantId:tenant.id,branchId:branch.id,paymentMethod:'CASH',fulfillmentType:'DELIVERY',deliveryAddress:'Kigali test address',deliveryLatitude:-1.951,deliveryLongitude:30.051,items:[{productId:product.id,quantity:1,options:['Avocado']}]};
 let driver:any,driverUser:any,order:any;
 try {
+ await test('cent allocation never creates negative item totals',async()=>{
+  const {allocateDiscount}=await import('../apps/api/src/lib/checkout.js');
+  const {Prisma}=await import('../packages/database/src/client.js');
+  const parts=allocateDiscount(new Prisma.Decimal('0.02'),Array.from({length:5},()=>new Prisma.Decimal('0.01')));
+  assert.equal(parts.reduce((s,v)=>s.plus(v),new Prisma.Decimal(0)).toString(),'0.02');
+  assert.ok(parts.every(v=>v.gte(0)&&v.lte('0.01')));
+ });
  await test('public marketplace lists merchants and opens their catalog with active delivery zones',async()=>{
   await prisma.deliveryZone.create({data:{branchId:branch.id,minDistanceKm:10,maxDistanceKm:20,fee:900,isActive:false}});
   const listed=await app.inject({method:'GET',url:'/v1/marketplace/merchants'});
@@ -154,6 +161,7 @@ try {
   const refundedReceipt=await request('GET',`/v1/customer/orders/${order.id}/receipt`,customer);assert.equal(refundedReceipt.creditNotes.length,1);assert.equal(Number(refundedReceipt.creditNotes[0].payload.total),-Number(order.total));
  });
  await test('payment verification rejects tampering and duplicate notifications do not double book',async()=>{
+  await prisma.tenant.update({where:{id:tenant.id},data:{paymentSubaccount:'RS_TESTMERCHANT123'}});
   process.env.FLUTTERWAVE_SECRET_KEY='test-key';process.env.FLUTTERWAVE_WEBHOOK_SECRET='test-webhook-secret';
   const paid=await request('POST','/v1/customer/orders',customer,{...checkout,paymentMethod:'CARD'},201);
   await prisma.paymentAttempt.create({data:{orderId:paid.id,customerId:customer.id,reference:`fida-${paid.id}`,provider:'FLUTTERWAVE'}});
@@ -171,6 +179,92 @@ try {
    assert.equal(await prisma.financeEntry.count({where:{orderId:paid.id,kind:'ONLINE_PAYMENT'}}),1);
   }finally{globalThis.fetch=original;}
  });
+ await test('staged merchant applications stay hidden until audited approval',async()=>{
+  const application=await request('POST','/v1/merchant/applications',outsider,{},201);
+  await request('PATCH',`/v1/merchant/applications/${application.id}`,owner,{stage:0,data:{legalName:'Other company',taxId:'123456789'}},404);
+  const data={legalName:'New Store Ltd',taxId:'123456789',name:'Approved Store',slug:'approved-store',merchantType:'RESTAURANT',timezone:'Africa/Kigali',cuisineTags:['Local'],logoUrl:'https://images.example.test/logo.png',coverUrl:'https://images.example.test/cover.png',addressLine:'KK 31 Avenue',city:'Kigali',latitude:-1.95,longitude:30.05,openingHours:Array.from({length:7},()=>[{open:'08:00',close:'12:00'},{open:'14:00',close:'21:00'}])};
+  await request('PATCH',`/v1/merchant/applications/${application.id}`,outsider,{stage:3,data},409);
+  for(let stage=0;stage<4;stage++)await request('PATCH',`/v1/merchant/applications/${application.id}`,outsider,{stage,data});
+  const submitted=await request('POST',`/v1/merchant/applications/${application.id}/submit`,outsider,{});
+  assert.equal((await prisma.tenant.findUniqueOrThrow({where:{id:submitted.tenantId}})).status,'PENDING_APPROVAL');
+  const access=app.jwt.sign({sub:outsider.id,type:'access'});
+  const blocked=await app.inject({method:'GET',url:'/v1/merchant/orders',headers:{authorization:`Bearer ${access}`,'x-tenant-id':submitted.tenantId}});assert.equal(blocked.statusCode,403);
+  await request('GET','/v1/marketplace/merchants/approved-store',customer,undefined,404);
+  await request('POST',`/v1/admin/merchant-applications/${application.id}/review`,owner,{action:'APPROVE',reason:'Checked'},403);
+  await request('POST',`/v1/admin/merchant-applications/${application.id}/review`,admin,{action:'REJECT',reason:'Correct your registration details'});
+  await request('POST',`/v1/merchant/applications/${application.id}/reopen`,owner,{},409);
+  await request('POST',`/v1/merchant/applications/${application.id}/reopen`,outsider,{});
+  for(let stage=0;stage<4;stage++)await request('PATCH',`/v1/merchant/applications/${application.id}`,outsider,{stage,data:{...data,legalName:'Corrected Store Ltd'}});
+  const resubmitted=await request('POST',`/v1/merchant/applications/${application.id}/submit`,outsider,{});
+  assert.equal(resubmitted.tenantId,submitted.tenantId);
+  assert.equal(await prisma.tenant.count({where:{slug:'approved-store'}}),1);
+  await request('POST',`/v1/admin/merchant-applications/${application.id}/review`,admin,{action:'APPROVE',reason:'Registration and location verified'});
+  await request('POST',`/v1/admin/merchant-applications/${application.id}/review`,admin,{action:'REJECT',reason:'Second review'},409);
+  const enabled=await app.inject({method:'GET',url:'/v1/merchant/orders',headers:{authorization:`Bearer ${access}`,'x-tenant-id':submitted.tenantId}});assert.equal(enabled.statusCode,200);
+  await request('GET','/v1/marketplace/merchants/approved-store',customer);
+ });
+ await test('kitchen staff are tenant scoped, stock-only, financially masked and immediately revocable',async()=>{
+  const membership=await request('POST','/v1/merchant/staff',owner,{email:'kitchen@example.test',password:'Kitchen-password-123',role:'KITCHEN_CREW',firstName:'Kitchen',branchId:branch.id},201);
+  const kitchen=await prisma.user.findUniqueOrThrow({where:{id:membership.user.id}});
+  const queue=await request('GET','/v1/merchant/orders',kitchen);
+  assert.ok(queue.length>0);
+  for(const field of ['platformCommissionAmount','estimatedPayout','paymentStatus','settledPayout','totalPrice'])assert.equal(JSON.stringify(queue).includes(`"${field}"`),false);
+  for(const route of ['finance','statement','driver-pay','documents','staff','driver-settlements','promotions'])await request('GET',`/v1/merchant/${route}`,kitchen,undefined,403);
+  await request('PATCH',`/v1/merchant/products/${product.id}/stock`,kitchen,{isAvailable:false});
+  await request('PATCH',`/v1/merchant/products/${product.id}/stock`,kitchen,{isAvailable:true,price:1},400);
+  await request('PATCH',`/v1/merchant/products/${otherProduct.id}/stock`,kitchen,{isAvailable:true},404);
+  await request('PATCH',`/v1/merchant/products/${product.id}`,kitchen,{price:1},403);
+  await request('PATCH',`/v1/merchant/products/${product.id}/stock`,owner,{isAvailable:true});
+  await request('PATCH',`/v1/merchant/staff/${membership.id}`,owner,{isActive:false});
+  await request('GET','/v1/merchant/orders',kitchen,undefined,403);
+ });
+ await test('item promotions, cart minimum, localized tax, notes and confirmed total use one pricing engine',async()=>{
+  await request('PATCH','/v1/merchant/settings',owner,{taxPercent:18,taxLabel:'VAT'});
+  const item=await request('POST','/v1/merchant/products',owner,{name:'Promo meal',price:1000,categoryId:category.id},201);
+  const promo={code:'ITEM100',discountType:'FLAT',flatAmount:100,productId:item.id,maxDiscount:1000,minimumOrder:0,maxUses:50,expiresAt:new Date(Date.now()+86400000).toISOString(),stackable:true};
+  await request('POST','/v1/merchant/promotions',owner,{...promo,productId:otherProduct.id},400);
+  await request('POST','/v1/merchant/promotions',owner,promo,201);
+  await request('POST','/v1/merchant/promotions',owner,{...promo,code:'CART10',productId:null,discountType:'PERCENT',percent:10,minimumOrder:1500},201);
+  const payload={...checkout,items:[{productId:item.id,quantity:2}],promoCode:'CART10',cooking_instructions:'No chilli please'};
+  const totals=await request('POST','/v1/customer/checkout-preview',customer,payload);
+  assert.equal(Number(totals.itemDiscount),200);assert.equal(Number(totals.cartDiscount),180);assert.equal(Number(totals.tax),291.6);assert.equal(Number(totals.total),2411.6);
+  await request('POST','/v1/customer/orders',customer,{...payload,confirmedTotal:2400},409);
+  const placed=await request('POST','/v1/customer/orders',customer,{...payload,confirmedTotal:2411.6},201);
+  assert.equal(placed.cookingInstructions,'No chilli please');assert.equal(Number(placed.items[0].tax),291.6);
+  await request('POST','/v1/customer/checkout-preview',customer,{...payload,items:[{productId:item.id,quantity:1}]},409);
+  await request('PATCH','/v1/admin/promotion-policy',admin,{maxPercent:40,maxDiscount:5000,allowStacking:false});
+  await request('POST','/v1/customer/checkout-preview',customer,payload,409);
+  await request('PATCH','/v1/admin/promotion-policy',admin,{maxPercent:100,maxDiscount:100000000,allowStacking:true});
+ });
+ await test('driver settlement records use actual operator payments, never current rates as history',async()=>{
+  const delivery=await prisma.delivery.findUniqueOrThrow({where:{orderId:order.id}});
+  await prisma.delivery.update({where:{id:delivery.id},data:{estimatedPayout:null}});
+  await request('POST',`/v1/merchant/driver-settlements/${delivery.id}`,outsider,{amount:1200,reference:'payment-proof-1'},403);
+  await request('POST',`/v1/merchant/driver-settlements/${delivery.id}`,owner,{amount:1200,reference:'payment-proof-1'});
+  const earnings=await request('GET','/v1/driver/earnings',driverUser);const record=earnings.find((r:any)=>r.id===delivery.id);
+  assert.equal(record.estimatedPayout,null);assert.equal(Number(record.settledPayout),1200);
+  await request('POST',`/v1/merchant/driver-settlements/${delivery.id}`,owner,{amount:900,reference:'payment-proof-2'},409);
+ });
+
+ await test('online checkout routes to the merchant with no upfront platform commission',async()=>{
+  process.env.FLUTTERWAVE_SECRET_KEY='test-only';process.env.FLUTTERWAVE_WEBHOOK_SECRET='test-webhook';
+  const originalFetch=globalThis.fetch;let payload:any;
+  globalThis.fetch=async(_input,options)=>{payload=JSON.parse(String(options?.body));return new Response(JSON.stringify({status:'success',data:{link:'https://checkout.example.test/pay'}}),{status:200});};
+  try {
+   await request('PATCH',`/v1/admin/business/tenants/${tenant.id}/payment-routing`,owner,{paymentSubaccount:'RS_WRONG'},403);
+   await request('PATCH',`/v1/admin/business/tenants/${tenant.id}/payment-routing`,admin,{paymentSubaccount:'RS_TESTMERCHANT123'});
+   const placed=await request('POST','/v1/customer/orders',customer,{...checkout,fulfillmentType:'PICKUP',paymentMethod:'CARD'},201);
+   await request('POST',`/v1/customer/orders/${placed.id}/payment`,customer,{});
+   assert.deepEqual(payload.subaccounts,[{id:'RS_TESTMERCHANT123',transaction_charge_type:'flat',transaction_charge:0}]);
+   await prisma.order.update({where:{id:placed.id},data:{paymentStatus:'PAID'}});
+   for(const status of ['ACCEPTED','PREPARING','READY_FOR_PICKUP','COMPLETED'])await request('PATCH',`/v1/merchant/orders/${placed.id}/status`,owner,{status});
+   assert.equal(await prisma.financeEntry.count({where:{orderId:placed.id,kind:'MERCHANT_PAYABLE'}}),0);
+   assert.equal(await prisma.businessDocument.count({where:{orderId:placed.id,kind:'COMMISSION_INVOICE'}}),1);
+   await request('GET','/v1/admin/business/commission-balances',owner,undefined,403);
+   const balances=await request('GET','/v1/admin/business/commission-balances',admin);assert.ok(Number(balances.find((t:any)=>t.id===tenant.id).outstanding)>0);
+  }finally{globalThis.fetch=originalFetch;}
+ });
+
 } finally {
  await app.close();await prisma.$disconnect();await socket.stop();await db.close();
 }

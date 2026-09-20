@@ -26,7 +26,7 @@ export function startNotificationWorker(app: FastifyInstance) {
           if (!order) { await prisma.notificationEvent.update({ where: { id: event.id }, data: { sentAt: new Date() } }); continue; }
           const recipients: { userId: string | { in: string[] }; app: string }[] = [
             { userId: order.customerId, app: 'customer' },
-            { userId: { in: order.tenant.memberships.map(m => m.userId) }, app: 'merchant' },
+            { userId: { in: order.tenant.memberships.filter(m => m.isActive && (!m.branchId || m.branchId === order.branchId)).map(m => m.userId) }, app: 'merchant' },
           ];
           if (order.delivery?.driver) recipients.push({ userId: order.delivery.driver.userId, app: 'driver' });
           if (event.status === 'READY_FOR_PICKUP' && order.fulfillmentType === 'DELIVERY') {

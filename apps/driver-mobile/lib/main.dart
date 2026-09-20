@@ -1,3 +1,4 @@
+import 'earnings_sheet.dart';
 import 'package:fida_mobile_common/fida_mobile_common.dart';
 
 import 'dart:async';
@@ -682,39 +683,8 @@ class _DriverHomeState extends State<_DriverHome> with WidgetsBindingObserver {
                 await showModalBottomSheet<void>(
                   context: context,
                   isScrollControlled: true,
-                  builder: (c) => SafeArea(
-                    child: ListView(
-                      shrinkWrap: true,
-                      padding: const EdgeInsets.all(24),
-                      children: [
-                        const Text(
-                          'Delivery earnings',
-                          style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const Text(
-                          'Agreed estimates for completed deliveries. Settlement is handled by your delivery operator.',
-                        ),
-                        if (rows.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.all(24),
-                            child: Text('No completed deliveries yet.'),
-                          ),
-                        for (final r in rows)
-                          ListTile(
-                            title: Text(r['order']['orderNumber'].toString()),
-                            subtitle: Text(r['deliveredAt'].toString()),
-                            trailing: Text(
-                              r['estimatedPayout'] == null
-                                  ? 'Not configured'
-                                  : '${r['estimatedPayout']} ${r['payoutCurrency'] ?? 'RWF'}',
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                  useSafeArea: true,
+                  builder: (c) => EarningsSheet(rows: rows),
                 );
               } catch (e) {
                 if (context.mounted)

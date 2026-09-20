@@ -122,3 +122,8 @@ class SectionHeading extends StatelessWidget {
     ),
   );
 }
+
+String promotionDescription(Map promo, String currency) {
+  final value = promo['discountType'] == 'FLAT' ? '${promo['flatAmount']} $currency' : '${promo['percent']}%';
+  return promo['productId'] == null ? '$value off · Use ${promo['code']}' : '$value off selected item · Applied at checkout';
+}

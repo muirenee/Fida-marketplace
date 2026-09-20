@@ -1,8 +1,10 @@
 # Fida Marketplace Roadmap
 
-Updated: 19 September 2026
+Updated: 20 September 2026
 
 ## Candidate implementation status
+
+0.8 adds approval-gated onboarding, kitchen RBAC, taxes/item promotions, cooking notes, direct merchant payment routing, actual driver payment records and layout repairs. See [0.8 source and deployment](RELEASE-0.8.md) and [automated evidence audit](ROADMAP-AUDIT-0.8.json). The prioritized acceptance checklist in 0.8 supersedes the historical next-implementation sequence below.
 
 The 0.6 candidate is deployed and the user confirmed the merchant-list and portal-save fixes work. The 0.7 source adds the customer UI redesign, grouped required modifiers, multiple configurations per cart, embedded live map, background location permission flow, configured driver pay estimates, commercial receipts/commission invoices and portal controls. See [0.7 handoff](RELEASE-0.7.md) for exact scope, deployment and limitations. Milestone checkboxes below remain historical until physical-device and external-provider acceptance is complete.
 

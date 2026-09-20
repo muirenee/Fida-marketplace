@@ -101,6 +101,12 @@ export async function businessOperationsRoutes(app:FastifyInstance){
    return tx.financeEntry.create({data:{tenantId,kind:'MERCHANT_PAYOUT',amount,reference:`payout:${reference}`,note:input(b.note),actorId:req.authUser!.id}});
   });
  });
+ app.get('/v1/admin/business/payment-routing',{preHandler:requirePlatformAdmin},async()=>prisma.tenant.findMany({select:{id:true,name:true,paymentSubaccount:true},orderBy:{name:'asc'}}));
+ app.patch('/v1/admin/business/tenants/:id/payment-routing',{preHandler:requirePlatformAdmin},async(req,reply)=>{
+  const {id}=req.params as {id:string};const {paymentSubaccount}=(req.body??{}) as {paymentSubaccount:unknown};
+  if(paymentSubaccount!==null&&(typeof paymentSubaccount!=='string'||!/^RS_[A-Za-z0-9]{5,100}$/.test(paymentSubaccount)))return reply.code(400).send({error:'invalid_subaccount'});
+  return prisma.tenant.update({where:{id},data:{paymentSubaccount},select:{id:true,name:true,paymentSubaccount:true}});
+ });
  app.patch('/v1/admin/business/tenants/:id/tax',{preHandler:requirePlatformAdmin},async(req,reply)=>{
   const {id}=req.params as {id:string};const b=(req.body??{})as Record<string,unknown>,taxPercent=Number(b.taxPercent);
   if(!Number.isFinite(taxPercent)||taxPercent<0||taxPercent>100)return reply.code(400).send({error:'invalid_tax_rate'});

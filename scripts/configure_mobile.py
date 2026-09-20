@@ -12,6 +12,8 @@ manifest = app / 'android/app/src/main/AndroidManifest.xml'
 tree = ET.parse(manifest)
 root = tree.getroot()
 permissions = ['android.permission.INTERNET', 'android.permission.POST_NOTIFICATIONS']
+if role in ('customer', 'merchant'):
+    permissions += ['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION']
 if role == 'driver':
     permissions += ['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION', 'android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_LOCATION', 'android.permission.ACCESS_BACKGROUND_LOCATION']
 for permission in permissions:
@@ -20,6 +22,10 @@ for permission in permissions:
 application = root.find('application')
 application.set(f'{{{android}}}label', 'Fida Marketplace' if role == 'customer' else f'Fida {role.title()}')
 application.set(f'{{{android}}}icon', '@drawable/fida_icon')
+# Keep repeated local builds idempotent.
+for entry in list(application.findall('meta-data')):
+    if entry.get(f'{{{android}}}name', '').startswith('com.google.firebase.messaging.default_notification_'):
+        application.remove(entry)
 ET.SubElement(application, 'meta-data', {f'{{{android}}}name': 'com.google.firebase.messaging.default_notification_channel_id', f'{{{android}}}value': 'fida_orders'})
 ET.SubElement(application, 'meta-data', {f'{{{android}}}name': 'com.google.firebase.messaging.default_notification_icon', f'{{{android}}}resource': '@drawable/fida_notification'})
 tree.write(manifest, encoding='unicode')

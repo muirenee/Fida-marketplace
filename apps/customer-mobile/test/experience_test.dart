@@ -13,6 +13,7 @@ import 'package:customer_mobile/screens/marketplace_screen.dart';
 import 'package:customer_mobile/screens/product_screen.dart';
 import 'package:customer_mobile/screens/cart_screen.dart';
 import 'package:customer_mobile/screens/merchant_screen.dart';
+import 'package:customer_mobile/screens/checkout_screen.dart';
 
 final product = <String, dynamic>{
   'id': 'p',
@@ -79,7 +80,10 @@ ApiClient api() => ApiClient(
   client: MockClient(
     (r) async => http.Response(
       jsonEncode(
-        r.url.path.endsWith('/merchants')
+        r.url.path.endsWith('/addresses') ? []
+            : r.url.path.endsWith('/methods') ? {'methods':['CASH']}
+            : r.url.path.endsWith('/checkout-preview') ? {'subtotal':2500,'deliveryFee':0,'itemDiscount':100,'cartDiscount':240,'tax':388.8,'taxLabel':'VAT','taxPercent':18,'total':2548.8}
+            : r.url.path.endsWith('/merchants')
             ? [merchant]
             : r.url.path.endsWith('/favorites')
             ? []
@@ -117,6 +121,7 @@ Future<void> mount(
       home: MediaQuery(
         data: MediaQueryData(
           size: const Size(390, 844),
+          padding: const EdgeInsets.only(top:32,bottom:24),
           textScaler: TextScaler.linear(scale),
         ),
         child: RepaintBoundary(key: key, child: child),
@@ -234,7 +239,21 @@ void main() {
     expect(find.text('Kigali Kitchen'), findsWidgets);
     expect(find.text('Delivery'), findsOneWidget);
     expect(tester.takeException(), isNull);
+    expect(tester.getTopLeft(find.byType(CustomScrollView)).dy, greaterThanOrEqualTo(32));
     await capture(tester, key, 'customer-store');
     client.close();
   });
+  testWidgets('checkout shows itemized server totals without clipping at enlarged text size', (tester) async {
+    final client=api(), key=GlobalKey();
+    await mount(tester, CheckoutScreen(api:client,merchant:merchant,cart:{'p':1},products:{'p':product},initialFulfillment:'PICKUP',orderNote:'No salt'), key,scale:1.3);
+    await tester.scrollUntilVisible(find.text('Total'),300,scrollable:find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    expect(find.text('VAT (18%)'),findsOneWidget);
+    expect(find.text('Item discounts'),findsOneWidget);
+    expect(find.text('Promo discount'),findsOneWidget);
+    expect(tester.takeException(),isNull);
+    await capture(tester,key,'customer-checkout');
+    client.close();
+  });
+
 }

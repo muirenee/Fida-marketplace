@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:fida_mobile_common/fida_mobile_common.dart';
@@ -50,6 +51,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _locating = false;
   bool _quoteLoading = false;
   String? _error;
+  Map<String, dynamic>? _totals;
+  String? _totalsError;
+  bool _totalsLoading = false;
+  int _totalsRequest = 0;
+  Timer? _promoTimer;
   double? _latitude;
   double? _longitude;
   double? _deliveryPrice;
@@ -70,12 +76,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     super.initState();
     _fulfillment = widget.initialFulfillment;
     if (!_deliveryEnabled && _pickupEnabled) _fulfillment = 'PICKUP';
+    _promo.addListener(() {
+      _promoTimer?.cancel();
+      _totalsRequest++;
+      setState(() => _totals = null);
+      _promoTimer = Timer(const Duration(milliseconds: 400), _refreshTotals);
+    });
     _loadAddresses();
     _loadPaymentMethods();
   }
 
   @override
   void dispose() {
+    _promoTimer?.cancel();
     _promo.dispose();
     _addressLine.dispose();
     _city.dispose();
@@ -91,12 +104,36 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return value;
   }
 
-  double get _estimatedTotal =>
-      _subtotal + (_isDelivery ? (_deliveryPrice ?? 0) : 0);
+  Future<void> _refreshTotals() async {
+    final generation = ++_totalsRequest;
+    if (_branch == null || (_isDelivery && _deliveryPrice == null)) {
+      if (mounted) setState(() { _totals = null; _totalsLoading = false; });
+      return;
+    }
+    setState(() { _totalsLoading = true; _totalsError = null; _totals = null; });
+    try {
+      final result = await widget.api.request('POST', '/v1/customer/checkout-preview', body: {
+        'tenantId': widget.merchant['id'], 'branchId': _branch!['id'],
+        'fulfillmentType': _fulfillment, 'promoCode': _promo.text.trim(),
+        if (!_newAddress) 'addressId': _addressId,
+        if (_newAddress) 'latitude': _latitude,
+        if (_newAddress) 'longitude': _longitude,
+        'items': widget.cart.entries.map((e) => {
+          'productId': widget.products[e.key]?['productId'] ?? e.key,
+          'quantity': e.value, 'options': widget.products[e.key]?['selectedOptions'] ?? [],
+        }).toList(),
+      });
+      if (mounted && generation == _totalsRequest) setState(() => _totals = Map<String, dynamic>.from(result));
+    } catch (e) {
+      if (mounted && generation == _totalsRequest) setState(() => _totalsError = e.toString());
+    } finally {
+      if (mounted && generation == _totalsRequest) setState(() => _totalsLoading = false);
+    }
+  }
 
   Future<void> _loadPaymentMethods() async {
     try {
-      final result = await widget.api.request('GET', '/v1/payments/methods');
+      final result = await widget.api.request('GET', '/v1/payments/methods?tenantId=${widget.merchant['id']}');
       if (mounted)
         setState(
           () => _paymentMethods = (result['methods'] as List).cast<String>(),
@@ -147,6 +184,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _newAddress = rows.isEmpty;
       });
       if (_isDelivery && selected != null) await _refreshQuote();
+      if (!_isDelivery) await _refreshTotals();
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } finally {
@@ -166,11 +204,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     });
     if (value == 'DELIVERY') await _refreshQuote();
+    else await _refreshTotals();
   }
 
   Future<void> _refreshQuote() async {
     if (!_isDelivery || _branch == null) return;
     setState(() {
+      _totalsRequest++;
+      _totals = null;
       _quoteLoading = true;
       _error = null;
       _deliveryPrice = null;
@@ -201,7 +242,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } finally {
-      if (mounted) setState(() => _quoteLoading = false);
+      if (mounted) { setState(() => _quoteLoading = false); await _refreshTotals(); }
     }
   }
 
@@ -382,8 +423,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         checkoutKey: _checkoutKey,
         fulfillmentType: _fulfillment,
         addressId: addressId,
+        confirmedTotal: asDouble(totals['total']),
+        cookingInstructions: widget.orderNote,
         deliveryInstructions: [
-          if (widget.orderNote.isNotEmpty) widget.orderNote,
           if (_isDelivery && _instructions.text.trim().isNotEmpty)
             _instructions.text.trim(),
         ].join(' '),
@@ -728,11 +770,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     ),
                   ),
                 const Divider(),
-                _PriceLine(
-                  label: 'Estimated total before discounts/tax',
-                  value: money(_estimatedTotal, currency: currency),
-                  strong: true,
-                ),
+                _PriceLine(label: 'Subtotal', value: money(_totals?['subtotal'] ?? _subtotal, currency: currency)),
+                _PriceLine(label: 'Delivery', value: _isDelivery && _deliveryPrice == null ? 'Choose address' : money(_totals?['deliveryFee'] ?? (_isDelivery ? _deliveryPrice : 0), currency: currency)),
+                if (_totalsLoading) const LinearProgressIndicator(),
+                if (_totalsError != null) Text(_totalsError!, style: const TextStyle(color: Colors.red)),
+                if (_totals != null) ...[
+                  _PriceLine(label: 'Item discounts', value: '- ${money(_totals!['itemDiscount'], currency: currency)}'),
+                  _PriceLine(label: 'Promo discount', value: '- ${money(_totals!['cartDiscount'], currency: currency)}'),
+                  _PriceLine(label: '${_totals!['taxLabel']} (${_totals!['taxPercent']}%)', value: money(_totals!['tax'], currency: currency)),
+                  const Divider(),
+                  _PriceLine(label: 'Total', value: money(_totals!['total'], currency: currency), strong: true),
+                ] else if (!_totalsLoading) const Text('Choose a delivery location or pickup to calculate discounts and tax.'),
                 if (_isDelivery && _deliveryPrice != null) ...[
                   const SizedBox(height: 5),
                   Text(
@@ -770,7 +818,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             child: Text(
               _isDelivery && _deliveryPrice == null
                   ? 'Choose delivery location'
-                  : 'Place order · ${money(_estimatedTotal, currency: currency)}',
+                  : 'Review order',
             ),
           ),
         ),
@@ -856,8 +904,9 @@ class _PriceLine extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: style),
-          Text(value, style: style),
+          Expanded(child: Text(label, style: style)),
+          const SizedBox(width: 16),
+          Flexible(child: Text(value, style: style, textAlign: TextAlign.right)),
         ],
       ),
     );

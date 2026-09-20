@@ -209,7 +209,7 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.get('/v1/auth/me', { preHandler: authenticate }, async (request) => {
     const memberships = await prisma.tenantMembership.findMany({
-      where: { userId: request.authUser!.id },
+      where: { userId: request.authUser!.id, isActive: true },
       select: {
         role: true,
         branchId: true,

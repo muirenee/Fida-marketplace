@@ -159,7 +159,9 @@ class _MerchantScreenState extends State<MerchantScreen> {
         );
     final promos = m['promotions'] as List? ?? [];
     return Scaffold(
-      body: RefreshIndicator(
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
         onRefresh: load,
         child: CustomScrollView(
           slivers: [
@@ -234,6 +236,8 @@ class _MerchantScreenState extends State<MerchantScreen> {
               ),
             ),
             SliverToBoxAdapter(
+              child: Transform.translate(
+              offset: const Offset(0, -24),
               child: Container(
                 padding: const EdgeInsets.all(20),
                 decoration: const BoxDecoration(
@@ -392,7 +396,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                '${promo['percent']}% off · Use ${promo['code']}\nMin ${money(promo['minimumOrder'], currency: currency)} · Max ${money(promo['maxDiscount'], currency: currency)}',
+                                '${promotionDescription(promo, currency)}\nMin ${money(promo['minimumOrder'], currency: currency)} · Max ${money(promo['maxDiscount'], currency: currency)}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -435,6 +439,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
                     ),
                   ],
                 ),
+              ),
               ),
             ),
             if (query.isEmpty && category == null && categories.isNotEmpty)
@@ -631,6 +636,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
         ),
+      ),
       ),
       bottomNavigationBar: cart.isEmpty
           ? null

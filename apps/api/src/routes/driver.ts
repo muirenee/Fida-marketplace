@@ -104,7 +104,7 @@ export async function driverRoutes(app: FastifyInstance) {
 
   app.get('/v1/driver/earnings',async(request,reply)=>{
     const driver=await requireDriver(request,reply);if(!driver)return;
-    return prisma.delivery.findMany({where:{driverId:driver.id,status:'DELIVERED'},select:{id:true,estimatedPayout:true,payoutCurrency:true,deliveredAt:true,order:{select:{orderNumber:true}}},orderBy:{deliveredAt:'desc'},take:100});
+    return prisma.delivery.findMany({where:{driverId:driver.id,status:'DELIVERED'},select:{id:true,estimatedPayout:true,payoutCurrency:true,settledPayout:true,settlementReference:true,settledAt:true,deliveredAt:true,order:{select:{orderNumber:true,deliveryFee:true,tenant:{select:{currency:true}}}}},orderBy:{deliveredAt:'desc'},take:100});
   });
   app.get('/v1/driver/profile', async (request, reply) => {
     const driver = await requireDriver(request, reply);

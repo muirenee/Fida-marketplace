@@ -45,10 +45,6 @@ export async function GET(request: NextRequest) {
   }
 
   const payload = (await upstream.json()) as { memberships?: unknown[] };
-  if (!payload.memberships?.length) {
-    return NextResponse.json({ error: 'merchant_membership_required' }, { status: 403 });
-  }
-
   const response = NextResponse.json(payload);
   if (refreshed) {
     response.cookies.set(accessCookieName, refreshed.accessToken, {

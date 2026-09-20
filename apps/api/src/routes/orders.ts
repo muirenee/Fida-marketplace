@@ -48,17 +48,18 @@ export async function orderRoutes(app: FastifyInstance) {
     if(!quantities||!tenantId)return reply.code(400).send({error:'invalid_items'});
     const products=await prisma.product.findMany({where:{id:{in:quantities.ids},tenantId,isActive:true,isAvailable:true,deletedAt:null,OR:[{categoryId:null},{category:{isActive:true,deletedAt:null}}]}});
     if(products.length!==quantities.ids.length)return reply.code(409).send({error:'product_unavailable'});
-    const subtotal=quantities.lines.reduce((sum,line)=>sum.plus(selectedOptions(products.find(p=>p.id===line.productId)!,line.options).price.mul(line.quantity)),new Prisma.Decimal(0));
+    const pricedLines=quantities.lines.map(line=>{const product=products.find(p=>p.id===line.productId)!;const configured=selectedOptions(product,line.options);return {productId:product.id,productName:configured.name,quantity:line.quantity,unitPrice:configured.price,basePrice:product.price};});
     const branch=await prisma.branch.findFirst({where:{id:String(b.branchId??''),tenantId,isActive:true}});
     if(!branch)return reply.code(404).send({error:'branch_not_found'});
     let fee=new Prisma.Decimal(0);
     if(b.fulfillmentType==='DELIVERY'){
       const address=await prisma.customerAddress.findFirst({where:{id:String(b.addressId??''),userId:request.authUser!.id}});
-      const lat=address?.latitude??b.latitude,lon=address?.longitude??b.longitude;
+      const lat=address?.latitude??b.latitude??b.deliveryLatitude,lon=address?.longitude??b.longitude??b.deliveryLongitude;
       if(lat===null||lat===undefined||lon===null||lon===undefined||!validCoordinate(Number(lat),Number(lon)))return reply.code(400).send({error:'location_required'});
       const quote=await quoteBranchDelivery(branch.id,Number(lat),Number(lon));if(!quote)return reply.code(409).send({error:'outside_delivery_area'});fee=quote.fee;
     }
-    return checkoutTotals(tenantId,subtotal,fee,typeof b.promoCode==='string'?b.promoCode.trim():null);
+    const {usedPromotions,commissionPercent,...totals}=await checkoutTotals(tenantId,pricedLines,fee,typeof b.promoCode==='string'?b.promoCode.trim():null);
+    return totals;
   });
 
   app.get('/v1/customer/delivery-quote', { preHandler: authenticate }, async (request, reply) => {
@@ -145,6 +146,7 @@ export async function orderRoutes(app: FastifyInstance) {
         platformCommissionPercent: true,
         timezone: true,
         taxPercent: true,
+        paymentSubaccount: true,
       },
     });
 
@@ -177,6 +179,7 @@ export async function orderRoutes(app: FastifyInstance) {
     if (!branchIsOpen(branch, tenant.timezone, scheduledFor ?? new Date())) return reply.code(409).send({ error: 'branch_closed', message: 'This branch is closed at the requested time.' });
 
     const productIds = quantities.ids;
+    if(requestedPaymentMethod!=='CASH'&&!tenant.paymentSubaccount)return reply.code(409).send({error:'merchant_payment_destination_required',message:'Online payments are not yet enabled for this merchant.'});
     const products = await prisma.product.findMany({
       where: { id: { in: productIds }, tenantId, isActive: true, isAvailable: true, deletedAt: null, OR: [{ categoryId: null }, { category: { isActive: true, deletedAt: null } }] },
       select: { id: true, name: true, price: true, options: true },
@@ -194,6 +197,7 @@ export async function orderRoutes(app: FastifyInstance) {
       const lineTotal = configured.price.mul(quantity);
       subtotal = subtotal.plus(lineTotal);
       return {
+        basePrice: product.price,
         productId: product.id,
         productName: configured.name,
         quantity,
@@ -209,6 +213,9 @@ export async function orderRoutes(app: FastifyInstance) {
     let deliveryAddress: string | null = null;
     let deliveryLatitude: number | null = null;
     let deliveryLongitude: number | null = null;
+    const note=body.cookingInstructions??body.cooking_instructions??body.order_notes;
+    if(note!==undefined&&(typeof note!=='string'||note.length>2000))return reply.code(400).send({error:'invalid_cooking_instructions'});
+    const cookingInstructions=typeof note==='string'?note.trim()||null:null;
     let deliveryInstructions: string | null = typeof body.deliveryInstructions === 'string' ? body.deliveryInstructions.trim().slice(0,2000) || null : null;
     let deliveryFee = new Prisma.Decimal(0);
     let deliveryDistanceKm: number | null = null;
@@ -244,23 +251,19 @@ export async function orderRoutes(app: FastifyInstance) {
 
     const serviceFee = new Prisma.Decimal(0);
     const promoCode = typeof body.promoCode === 'string' ? body.promoCode.trim().toUpperCase() : null;
-    const promotion = promoCode ? await prisma.promotion.findUnique({ where: { tenantId_code: { tenantId, code: promoCode } } }) : null;
-    if (promoCode && (!promotion || !promotion.isActive || promotion.expiresAt <= new Date() || promotion.usedCount >= promotion.maxUses || subtotal.lessThan(promotion.minimumOrder))) return reply.code(409).send({ error: 'invalid_promo', message: 'This code is expired, unavailable or the minimum order is not met.' });
-    const discount = promotion ? Prisma.Decimal.min(subtotal.mul(promotion.percent).div(100), promotion.maxDiscount).toDecimalPlaces(2) : new Prisma.Decimal(0);
-    const tax = subtotal.minus(discount).mul(tenant.taxPercent).div(100).toDecimalPlaces(2);
-    const total = subtotal.plus(deliveryFee).plus(tax).minus(discount);
-    const commissionPercent = tenant.platformCommissionPercent;
-    const commissionAmount = subtotal.minus(discount).mul(commissionPercent).div(100).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
-
     const order = await prisma.$transaction(async (tx) => {
-      if (promotion) {
-        const redeemed = await tx.promotion.updateMany({ where: { id: promotion.id, isActive: true, expiresAt: { gt: new Date() }, usedCount: { lt: promotion.maxUses } }, data: { usedCount: { increment: 1 } } });
-        if (!redeemed.count) throw Object.assign(new Error('This promotion is no longer available.'), { statusCode: 409 });
+      const totals=await checkoutTotals(tenantId,itemData,deliveryFee,promoCode,tx);
+      const {discount,tax,total,taxLabel,commissionPercent}=totals;
+      if(body.confirmedTotal!==undefined&&(typeof body.confirmedTotal!=='number'||!Number.isFinite(body.confirmedTotal)||!total.equals(body.confirmedTotal)))throw Object.assign(new Error('The total changed. Review the updated checkout before ordering.'),{statusCode:409});
+      const commissionAmount=subtotal.minus(discount).mul(commissionPercent).div(100).toDecimalPlaces(2,Prisma.Decimal.ROUND_HALF_UP);
+      for(const promotion of totals.usedPromotions){
+        const redeemed=await tx.promotion.updateMany({where:{id:promotion.id,isActive:true,expiresAt:{gt:new Date()},usedCount:{lt:promotion.maxUses},updatedAt:promotion.updatedAt},data:{usedCount:{increment:1}}});
+        if(!redeemed.count)throw Object.assign(new Error('Promotion changed. Refresh checkout and retry.'),{statusCode:409});
       }
       const created = await tx.order.create({
         data: {
           orderNumber: orderNumber(),
-          checkoutKey, scheduledFor, promoCode, tax,
+          checkoutKey, scheduledFor, promoCode, tax, taxLabel, cookingInstructions,
           deliveryPin: fulfillmentType === FulfillmentType.DELIVERY ? String(randomInt(1000,10000)) : null,
           tenantId,
           branchId,
@@ -279,7 +282,7 @@ export async function orderRoutes(app: FastifyInstance) {
           deliveryLatitude,
           deliveryLongitude,
           deliveryInstructions,
-          items: { create: itemData },
+          items: { create: totals.items },
           ...(fulfillmentType === FulfillmentType.DELIVERY
             ? { delivery: { create: { status: DeliveryStatus.UNASSIGNED } } }
             : {}),

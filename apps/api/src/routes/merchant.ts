@@ -49,7 +49,11 @@ async function ownedBranch(tenantId: string, branchId: string) {
 }
 
 export async function merchantRoutes(app: FastifyInstance) {
-  app.addHook('preSerialization', async (_req, _reply, payload) => JSON.parse(JSON.stringify(payload, (key, value) => key === 'deliveryPin' || key === 'passwordHash' ? undefined : value)));
+  app.addHook('preSerialization', async (req, _reply, payload) => {
+    const privateKeys = new Set(['deliveryPin','passwordHash']);
+    if (req.tenantContext?.role === 'KITCHEN_CREW') for (const key of ['subtotal','total','unitPrice','totalPrice','discount','tax','paymentMethod','paymentStatus','platformCommissionPercent','platformCommissionAmount','estimatedPayout','settledPayout','payoutCurrency','settlementReference','settledAt','deliveryFee','serviceFee']) privateKeys.add(key);
+    return JSON.parse(JSON.stringify(payload, (key,value) => privateKeys.has(key) ? undefined : value));
+  });
 
   app.get('/v1/merchant/context', { preHandler: requireTenant() }, async (request) => {
     const tenantId = request.tenantContext!.tenantId;
@@ -66,6 +70,8 @@ export async function merchantRoutes(app: FastifyInstance) {
           isAcceptingOrders: true,
           minimumOrder: true,
           timezone: true,
+          taxPercent: true,
+          taxLabel: true,
         },
       }),
       prisma.branch.count({ where: { tenantId, isActive: true } }),
@@ -80,7 +86,9 @@ export async function merchantRoutes(app: FastifyInstance) {
 
   app.patch('/v1/merchant/settings', { preHandler: requireTenant(merchantAdminRoles) }, async (request, reply) => {
     const body = (request.body ?? {}) as Record<string, unknown>;
-    const data: { isAcceptingOrders?: boolean; minimumOrder?: string; name?:string; timezone?:string } = {};
+    const data: { isAcceptingOrders?: boolean; minimumOrder?: string; name?:string; timezone?:string; taxPercent?:number; taxLabel?:string } = {};
+    if(body.taxPercent!==undefined){const rate=Number(body.taxPercent);if(!Number.isFinite(rate)||rate<0||rate>100)return reply.code(400).send({error:'invalid_tax_rate'});data.taxPercent=rate;}
+    if(body.taxLabel!==undefined){if(typeof body.taxLabel!=='string'||!body.taxLabel.trim()||body.taxLabel.length>40)return reply.code(400).send({error:'invalid_tax_label'});data.taxLabel=body.taxLabel.trim();}
     if(typeof body.name==='string'){if(!body.name.trim()||body.name.length>160)return reply.code(400).send({error:'invalid_name'});data.name=body.name.trim();}
     if(typeof body.timezone==='string'){try{new Intl.DateTimeFormat('en',{timeZone:body.timezone}).format();data.timezone=body.timezone;}catch{return reply.code(400).send({error:'invalid_timezone'});}}
 
@@ -400,9 +408,17 @@ export async function merchantRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'invalid_order_status', allowed: Object.values(OrderStatus) });
     }
 
+    if(request.tenantContext!.role==='KITCHEN_CREW')return prisma.order.findMany({
+      where:{tenantId:request.tenantContext!.tenantId,...(request.tenantContext!.branchId?{branchId:request.tenantContext!.branchId}:{}),...(requestedStatus?{status:requestedStatus as OrderStatus}:{})},
+      select:{id:true,orderNumber:true,status:true,fulfillmentType:true,scheduledFor:true,createdAt:true,cookingInstructions:true,deliveryInstructions:true,
+        branch:{select:{id:true,name:true,city:true}},customer:{select:{firstName:true,lastName:true}},
+        items:{select:{id:true,productId:true,productName:true,quantity:true}}},
+      orderBy:{createdAt:'desc'},take:200,
+    });
     return prisma.order.findMany({
       where: {
         tenantId: request.tenantContext!.tenantId,
+        ...(request.tenantContext!.branchId ? {branchId:request.tenantContext!.branchId} : {}),
         ...(requestedStatus ? { status: requestedStatus as OrderStatus } : {}),
       },
       include: {
@@ -416,7 +432,7 @@ export async function merchantRoutes(app: FastifyInstance) {
     });
   });
 
-  app.patch('/v1/merchant/orders/:orderId/status', { preHandler: requireTenant(merchantWriteRoles) }, async (request, reply) => {
+  app.patch('/v1/merchant/orders/:orderId/status', { preHandler: requireTenant([...merchantWriteRoles, 'KITCHEN_CREW']) }, async (request, reply) => {
     const { orderId } = request.params as { orderId: string };
     const body = (request.body ?? {}) as Record<string, unknown>;
     const requestedStatus = typeof body.status === 'string' ? body.status.toUpperCase() : '';
@@ -425,13 +441,14 @@ export async function merchantRoutes(app: FastifyInstance) {
     }
 
     const order = await prisma.order.findFirst({
-      where: { id: orderId, tenantId: request.tenantContext!.tenantId },
+      where: { id: orderId, tenantId: request.tenantContext!.tenantId, ...(request.tenantContext!.branchId ? {branchId:request.tenantContext!.branchId} : {}) },
       select: { id: true, status: true, scheduledFor: true, fulfillmentType: true, paymentMethod: true, paymentStatus: true },
     });
     if (!order) return reply.code(404).send({ error: 'order_not_found' });
 
     if (requestedStatus === 'ACCEPTED' && order.paymentMethod !== 'CASH' && order.paymentStatus !== 'PAID') return reply.code(409).send({ error: 'payment_pending' });
     if (requestedStatus === 'PREPARING' && order.scheduledFor && order.scheduledFor.getTime() > Date.now() + 30*60000) return reply.code(409).send({ error: 'scheduled_order', message: 'Preparation can begin 30 minutes before the scheduled time.' });
+    if (request.tenantContext!.role === 'KITCHEN_CREW' && !['PREPARING','READY_FOR_PICKUP'].includes(requestedStatus)) return reply.code(403).send({error:'kitchen_transition_forbidden'});
     const nextStatus = requestedStatus as OrderStatus;
     const allowed = [...(orderTransitions[order.status] ?? [])];
     if (order.status === OrderStatus.READY_FOR_PICKUP && order.fulfillmentType === FulfillmentType.PICKUP) allowed.push(OrderStatus.COMPLETED);

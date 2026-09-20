@@ -1,3 +1,4 @@
+import 'business_page.dart';
 import 'dart:async';
 
 import 'package:fida_mobile_common/fida_mobile_common.dart';
@@ -353,81 +354,12 @@ class _MerchantOnboardingScreenState extends State<_MerchantOnboardingScreen> {
               'Create your merchant profile. A platform administrator will activate it before customers can order.',
             ),
             const SizedBox(height: 24),
-            TextField(
-              controller: name,
-              decoration: const InputDecoration(
-                labelText: 'Business name',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 14),
-            DropdownButtonFormField<String>(
-              initialValue: merchantType,
-              decoration: const InputDecoration(
-                labelText: 'Business type',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: 'RESTAURANT',
-                  child: Text('Restaurant'),
-                ),
-                DropdownMenuItem(
-                  value: 'SUPERMARKET',
-                  child: Text('Supermarket'),
-                ),
-                DropdownMenuItem(value: 'PHARMACY', child: Text('Pharmacy')),
-                DropdownMenuItem(value: 'RETAIL', child: Text('Retail')),
-                DropdownMenuItem(value: 'OTHER', child: Text('Other')),
-              ],
-              onChanged: (value) =>
-                  setState(() => merchantType = value ?? 'OTHER'),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: branch,
-              decoration: const InputDecoration(
-                labelText: 'Branch name',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: city,
-              decoration: const InputDecoration(
-                labelText: 'City',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: address,
-              decoration: const InputDecoration(
-                labelText: 'Address',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            if (widget.error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                widget.error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-            const SizedBox(height: 20),
             FilledButton.icon(
-              onPressed: widget.loading ? null : submit,
-              icon: widget.loading
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add_business_rounded),
-              label: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 14),
-                child: Text('Create merchant'),
-              ),
+              onPressed: () => openFidaLink(context, Uri.parse('${MerchantApiClient.baseUrl}/merchant/register')),
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Open secure merchant application'),
             ),
+            const Text('Sign in using this same account. Complete legal details, branding, location and hours, then submit for approval. Sign out and sign in here after approval.'),
           ],
         ),
       ),
@@ -462,11 +394,13 @@ class _MerchantShellState extends State<_MerchantShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (tenant['status'] != 'ACTIVE') return Scaffold(appBar: AppBar(title: const Text('Store approval')), body: Padding(padding: const EdgeInsets.all(24), child: Column(children: [Text('Store status: ${tenant['status']}'), const Text('Your store stays hidden until platform approval.'), FilledButton(onPressed: () => openFidaLink(context, Uri.parse('${MerchantApiClient.baseUrl}/merchant/register')), child: const Text('View application')), TextButton(onPressed: widget.onLogout, child: const Text('Sign out'))])));
     final pages = [
       _OrdersPage(
         key: ValueKey('orders-$tenantId'),
         api: widget.api,
         tenantId: tenantId,
+        kitchen: widget.selected['role'] == 'KITCHEN_CREW',
       ),
       CatalogPage(
         key: ValueKey('catalog-$tenantId'),
@@ -474,13 +408,16 @@ class _MerchantShellState extends State<_MerchantShell> {
         tenantId: tenantId,
         role: widget.selected['role'].toString(),
       ),
-      MerchantLogisticsPage(
+      if (widget.selected['role'] == 'KITCHEN_CREW')
+        const Center(child: Text('Delivery team management is available to your store manager.'))
+      else MerchantLogisticsPage(
         key: ValueKey('logistics-$tenantId'),
         api: widget.api,
         tenantId: tenantId,
         role: widget.selected['role'].toString(),
       ),
       _MerchantAccount(
+        api: widget.api,
         membership: widget.selected,
         memberships: widget.memberships,
         onSelect: widget.onSelect,
@@ -536,7 +473,8 @@ class _MerchantShellState extends State<_MerchantShell> {
 }
 
 class _OrdersPage extends StatefulWidget {
-  const _OrdersPage({super.key, required this.api, required this.tenantId});
+  const _OrdersPage({super.key, required this.api, required this.tenantId, this.kitchen = false});
+  final bool kitchen;
   final MerchantApiClient api;
   final String tenantId;
 
@@ -776,7 +714,11 @@ class _OrdersPageState extends State<_OrdersPage> {
                           if (items.length > 4)
                             Text('+ ${items.length - 4} more'),
                           const SizedBox(height: 10),
-                          Text(
+                          if (order['cookingInstructions'] != null && '${order['cookingInstructions']}'.isNotEmpty)
+                            Text('Cooking instructions: ${order['cookingInstructions']}', style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF9B4700))),
+                          if (order['deliveryInstructions'] != null && '${order['deliveryInstructions']}'.isNotEmpty)
+                            Text('Order note: ${order['deliveryInstructions']}'),
+                          if (order['total'] != null) Text(
                             'Total: ${order['total']} · ${order['paymentMethod']}',
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
@@ -792,7 +734,7 @@ class _OrdersPageState extends State<_OrdersPage> {
                             const SizedBox(height: 14),
                             Wrap(
                               spacing: 8,
-                              children: next.map((status) {
+                              children: next.where((status) => !widget.kitchen || ['PREPARING', 'READY_FOR_PICKUP'].contains(status)).map((status) {
                                 if (status == 'REJECTED') {
                                   return OutlinedButton(
                                     onPressed: () => move(order, status),
@@ -824,12 +766,14 @@ class _OrdersPageState extends State<_OrdersPage> {
 
 class _MerchantAccount extends StatelessWidget {
   const _MerchantAccount({
+    required this.api,
     required this.membership,
     required this.memberships,
     required this.onSelect,
     required this.onLogout,
   });
 
+  final MerchantApiClient api;
   final Map<String, dynamic> membership;
   final List<Map<String, dynamic>> memberships;
   final ValueChanged<Map<String, dynamic>> onSelect;
@@ -858,6 +802,8 @@ class _MerchantAccount extends StatelessWidget {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 22),
+        if (['OWNER','ADMIN'].contains(membership['role']))
+          ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('Business settings'), subtitle: const Text('Taxes, staff and promotions'), onTap: () => Navigator.push(context,MaterialPageRoute(builder: (_) => MerchantBusinessPage(api:api,tenantId:tenant['id'].toString())))),
         if (memberships.length > 1)
           DropdownButtonFormField<String>(
             initialValue: tenant['id'].toString(),

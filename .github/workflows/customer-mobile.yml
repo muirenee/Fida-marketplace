@@ -118,7 +118,7 @@ jobs:
         if: steps.signing.outputs.enabled == 'true'
         working-directory: apps/customer-mobile
         run: |
-          BUILD_NUMBER=$((10000 + GITHUB_RUN_NUMBER))
+          BUILD_NUMBER=$(($(date -u +%s) - 1577836800))
           flutter build apk --release --build-number="${BUILD_NUMBER}" --dart-define=FIDA_API_BASE_URL=https://marketplaceadmin.fidalix.com --dart-define-from-file=firebase-defines.json
 
       - name: Upload signed release APK
