@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fida_mobile_common/fida_mobile_common.dart';
@@ -137,6 +138,7 @@ Future<void> mount(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  FlutterSecureStorage.setMockInitialValues({});
   setUpAll(() async {
     // Use readable fonts in captured previews instead of the test-only Ahem font.
     for (final font in [('Roboto', 'regular.ttf'), ('MaterialIcons', 'icons.otf')]) {

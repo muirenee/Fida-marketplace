@@ -11,6 +11,7 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  Prisma,
   prisma,
 } from '@fida/database/client';
 import { merchantWriteRoles, requireTenant } from '../lib/tenant.js';
@@ -407,20 +408,28 @@ export async function merchantRoutes(app: FastifyInstance) {
     if (requestedStatus && !Object.values(OrderStatus).includes(requestedStatus as OrderStatus)) {
       return reply.code(400).send({ error: 'invalid_order_status', allowed: Object.values(OrderStatus) });
     }
+    if(query.q!==undefined&&(typeof query.q!=='string'||query.q.length>100))return reply.code(400).send({error:'invalid_order_search',message:'Search must contain at most 100 characters.'});
+    const search=typeof query.q==='string'?query.q.trim().replace(/\s+/g,' '):'';
+    const literal=(value:string)=>value.replace(/[\\%_]/g,'\\$&');
+    const where:Prisma.OrderWhereInput={
+      tenantId:request.tenantContext!.tenantId,
+      ...(request.tenantContext!.branchId?{branchId:request.tenantContext!.branchId}:{}),
+      ...(requestedStatus?{status:requestedStatus as OrderStatus}:{}),
+      ...(search?{OR:[
+        {orderNumber:{contains:literal(search),mode:'insensitive'}},
+        {customer:{AND:search.split(' ').map(word=>({OR:[{firstName:{contains:literal(word),mode:'insensitive'}},{lastName:{contains:literal(word),mode:'insensitive'}}]}))}},
+      ]}:{}),
+    };
 
     if(request.tenantContext!.role==='KITCHEN_CREW')return prisma.order.findMany({
-      where:{tenantId:request.tenantContext!.tenantId,...(request.tenantContext!.branchId?{branchId:request.tenantContext!.branchId}:{}),...(requestedStatus?{status:requestedStatus as OrderStatus}:{})},
+      where,
       select:{id:true,orderNumber:true,status:true,fulfillmentType:true,scheduledFor:true,createdAt:true,cookingInstructions:true,deliveryInstructions:true,
         branch:{select:{id:true,name:true,city:true}},customer:{select:{firstName:true,lastName:true}},
         items:{select:{id:true,productId:true,productName:true,quantity:true}}},
       orderBy:{createdAt:'desc'},take:200,
     });
     return prisma.order.findMany({
-      where: {
-        tenantId: request.tenantContext!.tenantId,
-        ...(request.tenantContext!.branchId ? {branchId:request.tenantContext!.branchId} : {}),
-        ...(requestedStatus ? { status: requestedStatus as OrderStatus } : {}),
-      },
+      where,
       include: {
         branch: { select: { id: true, name: true, city: true } },
         customer: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },

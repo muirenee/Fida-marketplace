@@ -1,7 +1,28 @@
 {
   "scope": "Source evidence only; RELEASE-0.10.md records tested behavior and remaining acceptance. No full marketplace parity claim.",
-  "source_file_count": 160,
+  "source_file_count": 161,
   "features": [
+    {
+      "feature": "merchant_order_search",
+      "implementation_evidence_present": true,
+      "evidence": [
+        {
+          "path": "apps/api/src/routes/merchant.ts",
+          "signature": "invalid_order_search",
+          "present": true
+        },
+        {
+          "path": "apps/merchant-mobile/lib/main.dart",
+          "signature": "merchant-order-search",
+          "present": true
+        },
+        {
+          "path": "apps/merchant-mobile/test/order_search_test.dart",
+          "signature": "stale results",
+          "present": true
+        }
+      ]
+    },
     {
       "feature": "binary_onboarding_and_slug",
       "implementation_evidence_present": true,

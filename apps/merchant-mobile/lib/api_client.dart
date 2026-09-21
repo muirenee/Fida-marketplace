@@ -328,12 +328,13 @@ class MerchantApiClient {
   Future<List<Map<String, dynamic>>> orders(
     String tenantId, {
     String? status,
+    String? search,
   }) async {
     final response = await _send(
       'GET',
       '/v1/merchant/orders',
       tenantId: tenantId,
-      query: {if (status != null) 'status': status},
+      query: {if (status != null) 'status': status, if (search != null && search.trim().isNotEmpty) 'q': search.trim()},
     );
     if (response.statusCode != 200) throw _error(response);
     return (_json(response) as List)

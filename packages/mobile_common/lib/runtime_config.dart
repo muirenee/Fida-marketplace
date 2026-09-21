@@ -51,7 +51,7 @@ class FidaEndpoints extends ValueNotifier<EndpointSnapshot> {
       Future<String?> Function()? readCache, Future<void> Function(String)? writeCache) async {
     if (!_restored) {
       _restored = true;
-      try { final cached = await readCache?.call(); if (cached != null) apply(Map<String,dynamic>.from(jsonDecode(cached))); } catch (_) {}
+      try { final cached = readCache == null ? null : await readCache().timeout(const Duration(seconds: 2)); if (cached != null) apply(Map<String,dynamic>.from(jsonDecode(cached))); } catch (_) {}
     }
     _nextCheck = DateTime.now().add(const Duration(seconds: 30));
     for (final base in {value.apiBaseUrl, bootstrap}) {
@@ -59,7 +59,7 @@ class FidaEndpoints extends ValueNotifier<EndpointSnapshot> {
         final config = Map<String,dynamic>.from(await fetch(Uri.parse(base).resolve('/v1/config')));
         if (config['schemaVersion'] != 1) continue;
         apply(config);
-        try { await writeCache?.call(jsonEncode(config)); } catch (_) {}
+        try { if (writeCache != null) await writeCache(jsonEncode(config)).timeout(const Duration(seconds: 2)); } catch (_) {}
         return;
       } catch (_) {}
     }

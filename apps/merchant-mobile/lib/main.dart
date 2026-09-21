@@ -399,7 +399,7 @@ class _MerchantShellState extends State<_MerchantShell> {
   Widget build(BuildContext context) {
     if (tenant['status'] != 'ACTIVE') return Scaffold(appBar: AppBar(title: const Text('Store approval')), body: Padding(padding: const EdgeInsets.all(24), child: Column(children: [Text('Store status: ${tenant['status']}'), const Text('Your store stays hidden until platform approval.'), FilledButton(onPressed: () => openFidaLink(context, MerchantApiClient.endpoints.merchantUri.resolve('/merchant/register')), child: const Text('View application')), TextButton(onPressed: widget.onLogout, child: const Text('Sign out'))])));
     final pages = [
-      _OrdersPage(
+      MerchantOrdersPage(
         key: ValueKey('orders-$tenantId'),
         api: widget.api,
         tenantId: tenantId,
@@ -475,17 +475,17 @@ class _MerchantShellState extends State<_MerchantShell> {
   }
 }
 
-class _OrdersPage extends StatefulWidget {
-  const _OrdersPage({super.key, required this.api, required this.tenantId, this.kitchen = false});
+class MerchantOrdersPage extends StatefulWidget {
+  const MerchantOrdersPage({super.key, required this.api, required this.tenantId, this.kitchen = false});
   final bool kitchen;
   final MerchantApiClient api;
   final String tenantId;
 
   @override
-  State<_OrdersPage> createState() => _OrdersPageState();
+  State<MerchantOrdersPage> createState() => _OrdersPageState();
 }
 
-class _OrdersPageState extends State<_OrdersPage> {
+class _OrdersPageState extends State<MerchantOrdersPage> {
   StreamSubscription<dynamic>? pushSubscription;
   Timer? refreshTimer;
   bool refreshing = false;
@@ -494,6 +494,10 @@ class _OrdersPageState extends State<_OrdersPage> {
   bool loading = true;
   String? error;
   String? filter;
+  final searchController = TextEditingController();
+  Timer? searchTimer;
+  String search = '';
+  int requestGeneration = 0;
 
   @override
   void initState() {
@@ -513,26 +517,37 @@ class _OrdersPageState extends State<_OrdersPage> {
   @override
   void dispose() {
     refreshTimer?.cancel();
+    searchTimer?.cancel();
+    searchController.dispose();
     pushSubscription?.cancel();
     super.dispose();
   }
 
   Future<void> load({bool silent = false}) async {
-    if (refreshing) return;
+    final generation = ++requestGeneration;
     refreshing = true;
     setState(() {
       if (!silent) loading = true;
       error = null;
     });
     try {
-      final rows = await widget.api.orders(widget.tenantId, status: filter);
-      if (mounted) setState(() => orders = rows);
+      final rows = await widget.api.orders(widget.tenantId, status: filter, search: search);
+      if (mounted && generation == requestGeneration) setState(() => orders = rows);
     } on MerchantApiException catch (e) {
-      if (mounted) setState(() => error = e.message);
+      if (mounted && generation == requestGeneration) setState(() => error = e.message);
     } finally {
-      refreshing = false;
-      if (mounted) setState(() => loading = false);
+      if (generation == requestGeneration) {
+        refreshing = false;
+        if (mounted) setState(() => loading = false);
+      }
     }
+  }
+
+  void searchOrders(String value) {
+    searchTimer?.cancel();
+    requestGeneration++;
+    setState(() { search = value.trim(); loading = true; error = null; });
+    searchTimer = Timer(const Duration(milliseconds: 350), () { if (mounted) load(); });
   }
 
   List<String> actions(Map<String, dynamic> order) {
@@ -586,6 +601,29 @@ class _OrdersPageState extends State<_OrdersPage> {
             ),
           ),
           SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: TextField(
+                key: const ValueKey('merchant-order-search'),
+                controller: searchController,
+                maxLength: 100,
+                textInputAction: TextInputAction.search,
+                onChanged: searchOrders,
+                onSubmitted: (_) { searchTimer?.cancel(); load(); },
+                decoration: InputDecoration(
+                  labelText: 'Search orders',
+                  hintText: 'Order number or customer name',
+                  counterText: '',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: search.isEmpty ? null : IconButton(
+                    tooltip: 'Clear search', icon: const Icon(Icons.close),
+                    onPressed: () { searchController.clear(); searchOrders(''); },
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
             child: SizedBox(
               height: 56,
               child: ListView(
@@ -601,6 +639,8 @@ class _OrdersPageState extends State<_OrdersPage> {
                     'ACCEPTED',
                     'PREPARING',
                     'READY_FOR_PICKUP',
+                    'COMPLETED',
+                    'CANCELLED',
                   ]) ...[
                     ChoiceChip(
                       label: Text(
@@ -629,9 +669,9 @@ class _OrdersPageState extends State<_OrdersPage> {
               child: Center(child: Text(error!)),
             )
           else if (orders.isEmpty)
-            const SliverFillRemaining(
+            SliverFillRemaining(
               hasScrollBody: false,
-              child: Center(child: Text('No orders in this queue.')),
+              child: Center(child: Text(search.isEmpty ? 'No orders in this queue.' : 'No matching orders. Try another number or customer name.')),
             )
           else
             SliverPadding(

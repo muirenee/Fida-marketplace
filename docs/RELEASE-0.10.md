@@ -1,5 +1,6 @@
-# Fida Marketplace 0.10
+# Fida Marketplace 0.10.1
 
+- [x] Merchant order search by partial order number or customer name, case-insensitive and whitespace-tolerant. Searches history before limiting to the newest 200 matches; selected status and branch restrictions remain in force. Debounced input, clear action and stale-response protection.
 - [x] Public runtime configuration, secure mobile cache and shared URL observer across all three apps. Owned media is normalized to relative paths transactionally; external image/payment URLs remain external.
 - [x] API CORS and browser mutation guards follow runtime origins. Merchant business links resolve the current public URL. Legacy media input/output is normalized so older clients cannot restore obsolete owned URLs.
 - [x] Automatic featured stores: completed non-refunded orders over 30 days, units sold, rating, then stable ID. Active/open branches and available products are required. Admins can search and select up to 12 active stores in manual mode.

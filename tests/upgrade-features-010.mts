@@ -4,6 +4,30 @@ import {Prisma} from '../packages/database/src/client.js';
 
 export async function verify010({prisma,app,db,request,admin,password,customer,tenant,other,owner,checkout}:any){
  const settings=(values:any)=>request('PATCH','/v1/admin/system/settings',admin,{password,values});
+ await test('merchant order search matches names and numbers across history without crossing tenant/branch scope',async()=>{
+  const customerA=await prisma.user.create({data:{firstName:'Alice',lastName:'Munyaneza'}});
+  const customerB=await prisma.user.create({data:{firstName:'Bob',lastName:'Munyaneza'}});
+  const branchA=await prisma.branch.create({data:{tenantId:tenant.id,name:'Search branch A'}});
+  const branchB=await prisma.branch.create({data:{tenantId:tenant.id,name:'Search branch B'}});
+  const external=await prisma.branch.create({data:{tenantId:other.id,name:'External search branch'}});
+  const base={tenantId:tenant.id,branchId:branchA.id,customerId:customerA.id,paymentMethod:'CASH',subtotal:100,total:100};
+  const target=await prisma.order.create({data:{...base,orderNumber:'FM-SEARCH-ALICE',status:'COMPLETED',createdAt:new Date(0)}});
+  await prisma.order.create({data:{...base,orderNumber:'FM-SEARCH-OTHER-BRANCH',branchId:branchB.id}});
+  await prisma.order.create({data:{...base,orderNumber:'FM-SEARCH-EXTERNAL',tenantId:other.id,branchId:external.id}});
+  // Search runs before the limit: an old matching order remains discoverable.
+  await prisma.order.createMany({data:Array.from({length:205},(_,i)=>({...base,customerId:customerB.id,orderNumber:`NEWER-${i}`}))});
+  const search=(q:string,user=owner,status='')=>request('GET',`/v1/merchant/orders?q=${encodeURIComponent(q)}${status}`,user);
+  assert.deepEqual((await search('fm-search-alice')).map((o:any)=>o.id),[target.id]);
+  const names=await search('  aLiCe   MUNYANEZA  ');assert.equal(names.length,2);assert.ok(names.every((o:any)=>o.tenantId===tenant.id));
+  assert.deepEqual((await search('Munyaneza Alice',owner,'&status=COMPLETED')).map((o:any)=>o.id),[target.id]);
+  assert.deepEqual(await search('%'),[]);
+  await request('GET',`/v1/merchant/orders?q=${'a'.repeat(101)}`,owner,undefined,400);
+  const kitchen=await prisma.user.create({data:{email:'search-kitchen@example.test'}});
+  await prisma.tenantMembership.create({data:{tenantId:tenant.id,userId:kitchen.id,branchId:branchA.id,role:'KITCHEN_CREW'}});
+  const scoped=await search('Alice',kitchen);assert.equal(scoped.length,1);assert.equal(scoped[0].id,target.id);
+  assert.equal(scoped[0].total,undefined);assert.equal(scoped[0].customer.phone,undefined);
+  assert.deepEqual(await search('OTHER-BRANCH',kitchen),[]);
+ });
  await test('runtime URL changes normalize owned media atomically and refresh public origins',async()=>{
   const old='https://old.example.test',next='https://new.example.test';
   await settings({PUBLIC_BASE_URL:old,CORS_ORIGIN:old});

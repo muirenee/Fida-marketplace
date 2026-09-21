@@ -68,6 +68,10 @@ jobs:
         working-directory: apps/merchant-mobile
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
+      - name: Test merchant order search
+        working-directory: apps/merchant-mobile
+        run: flutter test test/order_search_test.dart
+
       - name: Detect release signing
         id: signing
         shell: bash

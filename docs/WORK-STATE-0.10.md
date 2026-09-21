@@ -11,7 +11,10 @@ Branch: feature/marketplace-business-delivery
 - [x] Local API/web/migration verification; isolated business and origin tests
 - [ ] GitHub commit and Android CI analyzer/tests/build verification
 
-Pending: publish this source tree; monitor Validate, Customer Mobile, Merchant Mobile and Driver Mobile workflows. Fix any CI failures and record final results.
+Published infrastructure commit: 8cb027319ac963bd248868e7b91ef3eac43e9e1f.
+Validate passed. Customer widget checks exposed missing secure-storage mocking; fixed in the 0.10.1 follow-up, which also bounds cache I/O timeouts.
+Added user-requested merchant order search with backend isolation and widget race regression tests.
+Pending: publish 0.10.1; verify all four CI workflows; download, verify signing and save the three updated APKs; provide platform upgrade commands.
 
 Never execute production purges while implementing or testing. Use temporary databases.
 On resumption inspect git status, this file and CI for the branch before continuing.
