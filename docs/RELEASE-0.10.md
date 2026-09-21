@@ -46,7 +46,7 @@ GitHub mobile workflows resolve dependencies, analyze/test and compile on this b
 
 ## Verification and precise remaining checklist
 
-API typecheck and Admin production build pass. Integration verification includes public origin switching, normalization conflict rollback, ranking and manual overrides, scoped promotions, a 5,001-event purge, deliberately failed purge rollback, cross-store preservation and token revocation. The SQL upgrade is applied twice in a temporary database to verify repeatability. Destructive tests use temporary PGlite databases only. Android analyzer/widget/build results are recorded in GitHub Actions for the release commit.
+API typecheck and Admin production build pass. Integration verification includes public origin switching, normalization conflict rollback, ranking and manual overrides, scoped promotions, a 5,001-event purge, deliberately failed purge rollback, cross-store preservation and token revocation. The SQL upgrade is applied twice in a temporary database to verify repeatability. Destructive tests use temporary PGlite databases only. All four GitHub workflows passed for commit `5fc905b8135f4d3488806dbdb2fdf8feb6e39250`: Validate (37 integration/origin/migration tests), Customer Mobile, Merchant Mobile and Driver Mobile. All three signed release APKs are version 0.10.1. Artifact hashes, package identifiers, version codes and matching release certificates are recorded in `APK-VERIFICATION-0.10.1.json`.
 
 | Priority | Remaining feature or acceptance | Current boundary |
 |---|---|---|
