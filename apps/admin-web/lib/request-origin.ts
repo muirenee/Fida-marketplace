@@ -15,3 +15,15 @@ export function hasTrustedOrigin(
     return false;
   }
 }
+
+/** Read only from the trusted internal API, never from forwarding headers. */
+export async function hasTrustedRuntimeOrigin(request:{headers:Headers;url:string}):Promise<boolean>{
+ const origin=request.headers.get('origin');if(!origin)return false;
+ try{
+  const {backendBaseUrl}=await import('./backend');
+  const response=await fetch(`${backendBaseUrl}/v1/config`,{cache:'no-store',signal:AbortSignal.timeout(4000)});
+  if(!response.ok)return false;
+  const config=await response.json();
+  return Array.isArray(config.allowedOrigins)&&config.allowedOrigins.includes(origin);
+ }catch{return false;}
+}

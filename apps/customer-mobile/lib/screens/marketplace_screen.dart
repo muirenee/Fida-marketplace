@@ -315,7 +315,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     final recent=_recent.map((id)=>rows.where((m)=>m['id']==id).firstOrNull).whereType<Map<String,dynamic>>().toList();
     final dishes=rows.expand((m)=>(m['dishes'] as List? ?? []).map((p)=>{'merchant':m,'product':p})).toList();
     return [
-      _section('Featured on Fida',rows.where((m)=>m['featured']==true).toList(),empty:'Featured stores will appear here.'),
+      _section('Featured on Fida',(rows.where((m)=>m['featured']==true).toList()..sort((a,b)=>asDouble(a['featuredRank']).compareTo(asDouble(b['featuredRank'])))),empty:'Featured stores will appear here.'),
       _section('Recently Viewed',recent,empty:'Open a store to see it here.'),
       _section('Stores near you',rows,grid:true),
       _section('Popular in your area',popular),

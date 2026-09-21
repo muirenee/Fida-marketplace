@@ -306,6 +306,16 @@ export const catalog:{models:CatalogModel[];enums:{name:string;values:{name:stri
       "primaryKey": null,
       "fields": [
         {
+          "name": "authVersion",
+          "type": "Int",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
           "name": "id",
           "type": "String",
           "kind": "scalar",

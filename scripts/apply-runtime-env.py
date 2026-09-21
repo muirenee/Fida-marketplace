@@ -4,7 +4,7 @@ import json,os,re,shutil,sys,tempfile
 from datetime import datetime,timezone
 from pathlib import Path
 values=json.load(sys.stdin)
-allowed={'PUBLIC_BASE_URL','CORS_ORIGIN','ADMIN_ALLOWED_IPS','MAINTENANCE_MODE','FEATURED_STORE_IDS'}
+allowed={'PUBLIC_BASE_URL','CORS_ORIGIN','ADMIN_ALLOWED_IPS','MAINTENANCE_MODE','FEATURED_STORE_IDS','FEATURED_STORE_MODE','LEGACY_PUBLIC_ORIGINS'}
 if not isinstance(values,dict) or set(values)-allowed: raise SystemExit('Unexpected setting key.')
 for key,value in values.items():
     if not isinstance(value,str) or any(c in value for c in '\r\n\0'):raise SystemExit('Invalid environment value.')

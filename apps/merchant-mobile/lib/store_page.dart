@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:fida_mobile_common/fida_mobile_common.dart';
 import 'api_client.dart';
 
 class StorePage extends StatefulWidget {
@@ -131,10 +132,12 @@ class _StorePageState extends State<StorePage> {
           onChanged: busy ? null : (v) => setState(() => store!['merchantType'] = v)),
         const SizedBox(height: 16),
         for (final key in ['logoUrl','coverUrl']) ...[
-          if ((store![key] ?? '').toString().isNotEmpty) Image.network(
-            store![key].toString().startsWith('/') ? '${MerchantApiClient.baseUrl}${store![key]}' : store![key].toString(),
+          if ((store![key] ?? '').toString().isNotEmpty) ValueListenableBuilder<int>(
+            valueListenable: FidaEndpoints.changes,
+            builder: (_, __, ___) => Image.network(
+            FidaEndpoints.mediaUri(MerchantApiClient.baseUrl, store![key].toString()),
             height: key == 'logoUrl' ? 90 : 160, fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => const SizedBox(height: 40, child: Center(child: Text('Image unavailable')))),
+            errorBuilder: (_, __, ___) => const SizedBox(height: 40, child: Center(child: Text('Image unavailable'))))),
           OutlinedButton.icon(onPressed: busy ? null : () => upload(key), icon: const Icon(Icons.photo_library_outlined), label: Text(key == 'logoUrl' ? 'Upload logo' : 'Upload cover photo')),
         ],
         FilledButton(onPressed: busy ? null : save, child: const Text('Save store')),

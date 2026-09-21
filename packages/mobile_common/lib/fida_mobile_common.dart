@@ -1,3 +1,5 @@
+export 'runtime_config.dart';
+import 'runtime_config.dart';
 export 'document_screen.dart';
 export 'delivery_map.dart';
 export 'food_ui.dart';
@@ -238,11 +240,11 @@ class ProductPhoto extends StatelessWidget {
         height: size,
         child: url == null || url!.isEmpty
             ? placeholder
-            : Image.network(
-                Uri.parse(baseUrl).resolve(url!).toString(),
+            : ValueListenableBuilder<int>(valueListenable:FidaEndpoints.changes,builder:(_,__,___)=>Image.network(
+                FidaEndpoints.mediaUri(baseUrl, url!),
                 fit: BoxFit.cover,
                 errorBuilder: (_, e, s) => placeholder,
-              ),
+              )),
       ),
     );
   }

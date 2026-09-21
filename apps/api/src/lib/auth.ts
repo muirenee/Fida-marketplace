@@ -24,11 +24,12 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
       firstName: true,
       lastName: true,
       isActive: true,
+      authVersion: true,
       isPlatformAdmin: true,
     },
   });
 
-  if (!user?.isActive) {
+  if (!user?.isActive || (request.user.authVersion??0)!==user.authVersion) {
     return reply.code(401).send({ error: 'unauthorized', message: 'User account is inactive.' });
   }
 

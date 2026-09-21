@@ -1,3 +1,4 @@
+import 'runtime_config.dart';
 import 'package:flutter/material.dart';
 
 class FoodCover extends StatelessWidget {
@@ -47,11 +48,11 @@ class FoodCover extends StatelessWidget {
         width: double.infinity,
         child: url == null || url!.isEmpty
             ? fallback
-            : Image.network(
-                Uri.parse(baseUrl).resolve(url!).toString(),
+            : ValueListenableBuilder<int>(valueListenable:FidaEndpoints.changes,builder:(_,__,___)=>Image.network(
+                FidaEndpoints.mediaUri(baseUrl, url!),
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => fallback,
-              ),
+              )),
       ),
     );
   }

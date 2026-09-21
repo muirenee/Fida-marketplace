@@ -358,7 +358,7 @@ class _MerchantOnboardingScreenState extends State<_MerchantOnboardingScreen> {
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: () => openFidaLink(context, Uri.parse('${MerchantApiClient.baseUrl}/merchant/register')),
+              onPressed: () => openFidaLink(context, MerchantApiClient.endpoints.merchantUri.resolve('/merchant/register')),
               icon: const Icon(Icons.open_in_new),
               label: const Text('Open secure merchant application'),
             ),
@@ -397,7 +397,7 @@ class _MerchantShellState extends State<_MerchantShell> {
 
   @override
   Widget build(BuildContext context) {
-    if (tenant['status'] != 'ACTIVE') return Scaffold(appBar: AppBar(title: const Text('Store approval')), body: Padding(padding: const EdgeInsets.all(24), child: Column(children: [Text('Store status: ${tenant['status']}'), const Text('Your store stays hidden until platform approval.'), FilledButton(onPressed: () => openFidaLink(context, Uri.parse('${MerchantApiClient.baseUrl}/merchant/register')), child: const Text('View application')), TextButton(onPressed: widget.onLogout, child: const Text('Sign out'))])));
+    if (tenant['status'] != 'ACTIVE') return Scaffold(appBar: AppBar(title: const Text('Store approval')), body: Padding(padding: const EdgeInsets.all(24), child: Column(children: [Text('Store status: ${tenant['status']}'), const Text('Your store stays hidden until platform approval.'), FilledButton(onPressed: () => openFidaLink(context, MerchantApiClient.endpoints.merchantUri.resolve('/merchant/register')), child: const Text('View application')), TextButton(onPressed: widget.onLogout, child: const Text('Sign out'))])));
     final pages = [
       _OrdersPage(
         key: ValueKey('orders-$tenantId'),
@@ -864,10 +864,10 @@ class _MerchantAccount extends StatelessWidget {
         ),
         const SizedBox(height: 18),
         FilledButton.icon(
-          onPressed: () => openFidaLink(
-            context,
-            Uri.parse('${MerchantApiClient.baseUrl}/merchant'),
-          ),
+          onPressed: () async {
+            await api.refreshConfiguration(force:true);
+            if(context.mounted) await openFidaLink(context,MerchantApiClient.endpoints.merchantUri);
+          },
           icon: const Icon(Icons.storefront_rounded),
           label: const Text('Open business platform'),
         ),

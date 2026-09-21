@@ -40,6 +40,6 @@ class _MerchantBusinessPageState extends State<MerchantBusinessPage> {
     if(error!=null)Text(error!,style:const TextStyle(color:Colors.red)),
     const SizedBox(height:20),FilledButton(onPressed:busy?null:save,child:Text(busy?'Saving…':'Save tax settings')),
     const Divider(height:40),
-    ListTile(title:const Text('Staff, promotions and driver payments'),subtitle:const Text('Open your secure business portal to manage staff roles, targeted offers and payment records.'),trailing:const Icon(Icons.open_in_new),onTap:()=>openFidaLink(context,Uri.parse('${MerchantApiClient.baseUrl}/merchant'))),
+    ListTile(title:const Text('Staff, promotions and driver payments'),subtitle:const Text('Open your secure business portal to manage staff roles, targeted offers and payment records.'),trailing:const Icon(Icons.open_in_new),onTap:()async{await widget.api.refreshConfiguration(force:true);if(context.mounted)await openFidaLink(context,MerchantApiClient.endpoints.merchantUri);}),
   ]))));
 }

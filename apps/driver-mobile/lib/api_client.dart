@@ -17,10 +17,23 @@ class DriverApiClient {
   final push = FidaPush();
   DriverApiClient();
 
-  static const baseUrl = String.fromEnvironment(
+  static const bootstrapUrl = String.fromEnvironment(
     'FIDA_API_BASE_URL',
     defaultValue: 'http://10.0.2.2:3001',
   );
+  static final endpoints = FidaEndpoints(bootstrapUrl);
+  static String get baseUrl => endpoints.value.apiBaseUrl;
+  Future<void> refreshConfiguration({bool force = false}) => endpoints.refresh(
+    force: force,
+    fetch: (uri) async {
+      final response = await _client.get(uri).timeout(const Duration(seconds: 4));
+      if (response.statusCode != 200) throw const FormatException('Configuration unavailable');
+      return jsonDecode(response.body);
+    },
+    readCache: () => _storage.read(key: 'fida_runtime_endpoints'),
+    writeCache: (data) => _storage.write(key: 'fida_runtime_endpoints', value: data),
+  );
+
   static const _accessKey = 'fida_driver_access';
   static const _refreshKey = 'fida_driver_refresh';
 
@@ -83,6 +96,7 @@ class DriverApiClient {
     bool authenticated = true,
     bool retry = true,
   }) async {
+    await refreshConfiguration();
     final request = http.Request(method, _uri(path));
     request.headers['accept'] = 'application/json';
     if (authenticated && _access != null)

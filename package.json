@@ -12,7 +12,7 @@
     "db:seed": "tsx packages/database/prisma/seed.ts",
     "db:backfill-logistics": "tsx packages/database/prisma/backfill-logistics.ts",
     "typecheck:api": "tsc -p apps/api/tsconfig.json --noEmit",
-    "test:integration": "node --import tsx tests/merchant-origin.mts && node --import tsx tests/business-integration.mts && node --import tsx tests/upgrade-08.mts && node --import tsx tests/upgrade-09.mts"
+    "test:integration": "node --import tsx tests/merchant-origin.mts && node --import tsx tests/business-integration.mts && node --import tsx tests/upgrade-08.mts && node --import tsx tests/upgrade-09.mts && node --import tsx tests/upgrade-010.mts"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",

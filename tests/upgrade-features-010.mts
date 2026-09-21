@@ -1,0 +1,128 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {Prisma} from '../packages/database/src/client.js';
+
+export async function verify010({prisma,app,db,request,admin,password,customer,tenant,other,owner,checkout}:any){
+ const settings=(values:any)=>request('PATCH','/v1/admin/system/settings',admin,{password,values});
+ await test('runtime URL changes normalize owned media atomically and refresh public origins',async()=>{
+  const old='https://old.example.test',next='https://new.example.test';
+  await settings({PUBLIC_BASE_URL:old,CORS_ORIGIN:old});
+  const path=`/v1/media/${tenant.id}/11111111-1111-4111-8111-111111111111.webp`;
+  const asset=await prisma.mediaAsset.create({data:{url:old+path,ownerId:owner.id,bytes:40}});
+  await prisma.tenant.update({where:{id:tenant.id},data:{logoUrl:old+path,coverUrl:'https://external.example.test/image.jpg'}});
+  await settings({PUBLIC_BASE_URL:next,CORS_ORIGIN:next});
+  const store=await prisma.tenant.findUniqueOrThrow({where:{id:tenant.id}});
+  assert.equal(store.logoUrl,path);assert.equal(store.coverUrl,'https://external.example.test/image.jpg');
+  assert.equal((await prisma.mediaAsset.findUniqueOrThrow({where:{id:asset.id}})).url,path);
+  const config=await app.inject({method:'GET',url:'/v1/config',headers:{origin:next}});
+  assert.equal(config.headers['access-control-allow-origin'],next);
+  assert.equal(config.headers['cache-control'],'no-store');
+  assert.deepEqual(config.json().allowedOrigins,[next]);assert.ok(config.json().legacyOrigins.includes(old));
+  assert.equal(config.json().apiBaseUrl,next);assert.equal(config.json().ADMIN_ALLOWED_IPS,undefined);
+  // An old mobile client still submitting an absolute URL cannot reintroduce it.
+  await request('PATCH',`/v1/admin/system/data/Tenant`,admin,{password,reason:'Verify legacy URL input',key:{id:tenant.id},changes:{logoUrl:old+path}});
+  assert.equal((await prisma.tenant.findUniqueOrThrow({where:{id:tenant.id}})).logoUrl,path);
+  const duplicate=await prisma.mediaAsset.create({data:{url:next+path,ownerId:owner.id,bytes:40}});
+  await request('PATCH','/v1/admin/system/settings',admin,{password,values:{PUBLIC_BASE_URL:'https://third.example.test'}},409);
+  assert.equal((await request('GET','/v1/config',customer)).publicBaseUrl,next);
+  await prisma.mediaAsset.delete({where:{id:duplicate.id}});
+ });
+ await test('featured stores rank completed sales, exclude refunds, and permit an active-store override',async()=>{
+  const b=await prisma.branch.create({data:{tenantId:other.id,name:'Ranking branch'}});
+  const base={tenantId:other.id,branchId:b.id,customerId:customer.id,fulfillmentType:'PICKUP',paymentMethod:'CASH',paymentStatus:'PAID',subtotal:100,total:100};
+  await prisma.order.createMany({data:Array.from({length:30},(_,i)=>({...base,orderNumber:`RANK-${i}`,status:i<20?'COMPLETED':'CANCELLED'}))});
+  await prisma.order.createMany({data:Array.from({length:30},(_,i)=>({...base,tenantId:tenant.id,branchId:checkout.branchId,orderNumber:`REFUND-RANK-${i}`,status:'COMPLETED',paymentStatus:'REFUNDED'}))});
+  await settings({FEATURED_STORE_MODE:'AUTO',FEATURED_STORE_IDS:tenant.id});
+  const auto=await request('GET','/v1/marketplace/merchants',customer);
+  assert.equal(auto.find((s:any)=>s.id===other.id).featuredRank,0);
+  await settings({FEATURED_STORE_MODE:'MANUAL',FEATURED_STORE_IDS:tenant.id});
+  const manual=await request('GET','/v1/marketplace/merchants',customer);
+  assert.equal(manual.find((s:any)=>s.id===other.id).featured,false);
+  assert.equal(manual.find((s:any)=>s.id===tenant.id).featured,true);
+  const hidden=await prisma.tenant.create({data:{name:'Invisible ranking',slug:'invisible-ranking',merchantType:'OTHER',status:'SUSPENDED'}});
+  await request('PATCH','/v1/admin/system/settings',admin,{password,values:{FEATURED_STORE_IDS:hidden.id}},400);
+  assert.deepEqual(await request('GET','/v1/admin/system/stores?q=Invisible',admin),[]);
+  const matches=await request('GET','/v1/admin/system/stores?q=Other',admin);
+  assert.ok(matches.some((s:any)=>s.id===other.id));
+  await request('GET','/v1/admin/system/stores',customer,undefined,403);
+  await settings({FEATURED_STORE_MODE:'AUTO'});
+ });
+ await test('product discounts cover repeated lines, add-ons, caps, expiry and coupon thresholds',async()=>{
+  const {checkoutTotals}=await import('../apps/api/src/lib/checkout.js');
+  const item=await prisma.product.create({data:{tenantId:tenant.id,name:'Scoped discount',price:1000}});
+  const second=await prisma.product.create({data:{tenantId:tenant.id,name:'Full-price item',price:500}});
+  const offer={tenantId:tenant.id,productId:item.id,percent:25,flatAmount:0,maxDiscount:600,expiresAt:new Date(Date.now()+86400000),maxUses:10};
+  const percent=await prisma.promotion.create({data:{...offer,code:'SCOPE25'}});
+  await prisma.promotion.create({data:{...offer,code:'SCOPEFLAT',discountType:'FLAT',flatAmount:100}});
+  await prisma.promotion.create({data:{...offer,code:'EXPIRED',percent:100,expiresAt:new Date(0)}});
+  const lines=[{productId:item.id,productName:item.name,quantity:2,basePrice:new Prisma.Decimal(1000),unitPrice:new Prisma.Decimal(1200)},
+   {productId:item.id,productName:item.name,quantity:1,basePrice:new Prisma.Decimal(1000),unitPrice:new Prisma.Decimal(1000)},
+   {productId:second.id,productName:second.name,quantity:1,basePrice:new Prisma.Decimal(500),unitPrice:new Prisma.Decimal(500)}];
+  const totals=await checkoutTotals(tenant.id,lines,new Prisma.Decimal(0));
+  assert.equal(totals.subtotal.toNumber(),3900);assert.equal(totals.itemDiscount.toNumber(),600);
+  assert.deepEqual(totals.items.map(i=>i.discount.toNumber()),[400,200,0]);
+  assert.deepEqual(totals.usedPromotions.map(p=>p.id),[percent.id]);
+  await prisma.promotion.update({where:{id:percent.id},data:{usedCount:10}});
+  const flat=await checkoutTotals(tenant.id,lines,new Prisma.Decimal(0));assert.equal(flat.itemDiscount.toNumber(),300);
+  await prisma.promotion.create({data:{...offer,productId:null,code:'THRESHOLD',minimumOrder:3700}});
+  await assert.rejects(checkoutTotals(tenant.id,lines,new Prisma.Decimal(0),'THRESHOLD'),/minimum after item discounts/);
+ });
+ await test('store purge removes large dependent sets, revokes exclusive credentials and rolls back on failure',async()=>{
+  const victim=await prisma.tenant.create({data:{name:'Purge isolation',slug:'purge-isolation',merchantType:'OTHER',status:'ACTIVE'}});
+  const branch=await prisma.branch.create({data:{tenantId:victim.id,name:'Purge branch'}});
+  const category=await prisma.category.create({data:{tenantId:victim.id,name:'Purge category',slug:'purge'}});
+  const item=await prisma.product.create({data:{tenantId:victim.id,categoryId:category.id,name:'Purge item',price:100}});
+  const exclusive=await prisma.user.create({data:{email:'purge-exclusive@example.test'}});
+  const shared=await prisma.user.create({data:{email:'purge-shared@example.test'}});
+  await prisma.tenantMembership.createMany({data:[{tenantId:victim.id,userId:exclusive.id,role:'OWNER'},{tenantId:victim.id,userId:shared.id,role:'MANAGER'},{tenantId:other.id,userId:shared.id,role:'MANAGER'}]});
+  await prisma.session.createMany({data:[exclusive,shared].map(u=>({userId:u.id,tokenHash:`purge-${u.id}`,expiresAt:new Date(Date.now()+86400000)}))});
+  await prisma.deviceToken.createMany({data:[{userId:exclusive.id,token:'purge-merchant',app:'merchant'},{userId:exclusive.id,token:'preserve-customer',app:'customer'},{userId:shared.id,token:'preserve-shared',app:'merchant'}]});
+  const operator=await prisma.deliveryOperator.create({data:{tenantId:victim.id,type:'MERCHANT',name:'Purge fleet'}});
+  const driver=await prisma.driver.create({data:{userId:exclusive.id,operatorId:operator.id,branchId:branch.id}});
+  const order=await prisma.order.create({data:{tenantId:victim.id,branchId:branch.id,customerId:customer.id,orderNumber:'PURGE-ORDER',paymentMethod:'CASH',subtotal:100,total:100,items:{create:{productId:item.id,productName:item.name,quantity:1,unitPrice:100,totalPrice:100}},delivery:{create:{driverId:driver.id,operatorId:operator.id}}}});
+  const common={tenantId:victim.id,orderId:order.id};
+  await prisma.notificationEvent.createMany({data:Array.from({length:5001},(_,i)=>({orderId:order.id,eventKey:`purge-event-${i}`,status:'PENDING'}))});
+  await prisma.paymentAttempt.create({data:{orderId:order.id,customerId:customer.id,reference:'purge-payment',provider:'TEST'}});
+  await prisma.review.create({data:{...common,customerId:customer.id,rating:5}});
+  await prisma.supportCase.create({data:{...common,userId:customer.id,subject:'Purge',description:'Test'}});
+  await prisma.refundRequest.create({data:{...common,customerId:customer.id,amount:100,reason:'Test'}});
+  await prisma.businessDocument.create({data:{...common,customerId:customer.id,number:'PURGE-DOC',kind:'CUSTOMER_RECEIPT',payload:{}}});
+  await prisma.financeEntry.create({data:{...common,kind:'COMMISSION',amount:10,reference:'purge-finance'}});
+  await prisma.commissionPeriod.create({data:{tenantId:victim.id,from:new Date(0),until:new Date(),number:'PURGE-PERIOD',payload:{},createdBy:admin.id}});
+  await prisma.promotion.create({data:{tenantId:victim.id,productId:item.id,code:'PURGE',percent:5,maxDiscount:10,expiresAt:new Date()}});
+  await prisma.favorite.create({data:{tenantId:victim.id,userId:customer.id}});
+  await prisma.storeVisit.create({data:{tenantId:victim.id,userId:customer.id}});
+  await prisma.merchantApplication.create({data:{tenantId:victim.id,ownerId:exclusive.id,payload:{}}});
+  const media=await prisma.mediaAsset.create({data:{ownerId:exclusive.id,url:`/v1/media/${victim.id}/purge.webp`,bytes:10}});
+  await prisma.deliveryZone.create({data:{branchId:branch.id,minDistanceKm:0,maxDistanceKm:3,fee:100}});
+  const otherBranch=await prisma.branch.findFirstOrThrow({where:{tenantId:other.id}});
+  const preserved=await prisma.order.create({data:{tenantId:other.id,branchId:otherBranch.id,customerId:exclusive.id,orderNumber:'PRESERVE-ORDER',paymentMethod:'CASH',subtotal:100,total:100,delivery:{create:{driverId:driver.id,operatorId:operator.id,status:'ASSIGNED'}}}});
+  const previewBody={password,reason:'Isolated full store purge verification',kind:'DELETE',model:'Tenant',key:{id:victim.id}};
+  await request('POST','/v1/admin/system/actions/preview',admin,previewBody,409);
+  await prisma.delivery.update({where:{orderId:preserved.id},data:{status:'DELIVERED'}});
+  const preview=await request('POST','/v1/admin/system/actions/preview',admin,previewBody);
+  assert.equal(preview.counts.NotificationEvent,5001);assert.equal(preview.counts['Credentials revoked'],1);
+  // Force the final deletion to fail and verify that earlier deletes/revocations roll back.
+  await db.exec(`CREATE FUNCTION block_test_purge() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test rollback'; END; $$; CREATE TRIGGER block_test_purge BEFORE DELETE ON "Tenant" FOR EACH ROW EXECUTE FUNCTION block_test_purge();`);
+  const execute={password,token:preview.token,confirmation:preview.confirmation};
+  await request('POST','/v1/admin/system/actions/execute',admin,execute,500);
+  assert.equal(await prisma.notificationEvent.count({where:{orderId:order.id}}),5001);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:exclusive.id}})).authVersion,0);
+  assert.equal(await prisma.session.count({where:{userId:exclusive.id}}),1);
+  await db.exec('DROP TRIGGER block_test_purge ON "Tenant"; DROP FUNCTION block_test_purge();');
+  await request('POST','/v1/admin/system/actions/execute',admin,execute);
+  for(const model of ['tenantMembership','branch','category','product','order','deliveryOperator','review','supportCase','refundRequest','businessDocument','financeEntry','commissionPeriod','promotion','favorite','storeVisit','merchantApplication'])assert.equal(await prisma[model].count({where:{tenantId:victim.id}}),0,model);
+  for(const model of ['notificationEvent','paymentAttempt','delivery','orderItem'])assert.equal(await prisma[model].count({where:{orderId:order.id}}),0,model);
+  assert.equal(await prisma.tenant.count({where:{id:victim.id}}),0);assert.equal(await prisma.driver.count({where:{id:driver.id}}),0);
+  assert.equal(await prisma.mediaAsset.count({where:{id:media.id}}),0);
+  assert.equal(await prisma.session.count({where:{userId:exclusive.id}}),0);
+  assert.equal(await prisma.session.count({where:{userId:shared.id}}),1);
+  assert.equal(await prisma.deviceToken.count({where:{token:'purge-merchant'}}),0);
+  assert.equal(await prisma.deviceToken.count({where:{token:{in:['preserve-customer','preserve-shared']}}}),2);
+  assert.equal(await prisma.order.count({where:{id:preserved.id}}),1);
+  assert.equal((await prisma.delivery.findUniqueOrThrow({where:{orderId:preserved.id}})).driverId,null);
+  await request('GET','/v1/customer/orders',exclusive,undefined,401);
+  await request('GET','/v1/customer/orders',shared);
+  const renewed=await app.inject({method:'GET',url:'/v1/customer/orders',headers:{authorization:`Bearer ${app.jwt.sign({sub:exclusive.id,type:'access',authVersion:1})}`}});assert.equal(renewed.statusCode,200);
+ });
+}

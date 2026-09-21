@@ -1,3 +1,4 @@
+import {publicConfiguration,relativeMediaFields} from './lib/public-config.js';
 import {commissionPeriodRoutes} from './routes/commission-periods.js';
 import {adminSystemRoutes} from './routes/admin-system.js';
 import {runtimeSettings} from './lib/runtime-settings.js';
@@ -57,7 +58,7 @@ app.setErrorHandler((error, request, reply) => {
 });
 
 await app.register(cors, {
-  origin(origin,callback){void runtimeSettings().then(settings=>{const origins=(settings.CORS_ORIGIN||'').split(',').map(v=>v.trim()).filter(Boolean);callback(null,!origin||origins.includes(origin)||(!origins.length&&process.env.APP_ENV==='test'));}).catch(error=>callback(error,false));},
+  origin(origin,callback){void runtimeSettings().then(settings=>{const origins=[...(settings.CORS_ORIGIN||'').split(',').map(v=>v.trim()).filter(Boolean),...(settings.PUBLIC_BASE_URL?[new URL(settings.PUBLIC_BASE_URL).origin]:[])];callback(null,!origin||origins.includes(origin)||(!origins.length&&process.env.APP_ENV==='test'));}).catch(error=>callback(error,false));},
   credentials: true,
 });
 await app.register(jwt, { secret: jwtSecret });
@@ -75,10 +76,12 @@ app.addHook('preHandler', async(request,reply)=>{
   entry.count++;
   if(entry.count>(sensitive?20:120))return reply.header('retry-after',Math.ceil((entry.reset-now)/1000)).code(429).send({error:'too_many_requests',message:'Please wait before trying again.'});
 });
+app.addHook('preValidation',async req=>{const s=await runtimeSettings();req.body=relativeMediaFields(req.body,new Set((s.LEGACY_PUBLIC_ORIGINS||'').split(',').filter(Boolean)));});
+app.addHook('preSerialization',async(_req,_reply,payload)=>{const s=await runtimeSettings();return relativeMediaFields(payload,new Set((s.LEGACY_PUBLIC_ORIGINS||'').split(',').filter(Boolean)));});
 registerAdminAudit(app);
 registerAdminGuardrails(app);
 
-app.addHook('onRequest',async(req,reply)=>{const settings=await runtimeSettings();if(settings.MAINTENANCE_MODE==='true'&&!['/health','/v1/admin/','/v1/auth/','/v1/payments/'].some(p=>req.url.startsWith(p)))return reply.code(503).send({error:'maintenance',message:'The marketplace is temporarily under maintenance.'});});
+app.addHook('onRequest',async(req,reply)=>{const settings=await runtimeSettings();if(settings.MAINTENANCE_MODE==='true'&&!['/health','/v1/config','/v1/admin/','/v1/auth/','/v1/payments/'].some(p=>req.url.startsWith(p)))return reply.code(503).send({error:'maintenance',message:'The marketplace is temporarily under maintenance.'});});
 await app.register(adminSystemRoutes);
 await app.register(commissionPeriodRoutes);
 await app.register(authRoutes);
@@ -93,6 +96,7 @@ await app.register(storeMetadataRoutes);
 await app.register(driverSettlementRoutes);
 await app.register(merchantRoutes);
 await app.register(merchantBusinessRoutes);
+app.get('/v1/config',async(_req,reply)=>reply.header('cache-control','no-store').send(await publicConfiguration()));
 await app.register(mediaRoutes);
 await app.register(brandingRoutes);
 await app.register(businessOperationsRoutes);

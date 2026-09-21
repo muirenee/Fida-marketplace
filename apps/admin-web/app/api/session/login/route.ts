@@ -1,3 +1,4 @@
+import {hasTrustedRuntimeOrigin} from '../../../../lib/request-origin';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   accessCookieName,
@@ -8,6 +9,7 @@ import {
 } from '../../../../lib/backend';
 
 export async function POST(request: NextRequest) {
+  if (!await hasTrustedRuntimeOrigin(request)) return NextResponse.json({error:'invalid_origin'}, {status:403});
   const body = await request.text();
   const upstream = await fetch(`${backendBaseUrl}/v1/auth/login`, {
     method: 'POST',

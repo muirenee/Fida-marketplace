@@ -29,11 +29,13 @@ declare module '@fastify/jwt' {
     payload: {
       sub: string;
       type: 'access';
+      authVersion?: number;
       isPlatformAdmin: boolean;
     };
     user: {
       sub: string;
       type: 'access';
+      authVersion?: number;
       isPlatformAdmin: boolean;
     };
   }

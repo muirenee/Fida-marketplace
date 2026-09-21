@@ -9,13 +9,19 @@ case "$role" in all) roles=(customer merchant driver);; customer|merchant|driver
 case "$kind" in apk|appbundle) ;; *) echo 'Choose apk or appbundle.' >&2; exit 1;; esac
 for program in flutter java python3 keytool; do command -v "$program" >/dev/null || { echo "Install $program first." >&2; exit 1; }; done
 flutter doctor -v
-read -r -p 'Existing release keystore path: ' FIDA_LOCAL_KEYSTORE
+require_value() {
+  local name=$1 prompt=$2 secret=${3:-0}
+  [[ -n "${!name:-}" ]] && return
+  [[ -t 0 ]] || { echo "Set $name before running unattended builds." >&2; exit 1; }
+  if [[ "$secret" == 1 ]]; then read -r -s -p "$prompt: " "$name"; printf '\n';
+  else read -r -p "$prompt: " "$name"; fi
+  [[ -n "${!name}" ]] || { echo "$name is required." >&2; exit 1; }
+}
+require_value FIDA_LOCAL_KEYSTORE 'Existing release keystore path'
 FIDA_LOCAL_KEYSTORE=$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).expanduser().resolve(strict=True))' "$FIDA_LOCAL_KEYSTORE")
-read -r -p 'Release key alias: ' FIDA_LOCAL_KEY_ALIAS
-read -r -s -p 'Keystore password: ' FIDA_LOCAL_STORE_PASSWORD
-printf '\n'
-read -r -s -p 'Key password: ' FIDA_LOCAL_KEY_PASSWORD
-printf '\n'
+require_value FIDA_LOCAL_KEY_ALIAS 'Release key alias'
+require_value FIDA_LOCAL_STORE_PASSWORD 'Keystore password' 1
+require_value FIDA_LOCAL_KEY_PASSWORD 'Key password' 1
 export FIDA_LOCAL_KEYSTORE FIDA_LOCAL_KEY_ALIAS FIDA_LOCAL_STORE_PASSWORD FIDA_LOCAL_KEY_PASSWORD
 # Passwords go through the process environment, never shell arguments or printed logs.
 keytool -list -keystore "$FIDA_LOCAL_KEYSTORE" -alias "$FIDA_LOCAL_KEY_ALIAS" -storepass:env FIDA_LOCAL_STORE_PASSWORD >/dev/null
@@ -27,7 +33,13 @@ for current in "${roles[@]}"; do
   cd "$root/apps/$current-mobile"
   firebase_file="$PWD/android/app/google-services.json"
   if [[ ! -f "$firebase_file" ]]; then
-    read -r -p "Matching $current google-services.json path: " firebase_file
+    case "$current" in
+      customer) config_variable=FIDA_CUSTOMER_GOOGLE_SERVICES_FILE ;;
+      merchant) config_variable=FIDA_MERCHANT_GOOGLE_SERVICES_FILE ;;
+      driver) config_variable=FIDA_DRIVER_GOOGLE_SERVICES_FILE ;;
+    esac
+    require_value "$config_variable" "Matching $current google-services.json path"
+    firebase_file=${!config_variable}
   fi
   FIDA_FIREBASE_CONFIG_JSON=$(cat "$firebase_file")
   export FIDA_FIREBASE_CONFIG_JSON
@@ -67,7 +79,7 @@ PY
   flutter clean
   flutter pub get
   flutter analyze --no-fatal-infos --no-fatal-warnings
-  if [[ "$current" == customer ]]; then flutter test test/experience_test.dart; fi
+  if [[ "$current" == customer ]]; then flutter test test/experience_test.dart test/runtime_config_test.dart; fi
   if [[ "$current" == driver ]]; then flutter test test/earnings_test.dart; fi
   flutter build "$kind" --release --build-number="$build_number" --dart-define="FIDA_API_BASE_URL=$api_base" --dart-define-from-file=firebase-defines.json
   if [[ "$kind" == apk ]]; then

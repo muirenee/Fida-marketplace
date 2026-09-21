@@ -1,3 +1,5 @@
+import {storePurgePlan,executeStorePurge} from '../lib/store-purge.js';
+import {saveRuntimeSettings} from '../lib/public-config.js';
 import {catalog} from '../generated/admin-catalog.js';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {Prisma,prisma} from '@fida/database/client';
@@ -10,10 +12,12 @@ const fail=(statusCode:number,message:string):never=>{throw Object.assign(new Er
 async function confirmPassword(req:FastifyRequest){const b=req.body as any;const user=await prisma.user.findUniqueOrThrow({where:{id:req.authUser!.id}});if(typeof b?.password!=='string'||b.password.length>128||!user.passwordHash||!await verifyPassword(b.password,user.passwordHash))return fail(403,'Current administrator password required.');}
 async function protectAdmins(tx:any,nodes:any[],actorId:string){const ids=nodes.filter(n=>n.model==='User').map(n=>n.key.id);if(ids.includes(actorId))return fail(409,'You cannot delete your signed-in administrator.');if(!await tx.user.count({where:{isActive:true,isPlatformAdmin:true,id:{notIn:ids}}}))return fail(409,'An active platform administrator must remain.');}
 export async function adminSystemRoutes(app:FastifyInstance){
+ app.get('/v1/admin/system/stores',{preHandler:requirePlatformAdmin},async req=>{const q=req.query as {q?:string;ids?:string};const ids=(q.ids||'').split(',').filter(Boolean).slice(0,12);return prisma.tenant.findMany({where:{status:'ACTIVE',...(ids.length?{id:{in:ids}}:{name:{contains:String(q.q||'').slice(0,100),mode:'insensitive'}})},select:{id:true,name:true,slug:true},orderBy:[{name:'asc'},{id:'asc'}],take:30});});
  app.get('/v1/admin/system/settings',{preHandler:requirePlatformAdmin},async req=>({values:await runtimeSettings(true),connectionIp:req.ip}));
  app.patch('/v1/admin/system/settings',{preHandler:requirePlatformAdmin},async req=>{
   await confirmPassword(req);const b=req.body as any;let values;try{values=validateRuntime(b.values,req.ip);}catch(e){return fail(400,(e as Error).message);}
-  await prisma.runtimeSettings.upsert({where:{id:'platform'},create:{values},update:{values}});return {values:await runtimeSettings(true)};
+  if(values.FEATURED_STORE_IDS!==undefined){const ids=[...new Set(values.FEATURED_STORE_IDS.split(',').map(v=>v.trim()).filter(Boolean))];if(ids.length>12||await prisma.tenant.count({where:{id:{in:ids},status:'ACTIVE'}})!==ids.length)return fail(400,'Choose at most 12 active stores.');values.FEATURED_STORE_IDS=ids.join(',');}
+  const normalizedRecords=await saveRuntimeSettings(values);return {values:await runtimeSettings(true),normalizedRecords};
  });
  app.get('/v1/admin/system/collections',{preHandler:requirePlatformAdmin},async()=>models.map(m=>({name:m.name,keys:keys(m.name),fields:m.fields.filter(f=>f.kind!=='object'&&!/(password|secret|tokenHash|deliveryPin)/i.test(f.name)).map(f=>({name:f.name,type:f.type,nullable:!f.isRequired,list:f.isList,enumValues:catalog.enums.find(e=>e.name===f.type)?.values.map(v=>v.name),readOnly:f.isId||!!m.primaryKey?.fields.includes(f.name)||['createdAt','updatedAt'].includes(f.name)}))})));
  app.get('/v1/admin/system/data/:model',{preHandler:requirePlatformAdmin},async req=>{
@@ -51,11 +55,11 @@ export async function adminSystemRoutes(app:FastifyInstance){
   if(!['RESET','DELETE'].includes(b.kind))return fail(400,'Invalid action.');
   if(b.kind==='DELETE'&&['AdminAction','RuntimeSettings'].includes(b.model))return fail(400,'Use the dedicated system controls.');
   const key=b.kind==='DELETE'?checkKey(b.model,b.key):null;
-  const plan=b.kind==='DELETE'?await cascadePlan(prisma,b.model,key):await resetCounts(prisma);
+  const plan=b.kind==='DELETE'?(b.model==='Tenant'?await storePurgePlan(prisma,key!.id):await cascadePlan(prisma,b.model,key)):await resetCounts(prisma);
   if(Array.isArray(plan)){if(!plan.length)return fail(404,'Record not found.');await protectAdmins(prisma,plan,req.authUser!.id);}
   const token=randomBytes(32).toString('base64url'),payload={kind:b.kind,model:b.kind==='DELETE'?b.model:null,key,hash:planHash(plan),reason:b.reason};
   await prisma.adminAction.create({data:{actorId:req.authUser!.id,tokenHash:createHash('sha256').update(token).digest('hex'),payload,expiresAt:new Date(Date.now()+300000)}});
-  const counts=Array.isArray(plan)?plan.reduce((v:Record<string,number>,n)=>({...v,[n.model]:(v[n.model]??0)+1}),{}):plan;
+  const counts='kind' in plan&&plan.kind==='STORE_PURGE'?Object.fromEntries((plan as any).rows.map((r:any)=>[r.model==='User'?'Credentials revoked':r.model,r.count])):Array.isArray(plan)?plan.reduce((v:Record<string,number>,n)=>({...v,[n.model]:(v[n.model]??0)+1}),{}):plan;
   return {token,counts,confirmation:b.kind==='RESET'?'RESET OPERATIONAL DATA':`DELETE ${b.model}`,expiresInSeconds:300,preserved:b.kind==='RESET'?['Platform administrators','Admin sessions','Runtime settings','Audit history','Media files on disk']:[]};
  });
  app.post('/v1/admin/system/actions/execute',{preHandler:requirePlatformAdmin},async req=>{
@@ -66,12 +70,13 @@ export async function adminSystemRoutes(app:FastifyInstance){
    if(!action||action.actorId!==req.authUser!.id||action.usedAt||action.expiresAt<new Date())return fail(409,'Preview expired or already used.');
    const p=action.payload as any,confirmation=p.kind==='RESET'?'RESET OPERATIONAL DATA':`DELETE ${p.model}`;
    if(b.confirmation!==confirmation)return fail(400,'Confirmation text does not match.');
-   const plan=p.kind==='RESET'?await resetCounts(tx):await cascadePlan(tx,p.model,p.key);
+   const plan=p.kind==='RESET'?await resetCounts(tx):p.model==='Tenant'?await storePurgePlan(tx,p.key.id):await cascadePlan(tx,p.model,p.key);
    if(planHash(plan)!==p.hash)return fail(409,'Data changed after preview; generate another preview.');
    if(p.kind==='RESET'){
     const tables=models.filter(m=>!preserved.includes(m.name)).map(m=>`"${m.dbName??m.name}"`).join(',');
     await tx.$executeRawUnsafe(`TRUNCATE TABLE ${tables}`);
     await tx.user.deleteMany({where:{isPlatformAdmin:false}});
+   }else if(p.model==='Tenant'){await executeStorePurge(tx,p.key.id);
    }else{await protectAdmins(tx,plan as any[],req.authUser!.id);for(const node of plan as any[])await delegate(tx,node.model).deleteMany({where:node.key});}
    await tx.adminAction.update({where:{id:action.id},data:{usedAt:new Date()}});
    await tx.adminAuditEvent.create({data:{actorUserId:req.authUser!.id,actorEmail:req.authUser!.email,action:p.kind==='RESET'?'OPERATIONAL_RESET':'CASCADE_DELETE',method:'POST',route:'/v1/admin/system/actions/execute',path:req.url,statusCode:200,success:true,changes:{reason:p.reason,plan} as Prisma.InputJsonValue}});

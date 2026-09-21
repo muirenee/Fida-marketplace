@@ -1,4 +1,4 @@
-import {runtimeSettings} from '../lib/runtime-settings.js';
+import {featuredStoreIds} from '../lib/featured-stores.js';
 import {authenticate} from '../lib/auth.js';
 import { branchIsOpen } from '../lib/business-hours.js';
 import type { FastifyInstance } from 'fastify';
@@ -73,9 +73,9 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       prisma.promotion.findMany({where:{tenantId:{in:ids},isActive:true,expiresAt:{gt:new Date()}},select:{tenantId:true,code:true,percent:true,productId:true,discountType:true,flatAmount:true,stackable:true,minimumOrder:true,maxDiscount:true,usedCount:true,maxUses:true}}),
       prisma.order.groupBy({by:['tenantId'],where:{tenantId:{in:ids},status:'COMPLETED',createdAt:{gte:new Date(Date.now()-30*86400000)}},_count:{id:true}}),
       prisma.favorite.groupBy({by:['tenantId'],where:{tenantId:{in:ids}},_count:{userId:true}}),
-      runtimeSettings(),
+      featuredStoreIds(),
     ]);
-    return merchants.map(({products,...m}) => ({...m, dishes:products, featured:(settings.FEATURED_STORE_IDS||'').split(',').map(v=>v.trim()).includes(m.id), completedOrders:popularity.find(p=>p.tenantId===m.id)?._count.id??0, favoriteCount:favorites.find(p=>p.tenantId===m.id)?._count.userId??0, imageUrl:m.coverUrl??products[0]?.imageUrl ?? null,
+    return merchants.map(({products,...m}) => ({...m, dishes:products, featured:settings.includes(m.id), featuredRank:settings.indexOf(m.id), completedOrders:popularity.find(p=>p.tenantId===m.id)?._count.id??0, favoriteCount:favorites.find(p=>p.tenantId===m.id)?._count.userId??0, imageUrl:m.coverUrl??products[0]?.imageUrl ?? null,
       rating:ratings.find(r=>r.tenantId===m.id)?._avg.rating ?? null,
       reviewCount:ratings.find(r=>r.tenantId===m.id)?._count.rating ?? 0,
       promotions:promos.filter(p=>p.tenantId===m.id && p.usedCount<p.maxUses).map(({usedCount,maxUses,tenantId,...p})=>p),

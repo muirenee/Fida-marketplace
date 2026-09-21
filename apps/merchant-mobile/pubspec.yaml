@@ -1,7 +1,7 @@
 name: merchant_mobile
 description: Fida Marketplace merchant application
 publish_to: none
-version: 0.9.0+9
+version: 0.10.0+10
 environment:
   sdk: '>=3.8.0 <4.0.0'
 dependencies:

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { hasTrustedOrigin } from '../../../../lib/request-origin';
+import { hasTrustedRuntimeOrigin } from '../../../../lib/request-origin';
 import {
   backendBaseUrl,
   secureCookie,
@@ -9,7 +9,7 @@ const accessCookieName = 'fida_merchant_access';
 const refreshCookieName = 'fida_merchant_refresh';
 
 export async function POST(request: NextRequest) {
-  if (!hasTrustedOrigin(request)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 });
+  if (!await hasTrustedRuntimeOrigin(request)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 });
   const body = await request.text();
   const upstream = await fetch(`${backendBaseUrl}/v1/auth/register`, {
     method: 'POST',

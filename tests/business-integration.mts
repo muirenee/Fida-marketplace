@@ -359,6 +359,7 @@ try {
   assert.equal(await prisma.tenant.count({where:{id:victim.id}}),0);assert.equal(await prisma.product.count({where:{id:child.id}}),0);
   await request('POST','/v1/admin/system/actions/execute',admin,{password,token:current.token,confirmation:current.confirmation},409);
  });
+ await (await import('./upgrade-features-010.mjs')).verify010({prisma,app,db,request,admin,password,customer,tenant,other,owner,checkout});
  await test('protected reset clears only isolated operational data while preserving admin, settings, audit and schemas',async()=>{
   const preview=await request('POST','/v1/admin/system/actions/preview',admin,{password,reason:'Isolated PGlite reset verification',kind:'RESET'});
   assert.ok(preview.counts.Order>0);

@@ -2,11 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '@fida/database/client';
 import { hashRefreshToken, newRefreshToken, refreshExpiry } from './security.js';
 
-export function signAccessToken(app: FastifyInstance, user: { id: string; isPlatformAdmin: boolean }) {
+export function signAccessToken(app: FastifyInstance, user: { id: string; isPlatformAdmin: boolean; authVersion: number }) {
   return app.jwt.sign(
     {
       sub: user.id,
       type: 'access',
+      authVersion: user.authVersion,
       isPlatformAdmin: user.isPlatformAdmin,
     },
     { expiresIn: process.env.JWT_ACCESS_TTL ?? '15m' },

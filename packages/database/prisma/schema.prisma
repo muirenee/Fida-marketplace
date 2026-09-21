@@ -120,6 +120,7 @@ model Tenant {
 }
 
 model User {
+  authVersion Int @default(0)
   id              String             @id @default(cuid())
   email           String?            @unique
   phone           String?            @unique
@@ -304,6 +305,7 @@ model Order {
   items                     OrderItem[]
   delivery                  Delivery?
 
+  @@index([status, createdAt, tenantId])
   @@index([tenantId, status, createdAt])
   @@index([customerId, createdAt])
   @@index([tenantId, fulfillmentType, createdAt])
@@ -321,6 +323,7 @@ model OrderItem {
   totalPrice  Decimal  @db.Decimal(12, 2)
   order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  @@index([orderId])
 }
 
 model DeliveryOperator {

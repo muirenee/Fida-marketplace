@@ -41,3 +41,17 @@ test('direct deployments preserve same-origin validation without configuration',
     else process.env.PUBLIC_BASE_URL = previous;
   }
 });
+
+test('runtime origin validation follows the trusted API and fails closed on outage',async()=>{
+ const {hasTrustedRuntimeOrigin}=await import('../apps/admin-web/lib/request-origin.js');
+ const old=globalThis.fetch;
+ try{
+  globalThis.fetch=async()=>new Response(JSON.stringify({allowedOrigins:['https://new.example.test']}),{status:200});
+  assert.equal(await hasTrustedRuntimeOrigin(request('https://new.example.test')),true);
+  assert.equal(await hasTrustedRuntimeOrigin(request(publicUrl)),false);
+  const forged=request('https://attacker.test');forged.headers.set('x-forwarded-host','new.example.test');
+  assert.equal(await hasTrustedRuntimeOrigin(forged),false);
+  globalThis.fetch=async()=>{throw Error('offline');};
+  assert.equal(await hasTrustedRuntimeOrigin(request(publicUrl)),false);
+ }finally{globalThis.fetch=old;}
+});

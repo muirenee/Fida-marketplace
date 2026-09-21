@@ -21,11 +21,27 @@ checks = {
     'delivery_pin': [('apps/api/src/routes/driver.ts', 'deliveryPin')],
     'commercial_documents': [('apps/api/src/lib/documents.ts', 'CUSTOMER_RECEIPT'), ('apps/api/src/routes/documents.ts', 'commission-balances')],
     'merchant_payment_routing': [('apps/api/src/routes/payments.ts', 'transaction_charge:0'), ('apps/api/src/lib/finance.ts', 'MERCHANT_DIRECT')],
-    'upgrade_and_build': [('scripts/upgrade-0.9.sh', 'pg_dump'), ('scripts/build-android.sh', 'flutter build')],
+    'runtime_routes': [('apps/api/src/lib/public-config.ts', 'normalizeMediaUrls'), ('packages/mobile_common/lib/runtime_config.dart', 'legacyOrigins'), ('apps/admin-web/lib/request-origin.ts', 'hasTrustedRuntimeOrigin')],
+    'featured_ranking_and_override': [('apps/api/src/lib/featured-stores.ts', "INTERVAL '30 days'"), ('apps/admin-web/app/system/featured-stores.tsx', 'Matching active stores')],
+    'store_purge_isolation': [('apps/api/src/lib/store-purge.ts', 'executeStorePurge'), ('apps/api/src/lib/auth.ts', 'authVersion'), ('tests/upgrade-features-010.mts', '5001')],
+    'upgrade_and_build': [('scripts/update-platform.sh', 'pg_dump'), ('scripts/build-apks.sh', 'build-android.sh'), ('scripts/build-android.sh', 'flutter build')],
 }
 report = []
 for name, references in checks.items():
     evidence = [{'path': path, 'signature': text, 'present': (root/path).is_file() and text in (root/path).read_text()} for path, text in references]
     report.append({'feature': name, 'implementation_evidence_present': all(e['present'] for e in evidence), 'evidence': evidence})
-print(json.dumps({'scope': 'Source presence only; see RELEASE-0.9.md for verification and remaining gaps', 'features': report}, indent=2))
+# Inventory all tracked and new repository source files; exclude dependencies/build outputs.
+import subprocess
+paths = subprocess.check_output(['git','ls-files','--cached','--others','--exclude-standard','-z'], cwd=root).decode().split('\0')
+source_paths = sorted({p for p in paths if Path(p).suffix in {'.ts','.tsx','.dart','.prisma','.sql','.py','.sh','.yml'} and (root/p).is_file()})
+gaps = [
+    {'priority':'P0','feature':'Physical Android/Firebase acceptance','status':'requires_device_verification','evidence':['packages/mobile_common/lib/fida_mobile_common.dart','apps/driver-mobile/lib/main.dart']},
+    {'priority':'P0','feature':'Live merchant payment and refund reconciliation','status':'requires_provider_acceptance','evidence':['apps/api/src/routes/payments.ts','apps/api/src/routes/merchant-business.ts']},
+    {'priority':'P1','feature':'Shared rate limits and multi-replica load/recovery validation','status':'partial_per_process_limits','evidence':['apps/api/src/server.ts']},
+    {'priority':'P1','feature':'Automatic provider refunds and invoice remittance allocation','status':'manual_external_payment_records_only','evidence':['apps/api/src/routes/merchant-business.ts','apps/api/src/routes/commission-periods.ts']},
+    {'priority':'P2','feature':'Traffic-aware embedded navigation, dynamic ETA and multi-stop optimization','status':'external_navigation_only','evidence':['packages/mobile_common/lib/delivery_map.dart','apps/driver-mobile/lib/main.dart']},
+    {'priority':'P2','feature':'Self-service staff password recovery','status':'not_implemented','evidence':['apps/api/src/routes/auth.ts','apps/merchant-mobile/lib/staff_page.dart']},
+    {'priority':'P3','feature':'SMS/social login, subscriptions and conversion analytics','status':'not_implemented','evidence':['apps/api/src/routes/auth.ts','apps/api/src/routes/marketplace.ts']},
+]
+print(json.dumps({'scope': 'Source evidence only; RELEASE-0.10.md records tested behavior and remaining acceptance. No full marketplace parity claim.', 'source_file_count':len(source_paths), 'features':report, 'remaining':gaps}, indent=2))
 raise SystemExit(0 if all(r['implementation_evidence_present'] for r in report) else 1)
