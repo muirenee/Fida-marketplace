@@ -20,7 +20,7 @@ void main(){
   for(final selection in [('Cheese',2),('Sauce',3)]){
    final control=find.byKey(ValueKey('modifier-${selection.$1}'));await tester.ensureVisible(control);await tester.pumpAndSettle();
    for(var i=0;i<selection.$2;i++){await tester.tap(find.descendant(of:control,matching:find.byIcon(Icons.add)));await tester.pumpAndSettle();}
-   expect(tester.widget<QuantityControl>(control).value,selection.$2);
+   expect(tester.widget<QuantityControl>(control).value,selection.$2);expect(find.descendant(of:control,matching:find.byIcon(Icons.remove)),findsOneWidget);
   }
   await tester.tap(find.byType(FilledButton));await tester.pumpAndSettle();
   expect(result?['quantity'],2);expect(result?['product']['price'],1593);expect(result?['product']['selectedOptions'],[{'name':'Cheese','quantity':2},{'name':'Sauce','quantity':3}]);expect(result?['product']['modifierLines'][0]['totalPrice'],236);expect(tester.takeException(),isNull);

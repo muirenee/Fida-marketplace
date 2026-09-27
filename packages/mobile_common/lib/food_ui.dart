@@ -64,8 +64,10 @@ class QuantityControl extends StatelessWidget {
     required this.value,
     required this.onMinus,
     required this.onPlus,
+    this.removeAtOne=true,
   });
   final int value;
+  final bool removeAtOne;
   final VoidCallback? onMinus, onPlus;
   @override
   Widget build(BuildContext context) => Container(
@@ -77,9 +79,9 @@ class QuantityControl extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
-          tooltip: value == 1 ? 'Remove item' : 'Decrease quantity',
+          tooltip: removeAtOne && value == 1 ? 'Remove item' : 'Decrease quantity',
           onPressed: onMinus,
-          icon: Icon(value == 1 ? Icons.delete_outline : Icons.remove),
+          icon: Icon(removeAtOne && value == 1 ? Icons.delete_outline : Icons.remove),
         ),
         Text('$value', style: const TextStyle(fontWeight: FontWeight.w700)),
         IconButton(

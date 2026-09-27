@@ -61,12 +61,12 @@ class _ProductScreenState extends State<ProductScreen>{
     for(final option in group.value)if(asDouble(option['price'])>0)Padding(padding:const EdgeInsets.symmetric(vertical:12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
      Text(option['name'].toString(),style:const TextStyle(fontWeight:FontWeight.w700)),const SizedBox(height:6),Wrap(crossAxisAlignment:WrapCrossAlignment.center,spacing:12,runSpacing:8,children:[
       Text('${money(option['price'],currency:widget.currency)} each'),
-      QuantityControl(key:ValueKey('modifier-${option['name']}'),value:selected[option['name']]??0,onMinus:(selected[option['name']]??0)>0?()=>setChoice(option,group.value,selected[option['name']]!-1):null,onPlus:(selected[option['name']]??0)<20?()=>setChoice(option,group.value,(selected[option['name']]??0)+1):null),
+      QuantityControl(removeAtOne:false,key:ValueKey('modifier-${option['name']}'),value:selected[option['name']]??0,onMinus:(selected[option['name']]??0)>0?()=>setChoice(option,group.value,selected[option['name']]!-1):null,onPlus:(selected[option['name']]??0)<20?()=>setChoice(option,group.value,(selected[option['name']]??0)+1):null),
      ]),
     ]))else CheckboxListTile(contentPadding:EdgeInsets.zero,title:Text(option['name'].toString()),value:selected.containsKey(option['name']),onChanged:(v)=>setChoice(option,group.value,v==true?1:0)),
    ]))),
    SliverToBoxAdapter(child:Padding(padding:const EdgeInsets.all(20),child:Column(children:[
-    const Text('Paid item quantity'),const SizedBox(height:8),QuantityControl(value:quantity,onMinus:quantity>1?()=>setState(()=>quantity--):null,onPlus:quantity<50?()=>setState(()=>quantity++):null),
+    const Text('Paid item quantity'),const SizedBox(height:8),QuantityControl(removeAtOne:false,value:quantity,onMinus:quantity>1?()=>setState(()=>quantity--):null,onPlus:quantity<50?()=>setState(()=>quantity++):null),
     ModifierBreakdown(lines:modifierLines,currency:widget.currency,multiplier:quantity),
    ]))),
   ])),

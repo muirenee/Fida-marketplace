@@ -87,7 +87,7 @@ ApiClient api() => ApiClient(
       jsonEncode(
         r.url.path.endsWith('/addresses') ? []
             : r.url.path.endsWith('/methods') ? {'methods':['CASH']}
-            : r.url.path.endsWith('/checkout-preview') ? {'subtotal':2500,'deliveryFee':0,'itemDiscount':100,'cartDiscount':240,'tax':388.8,'taxLabel':'VAT','taxPercent':18,'total':2548.8}
+            : r.url.path.endsWith('/checkout-preview') ? {'subtotal':2500,'deliveryFee':0,'itemDiscount':100,'cartDiscount':240,'tax':329.49,'taxInclusive':true,'taxLabel':'VAT','taxPercent':18,'total':2160}
             : r.url.path.endsWith('/merchants')
             ? [merchant]
             : (r.url.path.endsWith('/favorites') || r.url.path.endsWith('/recent-stores'))
