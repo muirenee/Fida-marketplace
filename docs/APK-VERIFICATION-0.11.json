@@ -1,0 +1,29 @@
+[
+  {
+    "file": "Fida-Customer-0.11.0.apk",
+    "package": "com.fidalix.marketplace.customer_mobile",
+    "version": "0.11.0",
+    "versionCode": 212663329,
+    "certificateSha256": "00e09ec17527803e8972f4f8e28fb4324eaaa12956e0558486b1184bde10d623",
+    "sha256": "349b51a96f9e7936cf553ee8869ccfb14778d4402c0127c43563dd8d2bfb0641",
+    "signatureVerified": true
+  },
+  {
+    "file": "Fida-Driver-0.11.0.apk",
+    "package": "com.fidalix.marketplace.driver_mobile",
+    "version": "0.11.0",
+    "versionCode": 212662675,
+    "certificateSha256": "00e09ec17527803e8972f4f8e28fb4324eaaa12956e0558486b1184bde10d623",
+    "sha256": "02c045c3424810e340e9346faf3ad12d85db31e622e6cbb297680df7da7b7ef8",
+    "signatureVerified": true
+  },
+  {
+    "file": "Fida-Merchant-0.11.0.apk",
+    "package": "com.fidalix.marketplace.merchant_mobile",
+    "version": "0.11.0",
+    "versionCode": 212662683,
+    "certificateSha256": "00e09ec17527803e8972f4f8e28fb4324eaaa12956e0558486b1184bde10d623",
+    "sha256": "0176c30899ddcd52c2364e26cf0120e819d7bab174fbc98418b018b6eb8d6b47",
+    "signatureVerified": true
+  }
+]

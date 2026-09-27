@@ -1,4 +1,4 @@
-# Fida 0.11.0 (Android version code 12)
+# Fida 0.11.0
 
 ## Promotion locations
 - `packages/database/prisma/schema.prisma`: Promotion, productId, discountType, buyQuantity/getQuantity.
@@ -30,7 +30,7 @@ bash scripts/update-platform.sh
 The script builds API/admin images, creates and verifies a database backup, applies additive migrations, normalizes owned URLs, preserves credentials while applying runtime settings, restarts services and checks health. It does not reset data.
 
 ## Signed APKs
-Existing GitHub customer/merchant/driver workflows build on this branch using the configured signing and Firebase secrets. Local build uses the existing configured Android/Flutter environment:
+Existing GitHub customer/merchant/driver workflows build on this branch using the configured signing and Firebase secrets. CI assigns increasing build numbers; the source package version is 0.11.0+12. Local build uses the existing configured Android/Flutter environment:
 ```bash
 bash scripts/build-apks.sh
 ```
@@ -38,3 +38,5 @@ Review `scripts/build-android.sh` for environment variables and signing requirem
 
 ## Verification / resumption
 See `docs/WORK-STATE-0.11.md`. Tests run against isolated PGlite data, never production. Credit resets cannot wake an inactive session; this checkpoint supports the next active turn.
+
+All four relevant CI workflows passed. Signed APK package IDs, signing certificates, content signatures and version increases are verified in `docs/APK-VERIFICATION-0.11.json`.
