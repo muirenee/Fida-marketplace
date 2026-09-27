@@ -157,7 +157,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   Future<void> _open(Map<String, dynamic> m) async {
     final id=m['id'].toString();setState((){_recent.remove(id);_recent.insert(0,id);});
     unawaited(widget.api.request('POST','/v1/customer/recent-stores/$id',body:<String,dynamic>{}).catchError((_)=><String,dynamic>{}));
-    await Navigator.push(context,MaterialPageRoute(builder:(_)=>MerchantScreen(api:widget.api,slug:m['slug'].toString(),initialFulfillment:_mode)));
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>MerchantScreen(api:widget.api,slug:m['slug'].toString(),initialFulfillment:_mode,initialBranchId:(m['branches'] as List? ?? []).where((b)=>b[_mode=='DELIVERY'?'deliveryEnabled':'pickupEnabled']==true&&(_mode!='DELIVERY'||b['deliversToLocation']!=false)).firstOrNull?['id']?.toString())));
     if(mounted)await _loadFavorites();
   }
   Widget _card(Map<String, dynamic> m, {bool compact = false}) {

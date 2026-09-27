@@ -44,7 +44,7 @@ class _DeliveryPinScreenState extends State<DeliveryPinScreen> {
   void dispose(){debounce?.cancel();map.dispose();address.dispose();city.dispose();label.dispose();instructions.dispose();super.dispose();}
   void select(LatLng value,{bool move=false}){
     final version=++generation;debounce?.cancel();
-    setState((){point=LatLng(value.latitude.clamp(-90,90),((value.longitude+180)%360)-180);selected=true;looking=true;error=null;address.clear();city.clear();});
+    setState((){point=LatLng(value.latitude.clamp(-90,90).toDouble(),((value.longitude+180)%360)-180);selected=true;looking=true;error=null;address.clear();city.clear();});
     if(move)map.move(point,16);
     final selectedPoint=point;
     debounce=Timer(const Duration(milliseconds:900),()=>resolve(selectedPoint,version));

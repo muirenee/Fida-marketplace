@@ -21,14 +21,16 @@ void main(){
   expect(promotionDescription({'discountType':'BOGO'},'RWF'),'Buy 1, get 1 free');
  });
  testWidgets('pin tap and drag reverse-geocode only the latest point and preserve manual edits',(tester)async{
+  tester.view.physicalSize=const Size(390,844);tester.view.devicePixelRatio=1;addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);
   final pending=<Completer<({String address,String city})>>[];
   await tester.pumpWidget(MaterialApp(home:DeliveryPinScreen(showTiles:false,reverse:(lat,lon){final c=Completer<({String address,String city})>();pending.add(c);return c.future;})));
   await tester.tapAt(tester.getTopLeft(find.byType(FlutterMap))+const Offset(100,100));
-  await tester.pump(const Duration(seconds:1));expect(pending.length,1);
+  await tester.pump(const Duration(milliseconds:350));await tester.pump(const Duration(seconds:1));expect(pending.length,1);
   await tester.drag(find.byKey(const ValueKey('delivery-pin')),const Offset(30,20));
   await tester.pump(const Duration(seconds:1));expect(pending.length,2);
   pending[0].complete((address:'Old address',city:'Old city'));await tester.pump();
   expect(find.text('Old address'),findsNothing);
+  await tester.ensureVisible(find.byKey(const ValueKey('pin-address')));await tester.pump();
   await tester.enterText(find.byKey(const ValueKey('pin-address')),'Entrance beside shop');
   pending[1].complete((address:'New street',city:'Kigali'));await tester.pumpAndSettle();
   expect(find.text('Entrance beside shop'),findsOneWidget);expect(find.text('Kigali'),findsOneWidget);
@@ -39,8 +41,9 @@ void main(){
   await tester.pumpWidget(MaterialApp(home:Builder(builder:(context)=>Scaffold(body:TextButton(onPressed:()async{result=await Navigator.push<Map<String,dynamic>>(context,MaterialPageRoute(builder:(_)=>DeliveryPinScreen(showTiles:false,reverse:(_,__)async=>throw StateError('offline'))));},child:const Text('Open'))))));
   await tester.tap(find.text('Open'));await tester.pumpAndSettle();
   await tester.tapAt(tester.getTopLeft(find.byType(FlutterMap))+const Offset(80,80));
-  await tester.pump(const Duration(seconds:1));await tester.pumpAndSettle();
+  await tester.pump(const Duration(milliseconds:350));await tester.pump(const Duration(seconds:1));await tester.pumpAndSettle();
   expect(find.textContaining('Address lookup unavailable'),findsOneWidget);
+  await tester.ensureVisible(find.byKey(const ValueKey('pin-address')));await tester.pump();
   await tester.enterText(find.byKey(const ValueKey('pin-address')),'KG 10 Street');
   await tester.tap(find.text('Use this delivery location'));await tester.pumpAndSettle();
   expect(result?['addressLine'],'KG 10 Street');expect(result?['latitude'],isA<double>());expect(result?['longitude'],isA<double>());

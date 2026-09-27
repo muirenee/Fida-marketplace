@@ -12,8 +12,10 @@ class MerchantScreen extends StatefulWidget {
     required this.api,
     required this.slug,
     this.initialFulfillment = 'DELIVERY',
+    this.initialBranchId,
   });
   final ApiClient api;
+  final String? initialBranchId;
   final String slug, initialFulfillment;
   @override
   State<MerchantScreen> createState() => _MerchantScreenState();
@@ -39,10 +41,12 @@ class _MerchantScreenState extends State<MerchantScreen> {
       final m = await widget.api.merchant(widget.slug);
       if (!mounted) return;
       setState(() {
+        final firstLoad=merchant==null;
         merchant = m;
         loading = false;
         error = null;
         final bs = m['branches'] as List? ?? [];
+        if(firstLoad&&widget.initialBranchId!=null){final i=bs.indexWhere((b)=>b['id']==widget.initialBranchId);if(i>=0)branchIndex=i;}
         if (branchIndex >= bs.length) branchIndex = 0;
         if (bs.isNotEmpty &&
             bs[branchIndex][mode == 'DELIVERY'

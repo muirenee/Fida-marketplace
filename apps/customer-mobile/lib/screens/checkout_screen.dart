@@ -47,6 +47,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String? _addressId;
   String _fulfillment = 'DELIVERY';
   bool _newAddress = false;
+  bool _newDefault = false;
+  String? _newLabel;
   bool _loading = true;
   bool _submitting = false;
   bool _locating = false;
@@ -260,7 +262,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         final updated=await widget.api.request('PATCH','/v1/customer/addresses/${saved['id']}',body:result) as Map;
         if(!mounted)return;
         setState((){final i=_addresses.indexWhere((a)=>a['id']==saved['id']);if(i>=0)_addresses[i]=updated.cast<String,dynamic>();});
-      }else{setState((){_newAddress=true;_latitude=result['latitude'];_longitude=result['longitude'];_addressLine.text=result['addressLine'];_city.text=result['city'];_instructions.text=result['instructions'];});}
+      }else{setState((){_newAddress=true;_latitude=result['latitude'];_longitude=result['longitude'];_addressLine.text=result['addressLine'];_city.text=result['city'];_instructions.text=result['instructions'];_newDefault=result['isDefault']==true;_newLabel=result['label'] as String?;});}
       await _refreshQuote();
     }catch(e){if(mounted)setState(()=>_error='$e');}
   }
@@ -355,7 +357,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 : _instructions.text.trim(),
             latitude: _latitude,
             longitude: _longitude,
-            isDefault: _addresses.isEmpty,
+            label:_newLabel,
+            isDefault: _newDefault || _addresses.isEmpty,
           );
           addressId = saved['id'].toString();
         }
