@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
+import 'delivery_pin_screen.dart';
 import '../core/api_client.dart';
 
 class AddressesScreen extends StatefulWidget {
@@ -30,107 +30,11 @@ class _AddressesScreenState extends State<AddressesScreen> {
     }
   }
 
-  Future<void> add() async {
-    String address = '', city = '', label = 'Home';
-    Position? position;
-    String? formError;
-    bool busy = false;
-    await showDialog<void>(
-      context: context,
-      builder: (c) => StatefulBuilder(
-        builder: (ctx, update) => AlertDialog(
-          title: const Text('Add an address'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Label (Home, Work)',
-                  ),
-                  onChanged: (v) => label = v,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Street / address',
-                  ),
-                  onChanged: (v) => address = v,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  decoration: const InputDecoration(labelText: 'City'),
-                  onChanged: (v) => city = v,
-                ),
-                TextButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          update(() => busy = true);
-                          try {
-                            var permission = await Geolocator.checkPermission();
-                            if (permission == LocationPermission.denied)
-                              permission = await Geolocator.requestPermission();
-                            if (permission == LocationPermission.denied ||
-                                permission == LocationPermission.deniedForever)
-                              throw Exception(
-                                'Allow location access to save a precise delivery point.',
-                              );
-                            position = await Geolocator.getCurrentPosition();
-                            if (c.mounted) update(() => formError = null);
-                          } catch (e) {
-                            if (c.mounted) update(() => formError = '$e');
-                          } finally {
-                            if (c.mounted) update(() => busy = false);
-                          }
-                        },
-                  icon: const Icon(Icons.my_location),
-                  label: Text(
-                    position == null
-                        ? 'Use my current location'
-                        : 'Location selected',
-                  ),
-                ),
-                if (formError != null) Text(formError!),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: busy ? null : () => Navigator.pop(c),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      if (address.trim().isEmpty) {
-                        update(() => formError = 'Enter the address.');
-                        return;
-                      }
-                      update(() => busy = true);
-                      try {
-                        await widget.api.addAddress(
-                          addressLine: address.trim(),
-                          city: city.trim(),
-                          label: label.trim(),
-                          latitude: position?.latitude,
-                          longitude: position?.longitude,
-                        );
-                        if (c.mounted) Navigator.pop(c);
-                        await load();
-                      } catch (e) {
-                        if (c.mounted) update(() => formError = '$e');
-                      } finally {
-                        if (c.mounted) update(() => busy = false);
-                      }
-                    },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
+  Future<void> add([Map<String,dynamic>? existing]) async {
+    final result=await Navigator.push<Map<String,dynamic>>(context,MaterialPageRoute(builder:(_)=>DeliveryPinScreen(initial:existing??const {})));
+    if(result==null||!mounted)return;
+    try{await widget.api.request(existing==null?'POST':'PATCH',existing==null?'/v1/customer/addresses':'/v1/customer/addresses/${existing['id']}',body:result);await load();}
+    catch(e){if(mounted)setState(()=>error='$e');}
   }
 
   Future<void> change(String method, String path) async {
@@ -150,7 +54,7 @@ class _AddressesScreenState extends State<AddressesScreen> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Delivery addresses')),
     floatingActionButton: FloatingActionButton.extended(
-      onPressed: add,
+      onPressed: () => add(),
       icon: const Icon(Icons.add),
       label: const Text('Add address'),
     ),
@@ -186,6 +90,7 @@ class _AddressesScreenState extends State<AddressesScreen> {
                           ),
                         Wrap(
                           children: [
+                            TextButton(onPressed:()=>add(r),child:const Text('Edit / move pin')),
                             if (r['isDefault'] != true)
                               TextButton(
                                 onPressed: () => change(

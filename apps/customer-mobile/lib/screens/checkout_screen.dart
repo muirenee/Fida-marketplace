@@ -1,3 +1,4 @@
+import 'delivery_pin_screen.dart';
 import 'dart:async';
 import 'dart:math';
 
@@ -192,10 +193,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  int _quoteRequest=0;
   Future<void> _setFulfillment(String value) async {
     if (value == 'PICKUP' && !_pickupEnabled) return;
     if (value == 'DELIVERY' && !_deliveryEnabled) return;
     setState(() {
+      _quoteRequest++;
+      _quoteLoading=false;
       _fulfillment = value;
       _error = null;
       if (value == 'PICKUP') {
@@ -209,6 +213,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _refreshQuote() async {
     if (!_isDelivery || _branch == null) return;
+    final version=++_quoteRequest;
     setState(() {
       _totalsRequest++;
       _totals = null;
@@ -234,16 +239,30 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           addressId: _addressId!,
         );
       }
-      if (!mounted) return;
+      if (!mounted || version!=_quoteRequest) return;
       setState(() {
         _deliveryPrice = asDouble(quote['deliveryPrice']);
         _distanceKm = asDouble(quote['distanceKm']);
       });
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted && version==_quoteRequest) setState(() => _error = e.message);
     } finally {
-      if (mounted) { setState(() => _quoteLoading = false); await _refreshTotals(); }
+      if (mounted && version==_quoteRequest) { setState(() => _quoteLoading = false); await _refreshTotals(); }
     }
+  }
+
+  Future<void> _choosePin() async {
+    final saved=_newAddress?null:_addresses.where((a)=>a['id']==_addressId).firstOrNull;
+    final result=await Navigator.push<Map<String,dynamic>>(context,MaterialPageRoute(builder:(_)=>DeliveryPinScreen(initial:saved??{'addressLine':_addressLine.text,'city':_city.text,'instructions':_instructions.text,'latitude':_latitude,'longitude':_longitude})));
+    if(result==null||!mounted)return;
+    try{
+      if(saved!=null){
+        final updated=await widget.api.request('PATCH','/v1/customer/addresses/${saved['id']}',body:result) as Map;
+        if(!mounted)return;
+        setState((){final i=_addresses.indexWhere((a)=>a['id']==saved['id']);if(i>=0)_addresses[i]=updated.cast<String,dynamic>();});
+      }else{setState((){_newAddress=true;_latitude=result['latitude'];_longitude=result['longitude'];_addressLine.text=result['addressLine'];_city.text=result['city'];_instructions.text=result['instructions'];});}
+      await _refreshQuote();
+    }catch(e){if(mounted)setState(()=>_error='$e');}
   }
 
   Future<void> _useCurrentLocation() async {
@@ -376,9 +395,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Items: ${money(totals['subtotal'])}'),
-              Text('Delivery: ${money(totals['deliveryFee'])}'),
-              Text('Discount: −${money(totals['discount'])}'),
-              Text('Tax: ${money(totals['tax'])}'),
+              if(hasNonZeroAmount(totals['deliveryFee'])) Text('Delivery: ${money(totals['deliveryFee'])}'),
+              if(hasNonZeroAmount(totals['discount'])) Text('Discount: −${money(totals['discount'])}'),
+              if(hasNonZeroAmount(totals['tax'])) Text('Tax: ${money(totals['tax'])}'),
               const Divider(),
               Text(
                 'Total: ${money(totals['total'])}',
@@ -539,6 +558,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 const SizedBox(height: 24),
                 if (_isDelivery) ...[
+                  OutlinedButton.icon(onPressed:_choosePin,icon:const Icon(Icons.pin_drop_outlined),label:const Text('Choose or edit map pin')),
                   Text(
                     'Delivery location',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -771,13 +791,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ),
                 const Divider(),
                 _PriceLine(label: 'Subtotal', value: money(_totals?['subtotal'] ?? _subtotal, currency: currency)),
-                _PriceLine(label: 'Delivery', value: _isDelivery && _deliveryPrice == null ? 'Choose address' : money(_totals?['deliveryFee'] ?? (_isDelivery ? _deliveryPrice : 0), currency: currency)),
+                if((_isDelivery&&_deliveryPrice==null)||hasNonZeroAmount(_totals?['deliveryFee']??(_isDelivery?_deliveryPrice:0))) _PriceLine(label: 'Delivery', value: _isDelivery && _deliveryPrice == null ? 'Choose address' : money(_totals?['deliveryFee'] ?? (_isDelivery ? _deliveryPrice : 0), currency: currency)),
                 if (_totalsLoading) const LinearProgressIndicator(),
                 if (_totalsError != null) Text(_totalsError!, style: const TextStyle(color: Colors.red)),
                 if (_totals != null) ...[
-                  _PriceLine(label: 'Item discounts', value: '- ${money(_totals!['itemDiscount'], currency: currency)}'),
-                  _PriceLine(label: 'Promo discount', value: '- ${money(_totals!['cartDiscount'], currency: currency)}'),
-                  _PriceLine(label: '${_totals!['taxLabel']} (${_totals!['taxPercent']}%)', value: money(_totals!['tax'], currency: currency)),
+                  if(hasNonZeroAmount(_totals!['itemDiscount'])) _PriceLine(label: 'Item discounts', value: '- ${money(_totals!['itemDiscount'], currency: currency)}'),
+                  if(hasNonZeroAmount(_totals!['cartDiscount'])) _PriceLine(label: 'Promo discount', value: '- ${money(_totals!['cartDiscount'], currency: currency)}'),
+                  if(hasNonZeroAmount(_totals!['tax'])) _PriceLine(label: '${_totals!['taxLabel']} (${_totals!['taxPercent']}%)', value: money(_totals!['tax'], currency: currency)),
+                  if(hasNonZeroAmount(_totals!['serviceFee'])) _PriceLine(label:'Service fee',value:money(_totals!['serviceFee'],currency:currency)),
                   const Divider(),
                   _PriceLine(label: 'Total', value: money(_totals!['total'], currency: currency), strong: true),
                 ] else if (!_totalsLoading) const Text('Choose a delivery location or pickup to calculate discounts and tax.'),

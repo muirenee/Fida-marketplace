@@ -1,3 +1,5 @@
+import {quoteCoordinates} from '../lib/delivery-pricing.js';
+import {publicPromotions} from '../lib/public-promotions.js';
 import {featuredStoreIds} from '../lib/featured-stores.js';
 import {authenticate} from '../lib/auth.js';
 import { branchIsOpen } from '../lib/business-hours.js';
@@ -27,6 +29,9 @@ const branchSelect = {
 export async function marketplaceRoutes(app: FastifyInstance) {
   app.get('/v1/marketplace/merchants', async (request) => {
     const query = (request.query ?? {}) as Record<string, unknown>;
+    const hasPoint=query.latitude!==undefined||query.longitude!==undefined;
+    const latitude=Number(query.latitude),longitude=Number(query.longitude);
+    if(hasPoint&&(typeof query.latitude!=='string'||typeof query.longitude!=='string'||!query.latitude.trim()||!query.longitude.trim()||!Number.isFinite(latitude)||!Number.isFinite(longitude)||Math.abs(latitude)>90||Math.abs(longitude)>180))throw Object.assign(new Error('Provide valid latitude and longitude.'),{statusCode:400});
     const city = typeof query.city === 'string' ? query.city.trim() : '';
     const requestedType = typeof query.type === 'string' ? query.type.toUpperCase() : '';
 
@@ -70,16 +75,17 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     const ids = merchants.map(m => m.id);
     const [ratings, promos, popularity, favorites, settings] = await Promise.all([
       prisma.review.groupBy({by:['tenantId'],where:{tenantId:{in:ids}},_avg:{rating:true},_count:{rating:true}}),
-      prisma.promotion.findMany({where:{tenantId:{in:ids},isActive:true,expiresAt:{gt:new Date()}},select:{tenantId:true,code:true,percent:true,productId:true,discountType:true,flatAmount:true,stackable:true,minimumOrder:true,maxDiscount:true,usedCount:true,maxUses:true}}),
+      prisma.promotion.findMany({where:{tenantId:{in:ids},isActive:true,expiresAt:{gt:new Date()}},select:{tenantId:true,code:true,percent:true,productId:true,discountType:true,buyQuantity:true,getQuantity:true,flatAmount:true,stackable:true,minimumOrder:true,maxDiscount:true,usedCount:true,maxUses:true}}),
       prisma.order.groupBy({by:['tenantId'],where:{tenantId:{in:ids},status:'COMPLETED',createdAt:{gte:new Date(Date.now()-30*86400000)}},_count:{id:true}}),
       prisma.favorite.groupBy({by:['tenantId'],where:{tenantId:{in:ids}},_count:{userId:true}}),
       featuredStoreIds(),
     ]);
+    const visiblePromos=await publicPromotions(promos);
     return merchants.map(({products,...m}) => ({...m, dishes:products, featured:settings.includes(m.id), featuredRank:settings.indexOf(m.id), completedOrders:popularity.find(p=>p.tenantId===m.id)?._count.id??0, favoriteCount:favorites.find(p=>p.tenantId===m.id)?._count.userId??0, imageUrl:m.coverUrl??products[0]?.imageUrl ?? null,
       rating:ratings.find(r=>r.tenantId===m.id)?._avg.rating ?? null,
       reviewCount:ratings.find(r=>r.tenantId===m.id)?._count.rating ?? 0,
-      promotions:promos.filter(p=>p.tenantId===m.id && p.usedCount<p.maxUses).map(({usedCount,maxUses,tenantId,...p})=>p),
-      branches:m.branches.map(b=>({...b,isOpen:branchIsOpen(b,m.timezone)})),
+      promotions:visiblePromos.filter(p=>p.tenantId===m.id && p.usedCount<p.maxUses).map(({usedCount,maxUses,tenantId,...p})=>p),
+      branches:m.branches.map(b=>{const quote=hasPoint?quoteCoordinates(b,latitude,longitude):null;return {...b,isOpen:branchIsOpen(b,m.timezone),...(hasPoint?{deliversToLocation:quote!==null,deliveryQuote:quote}:{})};}),
     }));
   });
 
@@ -133,11 +139,12 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     const uncategorised = await prisma.product.findMany({ where: { tenantId: merchant.id, categoryId: null, isActive: true, isAvailable: true, deletedAt: null }, select: { id: true, name: true, description: true, price: true, imageUrl: true, options: true } });
     const [reviews,promotions] = await Promise.all([
       prisma.review.aggregate({where:{tenantId:merchant.id},_avg:{rating:true},_count:{rating:true}}),
-      prisma.promotion.findMany({where:{tenantId:merchant.id,isActive:true,expiresAt:{gt:new Date()}},select:{code:true,percent:true,productId:true,discountType:true,flatAmount:true,stackable:true,minimumOrder:true,maxDiscount:true,maxUses:true,usedCount:true}}),
+      prisma.promotion.findMany({where:{tenantId:merchant.id,isActive:true,expiresAt:{gt:new Date()}},select:{tenantId:true,code:true,percent:true,productId:true,discountType:true,buyQuantity:true,getQuantity:true,flatAmount:true,stackable:true,minimumOrder:true,maxDiscount:true,maxUses:true,usedCount:true}}),
     ]);
+    const visiblePromotions=await publicPromotions(promotions);
     const {products,...publicMerchant}=merchant;
     return { ...publicMerchant, imageUrl:publicMerchant.coverUrl??products[0]?.imageUrl??null, rating:reviews._avg.rating, reviewCount:reviews._count.rating,
-      promotions:promotions.filter(p=>p.usedCount<p.maxUses).map(({maxUses,usedCount,...p})=>p),
-      branches:merchant.branches.map(b=>({...b,isOpen:branchIsOpen(b,merchant.timezone)})), categories: [...merchant.categories, ...(uncategorised.length ? [{ id: 'uncategorised', name: 'More to discover', slug: 'uncategorised', products: uncategorised }] : [])] };
+      promotions:visiblePromotions.filter(p=>p.usedCount<p.maxUses).map(({maxUses,usedCount,...p})=>p),
+      branches:merchant.branches.map(b=>({...b,isOpen:branchIsOpen(b,merchant.timezone)})), categories: [...merchant.categories, ...(uncategorised.length ? [{ id: 'uncategorised', name: 'More to discover', slug: 'uncategorised', products: uncategorised }] : [])].map(c=>({...c,products:c.products.map(p=>({...p,promotions:visiblePromotions.filter(o=>o.productId===p.id).map(({usedCount,maxUses,tenantId,...o})=>o)}))})) };
   });
 }

@@ -28,7 +28,10 @@ export async function checkoutTotals(tenantId:string, lines:PricedLine[], delive
    const quantity=indexes.reduce((sum,i)=>sum+lines[i].quantity,0);
    let best:typeof offers[number]|undefined,bestAmount=zero();
    for(const p of offers.filter(p=>p.productId===productId&&p.usedCount<p.maxUses&&subtotal.gte(p.minimumOrder))){
-     const amount=Prisma.Decimal.min(base,p.maxDiscount,p.discountType==='FLAT'?p.flatAmount.mul(quantity):base.mul(p.percent).div(100)).toDecimalPlaces(2);
+     const unit=lines[indexes[0]].basePrice;
+     const freeUnits=p.discountType==='BOGO'&&unit.gt(0)&&p.buyQuantity===1&&p.getQuantity===1
+       ? Math.min(Math.floor(quantity/2),p.maxDiscount.div(unit).floor().toNumber()):0;
+     const amount=Prisma.Decimal.min(base,p.maxDiscount,p.discountType==='BOGO'?unit.mul(freeUnits):p.discountType==='FLAT'?p.flatAmount.mul(quantity):base.mul(p.percent).div(100)).toDecimalPlaces(2);
      if(amount.gt(bestAmount)){best=p;bestAmount=amount;}
    }
    if(best&&bestAmount.gt(0)){
@@ -41,7 +44,7 @@ export async function checkoutTotals(tenantId:string, lines:PricedLine[], delive
  const net=subtotal.minus(itemDiscount);
  const code=promoCode?.trim().toUpperCase();
  const coupon=code?await db.promotion.findUnique({where:{tenantId_code:{tenantId,code}}}):null;
- if(code&&(!coupon||coupon.productId||!coupon.isActive||coupon.expiresAt<=new Date()||coupon.usedCount>=coupon.maxUses||net.lt(coupon.minimumOrder)))return invalid('This promo code is unavailable or the minimum after item discounts is not met.');
+ if(code&&(!coupon||coupon.productId||coupon.discountType==='BOGO'||!coupon.isActive||coupon.expiresAt<=new Date()||coupon.usedCount>=coupon.maxUses||net.lt(coupon.minimumOrder)))return invalid('This promo code is unavailable or the minimum after item discounts is not met.');
  if(coupon&&used.length&&(!coupon.stackable||used.some(p=>!p.stackable)||policy?.allowStacking===false))return invalid('This code cannot be combined with the active item discounts.');
  const cartDiscount=coupon?Prisma.Decimal.min(net,coupon.maxDiscount,coupon.discountType==='FLAT'?coupon.flatAmount:net.mul(coupon.percent).div(100)).toDecimalPlaces(2):zero();
  if(coupon)used.push(coupon);

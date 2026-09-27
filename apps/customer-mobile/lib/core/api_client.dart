@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:fida_mobile_common/fida_mobile_common.dart';
 
 import 'dart:convert';
@@ -17,6 +18,7 @@ class ApiException implements Exception {
 }
 
 class ApiClient {
+  static final addressChanges=ValueNotifier<int>(0);
   final push = FidaPush();
   ApiClient({http.Client? client, FlutterSecureStorage? storage})
     : _client = client ?? http.Client(),
@@ -244,11 +246,14 @@ class ApiClient {
     String? city,
     String? type,
     String? search,
+    double? latitude,
+    double? longitude,
   }) async {
     final response = await _send(
       'GET',
       '/v1/marketplace/merchants',
       query: {
+        if(latitude!=null&&longitude!=null) ...{'latitude':'$latitude','longitude':'$longitude'},
         if (city != null && city.trim().isNotEmpty) 'city': city.trim(),
         if (type != null && type.isNotEmpty) 'type': type,
         if (search != null && search.trim().isNotEmpty) 'q': search.trim(),
@@ -294,6 +299,7 @@ class ApiClient {
       body: {
         'addressLine': addressLine,
         if (label != null) 'label': label,
+        if(latitude!=null&&longitude!=null) ...{'latitude':'$latitude','longitude':'$longitude'},
         if (city != null) 'city': city,
         if (instructions != null) 'instructions': instructions,
         if (latitude != null) 'latitude': latitude,
@@ -302,6 +308,7 @@ class ApiClient {
       },
     );
     if (response.statusCode != 201) throw _error(response);
+    addressChanges.value++;
     return (_decode(response) as Map).cast<String, dynamic>();
   }
 
@@ -415,6 +422,7 @@ class ApiClient {
     final response = await _send(method, path, body: body, authenticated: true);
     if (response.statusCode < 200 || response.statusCode >= 300)
       throw _error(response);
+    if(method!='GET'&&path.startsWith('/v1/customer/addresses'))addressChanges.value++;
     return _decode(response);
   }
 

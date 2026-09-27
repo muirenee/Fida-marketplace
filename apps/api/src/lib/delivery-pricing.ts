@@ -36,6 +36,10 @@ export async function quoteBranchDelivery(branchId: string, latitude: number, lo
     },
   });
 
+  return branch ? quoteCoordinates(branch,latitude,longitude) : null;
+}
+
+export function quoteCoordinates(branch:{deliveryEnabled:boolean;latitude:Prisma.Decimal|null;longitude:Prisma.Decimal|null;deliveryZones:{id:string;minDistanceKm:Prisma.Decimal;maxDistanceKm:Prisma.Decimal;fee:Prisma.Decimal}[]},latitude:number,longitude:number):DeliveryQuote|null {
   if (!branch?.deliveryEnabled || branch.latitude === null || branch.longitude === null) return null;
 
   const distanceKm = Number(haversineKm(Number(branch.latitude), Number(branch.longitude), latitude, longitude).toFixed(2));

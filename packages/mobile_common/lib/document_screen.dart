@@ -1,3 +1,4 @@
+import 'amount_visibility.dart';
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -98,7 +99,7 @@ class BusinessDocumentScreen extends StatelessWidget {
                   ('Delivery', 'deliveryFee'),
                   ('Service fee', 'serviceFee'),
                 ])
-                  if (p[entry.$2] != null)
+                  if (p[entry.$2] != null && (entry.$2 == 'subtotal' || hasNonZeroAmount(p[entry.$2])))
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [

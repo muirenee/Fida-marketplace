@@ -11,9 +11,14 @@ export async function promotionRoutes(app:FastifyInstance){
   const percent=discountType==='PERCENT'?Number(b.percent):0,flatAmount=discountType==='FLAT'?Number(b.flatAmount):0;
   const maxUses=Number(b.maxUses),maxDiscount=Number(b.maxDiscount),minimumOrder=Number(b.minimumOrder??0),expiresAt=new Date(String(b.expiresAt));
   const policy=await prisma.promotionPolicy.findUnique({where:{id:'platform'}});
-  if(!/^[A-Z0-9_-]{3,32}$/.test(code)||!['FLAT','PERCENT'].includes(String(discountType))||!Number.isInteger(percent)||percent<0||percent>(policy?.maxPercent??100)||(discountType==='PERCENT'&&percent<1)||!Number.isFinite(flatAmount)||flatAmount<0||(discountType==='FLAT'&&flatAmount<=0)||!Number.isInteger(maxUses)||maxUses<1||maxUses>100000||!Number.isFinite(maxDiscount)||maxDiscount<=0||maxDiscount>Number(policy?.maxDiscount??100000000)||flatAmount>maxDiscount||!Number.isFinite(minimumOrder)||minimumOrder<0||minimumOrder>100000000||!Number.isFinite(expiresAt.getTime())||expiresAt<=new Date())return fail('Invalid promotion values or platform promotion limits exceeded.');
+  if(!/^[A-Z0-9_-]{3,32}$/.test(code)||!['FLAT','PERCENT','BOGO'].includes(String(discountType))||!Number.isInteger(percent)||percent<0||percent>(policy?.maxPercent??100)||(discountType==='PERCENT'&&percent<1)||!Number.isFinite(flatAmount)||flatAmount<0||(discountType==='FLAT'&&flatAmount<=0)||!Number.isInteger(maxUses)||maxUses<1||maxUses>100000||!Number.isFinite(maxDiscount)||maxDiscount<=0||maxDiscount>Number(policy?.maxDiscount??100000000)||flatAmount>maxDiscount||!Number.isFinite(minimumOrder)||minimumOrder<0||minimumOrder>100000000||!Number.isFinite(expiresAt.getTime())||expiresAt<=new Date())return fail('Invalid promotion values or platform promotion limits exceeded.');
   const productId=typeof b.productId==='string'&&b.productId?b.productId:null;
   if(productId&&!await prisma.product.findFirst({where:{id:productId,tenantId,deletedAt:null}}))return fail('Choose a product owned by this merchant.');
+  if(discountType==='BOGO'){
+   if(!productId||(b.buyQuantity!==undefined&&b.buyQuantity!==1)||(b.getQuantity!==undefined&&b.getQuantity!==1))return fail('Buy 1, get 1 free requires one product and quantities of 1.');
+   const product=await prisma.product.findFirst({where:{id:productId,tenantId,isActive:true,isAvailable:true,deletedAt:null}});
+   if(!product||product.price.lte(0)||product.price.gt(maxDiscount))return fail('Select an available product and a cap covering at least one free item.');
+  }
   if(b.stackable!==undefined&&typeof b.stackable!=='boolean')return fail('Invalid stacking choice.');
   const stackable=b.stackable!==false&&policy?.allowStacking!==false;
   if(await prisma.promotion.findUnique({where:{tenantId_code:{tenantId,code}}}))return reply.code(409).send({error:'promo_code_in_use'});

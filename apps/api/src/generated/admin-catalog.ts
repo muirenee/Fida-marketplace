@@ -3052,6 +3052,26 @@ export const catalog:{models:CatalogModel[];enums:{name:string;values:{name:stri
           "relationToFields": []
         },
         {
+          "name": "buyQuantity",
+          "type": "Int",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "getQuantity",
+          "type": "Int",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
           "name": "flatAmount",
           "type": "Decimal",
           "kind": "scalar",

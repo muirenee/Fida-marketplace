@@ -77,6 +77,7 @@ class _ProductScreenState extends State<ProductScreen> {
                     letterSpacing: -.6,
                   ),
                 ),
+                if((widget.product['promotions'] as List? ?? []).any((p)=>p['discountType']=='BOGO')) const Padding(padding:EdgeInsets.symmetric(vertical:12),child:Text('Buy 1, get 1 free · Add 2 of this item. Add-ons are extra. Offer limits apply.',style:TextStyle(color:Color(0xFF07855A),fontWeight:FontWeight.w700))),
                 const SizedBox(height: 10),
                 Text(
                   money(widget.product['price'], currency: widget.currency),

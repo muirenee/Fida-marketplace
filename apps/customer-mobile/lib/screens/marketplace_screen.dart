@@ -4,6 +4,7 @@ import 'package:fida_mobile_common/fida_mobile_common.dart';
 import '../core/api_client.dart';
 import '../ui/format.dart';
 import 'merchant_screen.dart';
+import 'addresses_screen.dart';
 
 class MarketplaceScreen extends StatefulWidget {
   const MarketplaceScreen({super.key, required this.api, this.onAccount});
@@ -24,7 +25,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   bool _loading = true, _offersOnly = false, _openOnly = false;
   String? _error, _type, _city;
   String _mode = 'DELIVERY', _sort = 'name';
-  int _request = 0;
+  int _request = 0, _addressRequest=0;
+  double? _latitude,_longitude;
+  String? _addressLabel;
   static const _types = [
     ('All', '✨', null),
     ('Restaurants', '🍔', 'RESTAURANT'),
@@ -35,7 +38,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadAddress();
+    ApiClient.addressChanges.addListener(_loadAddress);
     _loadFavorites();
     _loadRecent();
   }
@@ -58,12 +62,23 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
 
   @override
   void dispose() {
+    ApiClient.addressChanges.removeListener(_loadAddress);
     _search.dispose();
     _searchFocus.dispose();
     _debounce?.cancel();
     super.dispose();
   }
 
+  Future<void> _loadAddress() async {
+    final version=++_addressRequest;
+    try{
+      final rows=await widget.api.addresses();
+      if(!mounted||version!=_addressRequest)return;
+      final selected=rows.where((r)=>r['isDefault']==true).firstOrNull;
+      setState((){_latitude=double.tryParse('${selected?['latitude']}');_longitude=double.tryParse('${selected?['longitude']}');_addressLabel=selected?['addressLine']?.toString();});
+    }catch(_){}
+    if(mounted&&version==_addressRequest)await _load();
+  }
   Future<void> _load() async {
     final version = ++_request;
     setState(() {
@@ -73,7 +88,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     try {
       final rows = await widget.api.merchants(
         type: _type,
-        city: _city,
+        city: _latitude==null?_city:null,
+        latitude:_latitude,longitude:_longitude,
         search: _search.text,
       );
       if (mounted && version == _request) setState(() => _merchants = rows);
@@ -91,6 +107,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             (b) =>
                 b[_mode == 'DELIVERY' ? 'deliveryEnabled' : 'pickupEnabled'] ==
                     true &&
+                (_mode!='DELIVERY'||b['deliversToLocation']!=false) &&
                 (!_openOnly || b['isOpen'] == true),
           ) &&
           (!_offersOnly || (m['promotions'] as List? ?? []).isNotEmpty);
@@ -108,36 +125,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   }
 
   Future<void> _location() async {
-    final controller = TextEditingController(text: _city ?? '');
-    final result = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Where are you ordering?'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'City',
-            hintText: 'Kigali',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, ''),
-            child: const Text('All cities'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, controller.text.trim()),
-            child: const Text('Show stores'),
-          ),
-        ],
-      ),
-    );
-    // The dialog owns its field until its closing transition finishes.
-    if (result != null && mounted) {
-      setState(() => _city = result.isEmpty ? null : result);
-      await _load();
-    }
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>AddressesScreen(api:widget.api)));
+    if(mounted)await _loadAddress();
   }
 
   Future<void> _favorite(Map<String, dynamic> m) async {
@@ -172,7 +161,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     if(mounted)await _loadFavorites();
   }
   Widget _card(Map<String, dynamic> m, {bool compact = false}) {
-    final promos = m['promotions'] as List? ?? [];
+    final promos = List.of(m['promotions'] as List? ?? [])..sort((a,b)=>(b['discountType']=='BOGO'?1:0).compareTo(a['discountType']=='BOGO'?1:0));
     final branches = m['branches'] as List? ?? [];
     final branch =
         branches
@@ -181,7 +170,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                       b[_mode == 'DELIVERY'
                           ? 'deliveryEnabled'
                           : 'pickupEnabled'] ==
-                      true,
+                      true && (_mode!='DELIVERY'||b['deliversToLocation']!=false),
                 )
                 .firstOrNull
             as Map?;
@@ -315,6 +304,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     final recent=_recent.map((id)=>rows.where((m)=>m['id']==id).firstOrNull).whereType<Map<String,dynamic>>().toList();
     final dishes=rows.expand((m)=>(m['dishes'] as List? ?? []).map((p)=>{'merchant':m,'product':p})).toList();
     return [
+      if(rows.any((m)=>(m['promotions'] as List? ?? []).any((p)=>p['discountType']=='BOGO'))) _section('Buy 1, get 1 free',rows.where((m)=>(m['promotions'] as List? ?? []).any((p)=>p['discountType']=='BOGO')).toList()),
       _section('Featured on Fida',(rows.where((m)=>m['featured']==true).toList()..sort((a,b)=>asDouble(a['featuredRank']).compareTo(asDouble(b['featuredRank'])))),empty:'Featured stores will appear here.'),
       _section('Recently Viewed',recent,empty:'Open a store to see it here.'),
       _section('Stores near you',rows,grid:true),
@@ -360,7 +350,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                   const SizedBox(width: 8),
                                   Flexible(
                                     child: Text(
-                                      _city ?? 'Choose your city',
+                                      _addressLabel ?? _city ?? 'Choose delivery location',
+                                      maxLines:2,overflow:TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w800,
                                         fontSize: 17,

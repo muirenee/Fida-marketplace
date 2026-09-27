@@ -474,6 +474,8 @@ model Promotion {
   updatedAt DateTime @default(now()) @updatedAt
   productId String?
   discountType String @default("PERCENT")
+  buyQuantity Int @default(1)
+  getQuantity Int @default(1)
   flatAmount Decimal @default(0) @db.Decimal(12, 2)
   stackable Boolean @default(true)
   id String @id @default(cuid())
@@ -487,6 +489,7 @@ model Promotion {
   isActive Boolean @default(true)
   expiresAt DateTime
   @@unique([tenantId, code])
+  @@index([tenantId, productId, isActive, expiresAt])
 }
 
 model PaymentAttempt {
