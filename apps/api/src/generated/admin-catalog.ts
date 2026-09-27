@@ -1472,6 +1472,36 @@ export const catalog:{models:CatalogModel[];enums:{name:string;values:{name:stri
       "primaryKey": null,
       "fields": [
         {
+          "name": "taxInclusive",
+          "type": "Boolean",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "taxPercent",
+          "type": "Decimal",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "deliveryTax",
+          "type": "Decimal",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
           "name": "cookingInstructions",
           "type": "String",
           "kind": "scalar",
@@ -1840,6 +1870,46 @@ export const catalog:{models:CatalogModel[];enums:{name:string;values:{name:stri
       "dbName": null,
       "primaryKey": null,
       "fields": [
+        {
+          "name": "baseUnitPrice",
+          "type": "Decimal",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": false,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "modifierLines",
+          "type": "Json",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": false,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "isFreeReward",
+          "type": "Boolean",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "rewardPromotionId",
+          "type": "String",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": false,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
         {
           "name": "selectedOptions",
           "type": "Json",

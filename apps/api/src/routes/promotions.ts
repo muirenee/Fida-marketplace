@@ -15,14 +15,14 @@ export async function promotionRoutes(app:FastifyInstance){
   const productId=typeof b.productId==='string'&&b.productId?b.productId:null;
   if(productId&&!await prisma.product.findFirst({where:{id:productId,tenantId,deletedAt:null}}))return fail('Choose a product owned by this merchant.');
   if(discountType==='BOGO'){
-   if(!productId||(b.buyQuantity!==undefined&&b.buyQuantity!==1)||(b.getQuantity!==undefined&&b.getQuantity!==1))return fail('Buy 1, get 1 free requires one product and quantities of 1.');
+   if(!productId||!Number.isInteger(b.buyQuantity??1)||Number(b.buyQuantity??1)<1||Number(b.buyQuantity??1)>50||(b.getQuantity!==undefined&&b.getQuantity!==1))return fail('Select a product, a buy quantity from 1 to 50, and one free item.');
    const product=await prisma.product.findFirst({where:{id:productId,tenantId,isActive:true,isAvailable:true,deletedAt:null}});
    if(!product||product.price.lte(0)||product.price.gt(maxDiscount))return fail('Select an available product and a cap covering at least one free item.');
   }
   if(b.stackable!==undefined&&typeof b.stackable!=='boolean')return fail('Invalid stacking choice.');
   const stackable=b.stackable!==false&&policy?.allowStacking!==false;
   if(await prisma.promotion.findUnique({where:{tenantId_code:{tenantId,code}}}))return reply.code(409).send({error:'promo_code_in_use'});
-  return reply.code(201).send(await prisma.promotion.create({data:{tenantId,code,productId,discountType:String(discountType),percent,flatAmount,maxUses,maxDiscount,minimumOrder,expiresAt,stackable}}));
+  return reply.code(201).send(await prisma.promotion.create({data:{tenantId,code,productId,discountType:String(discountType),buyQuantity:discountType==='BOGO'?Number(b.buyQuantity??1):1,getQuantity:1,percent,flatAmount,maxUses,maxDiscount,minimumOrder,expiresAt,stackable}}));
  });
  app.patch('/v1/merchant/promotions/:id',{preHandler:requireTenant(merchantWriteRoles)},async(req,reply)=>{
   const {id}=req.params as {id:string};const b=req.body as {isActive:boolean};if(typeof b?.isActive!=='boolean')return fail('Provide isActive.');

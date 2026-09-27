@@ -50,7 +50,7 @@ export async function orderRoutes(app: FastifyInstance) {
     if(!quantities||!tenantId)return reply.code(400).send({error:'invalid_items'});
     const products=await prisma.product.findMany({where:{id:{in:quantities.ids},tenantId,isActive:true,isAvailable:true,deletedAt:null,OR:[{categoryId:null},{category:{isActive:true,deletedAt:null}}]}});
     if(products.length!==quantities.ids.length)return reply.code(409).send({error:'product_unavailable'});
-    const pricedLines=quantities.lines.map(line=>{const product=products.find(p=>p.id===line.productId)!;const configured=selectedOptions(product,line.options);return {productId:product.id,productName:configured.name,quantity:line.quantity,unitPrice:configured.price,basePrice:product.price};});
+    const pricedLines=quantities.lines.map(line=>{const product=products.find(p=>p.id===line.productId)!;const configured=selectedOptions(product,line.options);return {productId:product.id,productName:configured.name,quantity:line.quantity,unitPrice:configured.price,basePrice:product.price,selectedOptions:configured.selectedOptions,modifierLines:configured.modifierLines};});
     const branch=await prisma.branch.findFirst({where:{id:String(b.branchId??''),tenantId,isActive:true}});
     if(!branch)return reply.code(404).send({error:'branch_not_found'});
     let fee=new Prisma.Decimal(0);
@@ -203,6 +203,7 @@ export async function orderRoutes(app: FastifyInstance) {
         productId: product.id,
         productName: configured.name,
         selectedOptions: configured.selectedOptions,
+        modifierLines: configured.modifierLines,
         quantity,
         unitPrice: configured.price,
         totalPrice: lineTotal,
@@ -258,7 +259,8 @@ export async function orderRoutes(app: FastifyInstance) {
       const totals=await checkoutTotals(tenantId,itemData,deliveryFee,promoCode,tx);
       const {discount,tax,total,taxLabel,commissionPercent}=totals;
       if(body.confirmedTotal!==undefined&&(typeof body.confirmedTotal!=='number'||!Number.isFinite(body.confirmedTotal)||!total.equals(body.confirmedTotal)))throw Object.assign(new Error('The total changed. Review the updated checkout before ordering.'),{statusCode:409});
-      const commissionAmount=subtotal.minus(discount).mul(commissionPercent).div(100).toDecimalPlaces(2,Prisma.Decimal.ROUND_HALF_UP);
+      if(body.confirmedQuote!==undefined&&body.confirmedQuote!==totals.quoteHash)throw Object.assign(new Error('Items or offers changed. Review checkout again.'),{statusCode:409});
+      const commissionAmount=totals.subtotal.minus(discount).mul(commissionPercent).div(100).toDecimalPlaces(2,Prisma.Decimal.ROUND_HALF_UP);
       for(const promotion of totals.usedPromotions){
         const redeemed=await tx.promotion.updateMany({where:{id:promotion.id,isActive:true,expiresAt:{gt:new Date()},usedCount:{lt:promotion.maxUses},updatedAt:promotion.updatedAt},data:{usedCount:{increment:1}}});
         if(!redeemed.count)throw Object.assign(new Error('Promotion changed. Refresh checkout and retry.'),{statusCode:409});
@@ -267,13 +269,14 @@ export async function orderRoutes(app: FastifyInstance) {
         data: {
           orderNumber: orderNumber(),
           checkoutKey, scheduledFor, promoCode, tax, taxLabel, cookingInstructions,
+          taxInclusive:true,taxPercent:totals.taxPercent,deliveryTax:totals.deliveryTax,
           deliveryPin: fulfillmentType === FulfillmentType.DELIVERY ? String(randomInt(1000,10000)) : null,
           tenantId,
           branchId,
           customerId: request.authUser!.id,
           fulfillmentType,
           paymentMethod: requestedPaymentMethod as PaymentMethod,
-          subtotal,
+          subtotal:totals.subtotal,
           deliveryFee,
           serviceFee,
           discount,

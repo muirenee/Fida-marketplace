@@ -393,14 +393,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('Confirm your order'),
+          scrollable:true,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              for(final i in (totals['items'] as List? ?? []).where((i)=>i['isFreeReward']==true))Text('${i['quantity']} × ${i['productName']} · FREE'),
               Text('Items: ${money(totals['subtotal'])}'),
               if(hasNonZeroAmount(totals['deliveryFee'])) Text('Delivery: ${money(totals['deliveryFee'])}'),
               if(hasNonZeroAmount(totals['discount'])) Text('Discount: −${money(totals['discount'])}'),
-              if(hasNonZeroAmount(totals['tax'])) Text('Tax: ${money(totals['tax'])}'),
+              if(hasNonZeroAmount(totals['tax'])) Text('Includes ${totals['taxPercent']}% ${totals['taxLabel']}: ${money(totals['tax'])}'),
               const Divider(),
               Text(
                 'Total: ${money(totals['total'])}',
@@ -443,6 +445,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         promoCode: _promo.text.trim().isEmpty ? null : _promo.text.trim(),
         scheduledFor: _scheduledFor?.toUtc().toIso8601String(),
         checkoutKey: _checkoutKey,
+        confirmedQuote: totals['quoteHash']?.toString(),
         fulfillmentType: _fulfillment,
         addressId: addressId,
         confirmedTotal: asDouble(totals['total']),
@@ -774,33 +777,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 10),
-                for (final entry in widget.cart.entries)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      widget.products[entry.key]?['name']?.toString() ??
-                          'Product',
-                    ),
-                    subtitle: Text(
-                      '${entry.value} × ${money(widget.products[entry.key]?['price'], currency: currency)}',
-                    ),
-                    trailing: Text(
-                      money(
-                        asDouble(widget.products[entry.key]?['price']) *
-                            entry.value,
-                        currency: currency,
-                      ),
-                    ),
-                  ),
+                for(final entry in widget.cart.entries)Padding(padding:const EdgeInsets.symmetric(vertical:10),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                  Text(widget.products[entry.key]?['name']?.toString()??'Product',style:const TextStyle(fontWeight:FontWeight.w700)),
+                  Text('${entry.value} × ${money(widget.products[entry.key]?['price'],currency:currency)} = ${money(asDouble(widget.products[entry.key]?['price'])*entry.value,currency:currency)}'),
+                  ModifierBreakdown(lines:widget.products[entry.key]?['modifierLines'] as List? ?? [],currency:currency,multiplier:entry.value),
+                ])),
+                for(final bonus in (_totals?['items'] as List? ?? []).where((i)=>i['isFreeReward']==true))ListTile(contentPadding:EdgeInsets.zero,leading:const Icon(Icons.redeem,color:Color(0xFFC82216)),title:Text('${bonus['quantity']} × ${bonus['productName']}'),subtitle:const Text('Free reward · selected extras included'),trailing:const Text('FREE')),
                 const Divider(),
                 _PriceLine(label: 'Subtotal', value: money(_totals?['subtotal'] ?? _subtotal, currency: currency)),
+                if(hasNonZeroAmount(_totals?['tax'])) Padding(padding:const EdgeInsets.only(bottom:8),child:Text('Includes ${_totals!['taxPercent']}% ${_totals!['taxLabel']} · ${money(_totals!['tax'],currency:currency)}',style:Theme.of(context).textTheme.bodySmall)),
                 if((_isDelivery&&_deliveryPrice==null)||hasNonZeroAmount(_totals?['deliveryFee']??(_isDelivery?_deliveryPrice:0))) _PriceLine(label: 'Delivery', value: _isDelivery && _deliveryPrice == null ? 'Choose address' : money(_totals?['deliveryFee'] ?? (_isDelivery ? _deliveryPrice : 0), currency: currency)),
                 if (_totalsLoading) const LinearProgressIndicator(),
                 if (_totalsError != null) Text(_totalsError!, style: const TextStyle(color: Colors.red)),
                 if (_totals != null) ...[
                   if(hasNonZeroAmount(_totals!['itemDiscount'])) _PriceLine(label: 'Item discounts', value: '- ${money(_totals!['itemDiscount'], currency: currency)}'),
                   if(hasNonZeroAmount(_totals!['cartDiscount'])) _PriceLine(label: 'Promo discount', value: '- ${money(_totals!['cartDiscount'], currency: currency)}'),
-                  if(hasNonZeroAmount(_totals!['tax'])) _PriceLine(label: '${_totals!['taxLabel']} (${_totals!['taxPercent']}%)', value: money(_totals!['tax'], currency: currency)),
                   if(hasNonZeroAmount(_totals!['serviceFee'])) _PriceLine(label:'Service fee',value:money(_totals!['serviceFee'],currency:currency)),
                   const Divider(),
                   _PriceLine(label: 'Total', value: money(_totals!['total'], currency: currency), strong: true),

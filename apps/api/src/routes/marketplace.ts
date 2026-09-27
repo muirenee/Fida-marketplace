@@ -81,7 +81,8 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       featuredStoreIds(),
     ]);
     const visiblePromos=await publicPromotions(promos);
-    return merchants.map(({products,...m}) => ({...m, dishes:products, featured:settings.includes(m.id), featuredRank:settings.indexOf(m.id), completedOrders:popularity.find(p=>p.tenantId===m.id)?._count.id??0, favoriteCount:favorites.find(p=>p.tenantId===m.id)?._count.userId??0, imageUrl:m.coverUrl??products[0]?.imageUrl ?? null,
+    const offerProducts=await prisma.product.findMany({where:{id:{in:visiblePromos.filter(p=>p.discountType==='BOGO').flatMap(p=>p.productId?[p.productId]:[])}},select:{id:true,tenantId:true,name:true,price:true,imageUrl:true},orderBy:{name:'asc'}});
+    return merchants.map(({products,...m}) => ({...m, dishes:products.map(p=>({...p,promotions:visiblePromos.filter(o=>o.productId===p.id).map(({tenantId,usedCount,maxUses,...offer})=>offer)})),offerProducts:offerProducts.filter(p=>p.tenantId===m.id).map(p=>({...p,promotions:visiblePromos.filter(o=>o.productId===p.id).map(({tenantId,usedCount,maxUses,...offer})=>offer)})), featured:settings.includes(m.id), featuredRank:settings.indexOf(m.id), completedOrders:popularity.find(p=>p.tenantId===m.id)?._count.id??0, favoriteCount:favorites.find(p=>p.tenantId===m.id)?._count.userId??0, imageUrl:m.coverUrl??products[0]?.imageUrl ?? null,
       rating:ratings.find(r=>r.tenantId===m.id)?._avg.rating ?? null,
       reviewCount:ratings.find(r=>r.tenantId===m.id)?._count.rating ?? 0,
       promotions:visiblePromos.filter(p=>p.tenantId===m.id && p.usedCount<p.maxUses).map(({usedCount,maxUses,tenantId,...p})=>p),

@@ -53,7 +53,7 @@ async function ownedBranch(tenantId: string, branchId: string) {
 export async function merchantRoutes(app: FastifyInstance) {
   app.addHook('preSerialization', async (req, _reply, payload) => {
     const privateKeys = new Set(['deliveryPin','passwordHash']);
-    if (req.tenantContext?.role === 'KITCHEN_CREW') for (const key of ['subtotal','total','unitPrice','totalPrice','discount','tax','paymentMethod','paymentStatus','platformCommissionPercent','platformCommissionAmount','estimatedPayout','settledPayout','payoutCurrency','settlementReference','settledAt','deliveryFee','serviceFee']) privateKeys.add(key);
+    if (req.tenantContext?.role === 'KITCHEN_CREW') for (const key of ['baseUnitPrice','deliveryTax','subtotal','total','unitPrice','totalPrice','discount','tax','paymentMethod','paymentStatus','platformCommissionPercent','platformCommissionAmount','estimatedPayout','settledPayout','payoutCurrency','settlementReference','settledAt','deliveryFee','serviceFee']) privateKeys.add(key);
     return JSON.parse(JSON.stringify(payload, (key,value) => privateKeys.has(key) ? undefined : value));
   });
 

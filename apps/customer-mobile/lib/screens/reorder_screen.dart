@@ -39,17 +39,17 @@ class _ReorderScreenState extends State<ReorderScreen> {
   void normalizeMode(){if(branch[fulfillment=='PICKUP'?'pickupEnabled':'deliveryEnabled']!=true)fulfillment=branch['pickupEnabled']==true?'PICKUP':'DELIVERY';}
   Future<void> configure(Map<String,dynamic> item) async {
     final product=Map<String,dynamic>.from(item['product']);
-    final result=await Navigator.push<Map<String,dynamic>>(context,MaterialPageRoute(builder:(_)=>ProductScreen(product:product,currency:currency,initialQuantity:(item['quantity'] as num).toInt(),initialSelectedOptions:(item['selectedOptions'] as List? ?? []).cast<String>())));
+    final result=await Navigator.push<Map<String,dynamic>>(context,MaterialPageRoute(builder:(_)=>ProductScreen(product:product,currency:currency,initialQuantity:(item['quantity'] as num).toInt(),initialSelectedOptions:(item['selectedOptions'] as List? ?? []))));
     if(result==null||!mounted)return;
     final configured=result['product'] as Map;
-    setState((){item.addAll({'status':'AVAILABLE','message':null,'quantity':result['quantity'],'unitPrice':configured['price'],'priceChanged':asDouble(configured['price'])!=asDouble(item['previousUnitPrice']),'displayName':configured['name'],'selectedOptions':configured['selectedOptions']});selected.add(item['id'].toString());});
+    setState((){item.addAll({'status':'AVAILABLE','message':null,'quantity':result['quantity'],'unitPrice':configured['price'],'priceChanged':asDouble(configured['price'])!=asDouble(item['previousUnitPrice']),'displayName':configured['name'],'selectedOptions':configured['selectedOptions'],'modifierLines':configured['modifierLines'],'baseUnitPrice':configured['baseUnitPrice']});selected.add(item['id'].toString());});
   }
   Future<void> openCart() async {
     final cart=<String,int>{},products=<String,Map<String,dynamic>>{};
     for(final item in items.where((i)=>selected.contains(i['id']))){
       final key=item['id'].toString(),product=Map<String,dynamic>.from(item['product']);
       cart[key]=(item['quantity'] as num).toInt();
-      products[key]={...product,'productId':product['id'],'name':item['displayName'],'price':item['unitPrice'],'selectedOptions':item['selectedOptions']??[]};
+      products[key]={...product,'productId':product['id'],'name':item['displayName'],'price':item['unitPrice'],'selectedOptions':item['selectedOptions']??[],'modifierLines':item['modifierLines']??[],'baseUnitPrice':item['baseUnitPrice']};
     }
     if(cart.isEmpty)return;
     await Navigator.push(context,MaterialPageRoute(builder:(_)=>CartScreen(api:widget.api,merchant:{...Map<String,dynamic>.from(data!['merchant']),'branches':[branch]},cart:cart,products:products,fulfillment:fulfillment)));

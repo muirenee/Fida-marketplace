@@ -22,20 +22,34 @@ export function normalizeOptions(value: unknown): Option[] {
  }
  return result;
 }
+export type ChoiceSelection = {name:string;quantity:number};
+export type ModifierLine = ChoiceSelection & {unitPrice:string;totalPrice:string};
 export function selectedOptions(product: { price: Prisma.Decimal; options: unknown; name: string }, selected: unknown) {
- const names = selected ?? [];
- if (!Array.isArray(names) || names.length > 40 || names.some(v => typeof v !== 'string') || new Set(names).size !== names.length) throw invalid('Invalid product choices.');
+ const raw = selected ?? [];
+ if (!Array.isArray(raw) || raw.length > 40) throw invalid('Invalid product choices.');
+ const choices:ChoiceSelection[]=raw.map(v=>{
+  if(typeof v==='string')return {name:v,quantity:1}; // Installed 0.12 clients and historic snapshots.
+  if(!v||typeof v!=='object'||typeof v.name!=='string'||!Number.isInteger(v.quantity)||v.quantity<1||v.quantity>20)throw invalid('Choice quantities must be integers from 1 to 20.');
+  return {name:v.name,quantity:v.quantity};
+ });
+ if(new Set(choices.map(c=>c.name)).size!==choices.length)throw invalid('Duplicate product choices.');
  const options = Array.isArray(product.options) ? product.options as Option[] : [];
  let price = product.price;
- for (const name of names) {
-  const option = options.find(o => o.name === name);
+ const modifierLines:ModifierLine[]=[];
+ for (const choice of choices) {
+  const option = options.find(o => o.name === choice.name);
   if (!option) throw invalid('A product choice is no longer available.', 409);
-  price = price.plus(option.price);
+  if(option.price===0&&choice.quantity!==1)throw invalid('Free choices may be selected once.');
+  const unitPrice=new Prisma.Decimal(option.price).toDecimalPlaces(2),totalPrice=unitPrice.mul(choice.quantity);
+  price=price.plus(totalPrice);
+  modifierLines.push({...choice,unitPrice:unitPrice.toString(),totalPrice:totalPrice.toString()});
  }
  for (const group of new Set(options.map(o => o.group).filter(Boolean))) {
   const rows = options.filter(o => o.group === group), first = rows[0]!;
-  const count = rows.filter(o => names.includes(o.name)).length;
+  // Group limits constrain distinct selections, not units of a selected premium extra.
+  const count = rows.filter(o => choices.some(c=>c.name===o.name)).length;
   if (count < (first.minSelect ?? 0) || count > (first.maxSelect ?? rows.length)) throw invalid(`Choose ${first.minSelect ?? 0}–${first.maxSelect ?? rows.length} options for ${group}.`, 409);
  }
- return {price, selectedOptions: [...names] as string[], name: product.name + (names.length ? ` (${names.join(', ')})` : '')};
+ const names=choices.map(c=>c.quantity===1?c.name:`${c.quantity} × ${c.name}`);
+ return {price,basePrice:product.price,modifierLines,selectedOptions:choices,name:product.name+(names.length?` (${names.join(', ')})`:'')};
 }

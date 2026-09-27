@@ -491,7 +491,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             subtitle: Text(
               '${rawItem['quantity']} × ${money(rawItem['unitPrice'], currency: currency)}',
             ),
-            trailing: Text(money(rawItem['totalPrice'], currency: currency)),
+            trailing: Text(rawItem['isFreeReward']==true?'FREE':money(rawItem['totalPrice'], currency: currency)),
           ),
         const Divider(),
         _PriceRow(
@@ -510,12 +510,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             label: 'Discount',
             value: '- ${money(order['discount'], currency: currency)}',
           ),
-        if (asDouble(order['tax']) > 0)
-          _PriceRow(
-            label: 'Tax',
-            value: money(order['tax'], currency: currency),
-          ),
-        const SizedBox(height: 6),
+        if(asDouble(order['tax'])>0) order['taxInclusive']==true?Text('Includes ${order['taxPercent']}% ${order['taxLabel']} · ${money(order['tax'],currency:currency)}'):_PriceRow(label:order['taxLabel']?.toString()??'Tax',value:money(order['tax'],currency:currency)),
         _PriceRow(
           label: 'Total',
           value: money(order['total'], currency: currency),

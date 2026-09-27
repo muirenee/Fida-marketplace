@@ -9,5 +9,6 @@ Keep Flutter/Fastify/PostgreSQL, merchant-owned fleets, direct merchant payments
 - [x] Merchant app/portal queue counts and driver route cards.
 - [x] API/admin typechecks; 43 isolated origin/business/migration tests; shell syntax.
 - [x] Adaptation evidence, compatibility and deployment documentation.
-- [ ] GitHub Flutter analysis/widget tests and signed APK builds.
+- [x] GitHub Flutter analysis/widget tests and signed APK builds.
+Commit 86c1bcb: Validate 36338928035, Customer 36338928079, Merchant 36338928061, Driver 36338928069 all succeeded. Superseded by the user-requested 0.13 pricing upgrade before APK delivery.
 No Enatega proprietary API, endpoint defaults, credentials, telemetry or assets imported.

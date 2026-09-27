@@ -161,7 +161,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
           0,
           (sum, e) => sum + asDouble(products[e.key]?['price']) * e.value,
         );
-    final promos = m['promotions'] as List? ?? [];
+    final promos = (m['promotions'] as List? ?? []).where((p)=>p['discountType']!='BOGO').toList();
     return Scaffold(
       body: SafeArea(
         bottom: false,
@@ -617,6 +617,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
                                           baseUrl: ApiClient.baseUrl,
                                           size: 112,
                                         ),
+                                        Positioned(left:4,right:4,top:4,child:ProductOfferBadge(product:p)),
                                         Positioned(
                                           right: 3,
                                           bottom: 0,

@@ -186,13 +186,15 @@ void main() {
       );
       await tester.tap(find.text('White rice'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Brown rice'));
+      final counter=find.byKey(const ValueKey('modifier-Brown rice'));
+      await tester.ensureVisible(counter);await tester.pumpAndSettle();
+      await tester.tap(find.descendant(of:counter,matching:find.byIcon(Icons.add)));
       await tester.pumpAndSettle();
       final checks = tester
           .widgetList<CheckboxListTile>(find.byType(CheckboxListTile))
           .toList();
       expect(checks[0].value, false);
-      expect(checks[1].value, true);
+      expect(tester.widget<QuantityControl>(find.byKey(const ValueKey('modifier-Brown rice'))).value,1);
       expect(
         tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
         isNotNull,
@@ -261,7 +263,7 @@ void main() {
     await mount(tester, CheckoutScreen(api:client,merchant:merchant,cart:{'p':1},products:{'p':product},initialFulfillment:'PICKUP',orderNote:'No salt'), key,scale:1.3);
     await tester.scrollUntilVisible(find.text('Total'),300,scrollable:find.byType(Scrollable).first);
     await tester.pumpAndSettle();
-    expect(find.text('VAT (18%)'),findsOneWidget);
+    expect(find.textContaining('Includes 18% VAT'),findsOneWidget);
     expect(find.text('Item discounts'),findsOneWidget);
     expect(find.text('Promo discount'),findsOneWidget);
     expect(tester.takeException(),isNull);

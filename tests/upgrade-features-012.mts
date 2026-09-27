@@ -7,14 +7,14 @@ export async function verify012({prisma,request,customer,outsider,tenant,owner,c
   const payload={...checkout,items:[{productId:product.id,quantity:2,options:['Rice']}]};
   const preview=await request('POST','/v1/customer/checkout-preview',customer,payload);
   const order=await request('POST','/v1/customer/orders',customer,{...payload,confirmedTotal:Number(preview.total)},201);
-  assert.deepEqual(order.items[0].selectedOptions,['Rice']);
+  assert.deepEqual(order.items[0].selectedOptions,[{name:'Rice',quantity:1}]);
   const path=`/v1/customer/orders/${order.id}/reorder`;
   await request('GET',path,customer,undefined,409);
   await request('GET',path,outsider,undefined,404);
   await prisma.order.update({where:{id:order.id},data:{status:'COMPLETED'}});
   await prisma.product.update({where:{id:product.id},data:{price:1500}});
   let draft=await request('GET',path,customer);
-  assert.equal(draft.items[0].status,'AVAILABLE');assert.equal(Number(draft.items[0].unitPrice),1600);assert.equal(draft.items[0].priceChanged,true);assert.deepEqual(draft.items[0].selectedOptions,['Rice']);
+  assert.equal(draft.items[0].status,'AVAILABLE');assert.equal(Number(draft.items[0].unitPrice),1600);assert.equal(draft.items[0].priceChanged,true);assert.deepEqual(draft.items[0].selectedOptions,[{name:'Rice',quantity:1}]);
   assert.equal(draft.items[0].quantity,2);assert.equal(draft.promoCode,undefined);
   await prisma.orderItem.update({where:{id:order.items[0].id},data:{selectedOptions:Prisma.DbNull}});
   assert.equal((await request('GET',path,customer)).items[0].status,'RECONFIGURE');

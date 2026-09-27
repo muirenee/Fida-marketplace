@@ -3,22 +3,22 @@ import {test} from 'node:test';
 import {Prisma} from '../packages/database/src/client.js';
 import {checkoutTotals} from '../apps/api/src/lib/checkout.js';
 export async function verify011({prisma,request,customer,outsider,tenant,other,owner,checkout}:any){
- await test('BOGO validates scope, prices pairs with paid add-ons, caps whole units, and respects stacking and usage',async()=>{
+ await test('BOGO validates scope, adds fully free configurations, caps whole rewards, and respects stacking and usage',async()=>{
   const item=await prisma.product.create({data:{tenantId:tenant.id,name:'BOGO bowl',price:1000,options:[{name:'Cheese',price:200}]}});
   const external=await prisma.product.create({data:{tenantId:other.id,name:'External BOGO',price:1000}});
   const offer={code:'BOGO011',discountType:'BOGO',productId:item.id,maxDiscount:2500,minimumOrder:0,maxUses:2,expiresAt:new Date(Date.now()+86400000).toISOString(),stackable:true};
   const create=(values:any,status=400)=>request('POST','/v1/merchant/promotions',owner,{...offer,...values},status);
-  await create({productId:null});await create({productId:external.id});await create({buyQuantity:2});await create({maxDiscount:999});
+  await create({productId:null});await create({productId:external.id});await create({buyQuantity:51});await create({maxDiscount:999});
   const promo=await create({},201);
   const lines=(quantity:number)=>[{productId:item.id,productName:item.name,quantity,basePrice:new Prisma.Decimal(1000),unitPrice:new Prisma.Decimal(1200)}];
   const price=(quantity:number,code?:string)=>checkoutTotals(tenant.id,lines(quantity),new Prisma.Decimal(0),code);
-  for(const [qty,discount] of [[1,0],[2,1000],[3,1000],[4,2000],[6,2000]]){
-   const total=await price(qty);assert.equal(total.itemDiscount.toNumber(),discount);assert.equal(total.subtotal.toNumber(),qty*1200);
+  for(const [qty,discount] of [[1,1200],[2,2400],[3,2400],[4,2400],[6,2400]]){
+   const total=await price(qty);assert.equal(total.itemDiscount.toNumber(),discount);assert.equal(total.subtotal.toNumber(),qty*1200+discount);
   }
-  const split=await checkoutTotals(tenant.id,[...lines(1),...lines(2)],new Prisma.Decimal(0));assert.equal(split.itemDiscount.toNumber(),1000);assert.equal(split.items.reduce((s,i)=>s+i.discount.toNumber(),0),1000);
+  const split=await checkoutTotals(tenant.id,[...lines(1),...lines(2)],new Prisma.Decimal(0));assert.equal(split.itemDiscount.toNumber(),2400);assert.equal(split.items.reduce((s,i)=>s+i.discount.toNumber(),0),2400);
   await create({code:'BOGOCART',discountType:'PERCENT',productId:null,percent:10,maxDiscount:5000,minimumOrder:1500},201);
-  await assert.rejects(price(2,'BOGOCART'),/minimum after item discounts/);
-  assert.equal((await price(3,'BOGOCART')).cartDiscount.toNumber(),260);
+  await assert.rejects(price(1,'BOGOCART'),/minimum after item discounts/);
+  assert.equal((await price(3,'BOGOCART')).cartDiscount.toNumber(),360);
   await prisma.promotion.update({where:{id:promo.id},data:{stackable:false}});
   await assert.rejects(price(3,'BOGOCART'),/cannot be combined/);
   await prisma.promotion.update({where:{id:promo.id},data:{stackable:true,expiresAt:new Date(0)}});
@@ -26,7 +26,7 @@ export async function verify011({prisma,request,customer,outsider,tenant,other,o
   await prisma.promotion.update({where:{id:promo.id},data:{expiresAt:new Date(Date.now()+86400000),maxUses:1}});
   const payload={...checkout,items:[{productId:item.id,quantity:2,options:['Cheese']}],checkoutKey:'bogo011-idempotent-checkout'};
   const preview=await request('POST','/v1/customer/checkout-preview',customer,payload);
-  assert.equal(Number(preview.subtotal),2400);assert.equal(Number(preview.itemDiscount),1000);
+  assert.equal(Number(preview.subtotal),4800);assert.equal(Number(preview.itemDiscount),2400);
   const order=await request('POST','/v1/customer/orders',customer,{...payload,confirmedTotal:Number(preview.total)},201);
   const retry=await request('POST','/v1/customer/orders',customer,{...payload,confirmedTotal:Number(preview.total)},200);assert.equal(retry.id,order.id);
   assert.equal((await prisma.promotion.findUniqueOrThrow({where:{id:promo.id}})).usedCount,1);

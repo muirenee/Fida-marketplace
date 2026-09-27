@@ -1,4 +1,5 @@
 export 'amount_visibility.dart';
+export 'product_offer.dart';
 export 'runtime_config.dart';
 import 'runtime_config.dart';
 export 'document_screen.dart';

@@ -114,7 +114,7 @@ try {
   const body={...checkout,promoCode:'ONCE',checkoutKey:'test-checkout-idempotency-001'};
   const preview=await request('POST','/v1/customer/checkout-preview',customer,{...body,latitude:-1.951,longitude:30.051});
   order=await request('POST','/v1/customer/orders',customer,body,201);
-  assert.equal(Number(order.subtotal),1200);assert.equal(Number(order.discount),120);assert.equal(Number(order.tax),108);assert.equal(Number(order.total),1688);assert.equal(Number(preview.total),1688);
+  assert.equal(Number(order.subtotal),1200);assert.equal(Number(order.discount),120);assert.equal(Number(order.tax),143.64);assert.equal(Number(order.total),1580);assert.equal(Number(preview.total),1580);
   const retried=await request('POST','/v1/customer/orders',customer,body);assert.equal(retried.id,order.id);
   await request('POST','/v1/customer/orders',customer,{...checkout,promoCode:'ONCE'},409);
   assert.equal(await prisma.promotion.findUniqueOrThrow({where:{tenantId_code:{tenantId:tenant.id,code:'ONCE'}}}).then(p=>p.usedCount),1);
@@ -233,10 +233,10 @@ try {
   await request('POST','/v1/merchant/promotions',owner,{...promo,code:'CART10',productId:null,discountType:'PERCENT',percent:10,minimumOrder:1500},201);
   const payload={...checkout,items:[{productId:item.id,quantity:2}],promoCode:'CART10',cooking_instructions:'No chilli please'};
   const totals=await request('POST','/v1/customer/checkout-preview',customer,payload);
-  assert.equal(Number(totals.itemDiscount),200);assert.equal(Number(totals.cartDiscount),180);assert.equal(Number(totals.tax),291.6);assert.equal(Number(totals.total),2411.6);
+  assert.equal(Number(totals.itemDiscount),200);assert.equal(Number(totals.cartDiscount),180);assert.equal(Number(totals.tax),323.39);assert.equal(Number(totals.total),2120);
   await request('POST','/v1/customer/orders',customer,{...payload,confirmedTotal:2400},409);
-  const placed=await request('POST','/v1/customer/orders',customer,{...payload,confirmedTotal:2411.6},201);
-  assert.equal(placed.cookingInstructions,'No chilli please');assert.equal(Number(placed.items[0].tax),291.6);
+  const placed=await request('POST','/v1/customer/orders',customer,{...payload,confirmedTotal:2120},201);
+  assert.equal(placed.cookingInstructions,'No chilli please');assert.equal(Number(placed.items[0].tax),247.12);
   await request('POST','/v1/customer/checkout-preview',customer,{...payload,items:[{productId:item.id,quantity:1}]},409);
   await request('PATCH','/v1/admin/promotion-policy',admin,{maxPercent:40,maxDiscount:5000,allowStacking:false});
   await request('POST','/v1/customer/checkout-preview',customer,payload,409);
@@ -362,6 +362,7 @@ try {
  await (await import('./upgrade-features-010.mjs')).verify010({prisma,app,db,request,admin,password,customer,tenant,other,owner,checkout});
  await (await import('./upgrade-features-011.mjs')).verify011({prisma,request,customer,outsider,tenant,other,owner,checkout});
  await (await import('./upgrade-features-012.mjs')).verify012({prisma,request,customer,outsider,tenant,owner,checkout});
+ await (await import('./upgrade-features-013.mjs')).verify013({prisma,request,customer,tenant,owner,checkout});
  await test('protected reset clears only isolated operational data while preserving admin, settings, audit and schemas',async()=>{
   const preview=await request('POST','/v1/admin/system/actions/preview',admin,{password,reason:'Isolated PGlite reset verification',kind:'RESET'});
   assert.ok(preview.counts.Order>0);

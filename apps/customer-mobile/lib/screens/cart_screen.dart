@@ -106,6 +106,7 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                     ],
                   ),
+                  ModifierBreakdown(lines:widget.products[e.key]?['modifierLines'] as List? ?? [],currency:currency,multiplier:e.value),
                   Align(
                     alignment: Alignment.centerRight,
                     child: QuantityControl(

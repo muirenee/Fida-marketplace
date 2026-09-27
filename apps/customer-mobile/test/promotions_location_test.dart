@@ -49,7 +49,7 @@ void main(){
   expect(result?['addressLine'],'KG 10 Street');expect(result?['latitude'],isA<double>());expect(result?['longitude'],isA<double>());
  });
  testWidgets('BOGO stores appear in their own row and zero checkout fees stay hidden',(tester)async{
-  final store=<String,dynamic>{'id':'t','slug':'store','name':'Pair Kitchen','currency':'RWF','branches':[{'id':'b','name':'Central','pickupEnabled':true,'deliveryEnabled':true,'isOpen':true,'deliveryZones':[]}],'promotions':[{'discountType':'BOGO','productId':'p'}]};
+  final store=<String,dynamic>{'id':'t','slug':'store','name':'Pair Kitchen','currency':'RWF','branches':[{'id':'b','name':'Central','pickupEnabled':true,'deliveryEnabled':true,'isOpen':true,'deliveryZones':[]}],'promotions':[{'discountType':'BOGO','productId':'p'}],'offerProducts':[{'id':'p','name':'Rice','price':1000,'promotions':[{'discountType':'BOGO','buyQuantity':1}]}]};
   final api=ApiClient(client:MockClient((r)async=>http.Response(jsonEncode(r.url.path.endsWith('/merchants')?[store]:r.url.path.endsWith('/methods')?{'methods':['CASH']}:r.url.path.endsWith('/checkout-preview')?{'subtotal':1000,'deliveryFee':0,'itemDiscount':0,'cartDiscount':0,'tax':0,'taxLabel':'VAT','taxPercent':0,'total':1000}:[]),200)));
   await tester.pumpWidget(MaterialApp(theme:fidaTheme(),home:Scaffold(body:MarketplaceScreen(api:api))));await tester.pumpAndSettle();
   expect(find.text('Buy 1, get 1 free'),findsWidgets);

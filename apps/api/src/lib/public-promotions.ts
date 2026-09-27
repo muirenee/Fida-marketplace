@@ -5,6 +5,6 @@ export async function publicPromotions<T extends {tenantId:string;productId:stri
   if(p.usedCount>=p.maxUses)return false;
   if(!p.productId)return p.discountType!=='BOGO';
   const item=products.find(i=>i.id===p.productId&&i.tenantId===p.tenantId);
-  return !!item&&(p.discountType!=='BOGO'||(p.buyQuantity===1&&p.getQuantity===1&&item.price.gt(0)&&Number(p.maxDiscount)>=item.price.toNumber()));
+  return !!item&&(p.discountType!=='BOGO'||(p.buyQuantity>=1&&p.buyQuantity<=50&&p.getQuantity===1&&item.price.gt(0)&&Number(p.maxDiscount)>=item.price.toNumber()));
  }).map(p=>({...p,productName:products.find(i=>i.id===p.productId)?.name??null}));
 }

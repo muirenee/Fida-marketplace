@@ -132,7 +132,7 @@ class SectionHeading extends StatelessWidget {
 }
 
 String promotionDescription(Map promo, String currency) {
-  if(promo['discountType']=='BOGO') return 'Buy 1, get 1 free';
+  if(promo['discountType']=='BOGO') return 'Buy ${promo['buyQuantity']??1}, get 1 free';
   final value = promo['discountType'] == 'FLAT' ? '${promo['flatAmount']} $currency' : '${promo['percent']}%';
   return promo['productId'] == null ? '$value off · Use ${promo['code']}' : '$value off selected item · Applied at checkout';
 }

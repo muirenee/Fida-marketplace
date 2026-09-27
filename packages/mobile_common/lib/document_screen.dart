@@ -95,7 +95,7 @@ class BusinessDocumentScreen extends StatelessWidget {
                 for (final entry in [
                   ('Subtotal', 'subtotal'),
                   ('Discount', 'discount'),
-                  ('Tax', 'tax'),
+                  if(p['taxInclusive']!=true) ('Tax', 'tax'),
                   ('Delivery', 'deliveryFee'),
                   ('Service fee', 'serviceFee'),
                 ])
@@ -107,6 +107,7 @@ class BusinessDocumentScreen extends StatelessWidget {
                         pw.Text(amount(p[entry.$2])),
                       ],
                     ),
+                if(p['taxInclusive']==true&&hasNonZeroAmount(p['tax']))pw.Text('Includes ${p['taxPercent']}% ${p['taxLabel']??'VAT'}: ${amount(p['tax'])}'),
                 pw.Divider(),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
