@@ -30,7 +30,7 @@ void main(){
   await tester.pump(const Duration(seconds:1));expect(pending.length,2);
   pending[0].complete((address:'Old address',city:'Old city'));await tester.pump();
   expect(find.text('Old address'),findsNothing);
-  await tester.ensureVisible(find.byKey(const ValueKey('pin-address')));await tester.pump();
+  await tester.scrollUntilVisible(find.byKey(const ValueKey('pin-address')),150,scrollable:find.byType(Scrollable).last);await tester.pump();
   await tester.enterText(find.byKey(const ValueKey('pin-address')),'Entrance beside shop');
   pending[1].complete((address:'New street',city:'Kigali'));await tester.pumpAndSettle();
   expect(find.text('Entrance beside shop'),findsOneWidget);expect(find.text('Kigali'),findsOneWidget);
@@ -43,7 +43,7 @@ void main(){
   await tester.tapAt(tester.getTopLeft(find.byType(FlutterMap))+const Offset(80,80));
   await tester.pump(const Duration(milliseconds:350));await tester.pump(const Duration(seconds:1));await tester.pumpAndSettle();
   expect(find.textContaining('Address lookup unavailable'),findsOneWidget);
-  await tester.ensureVisible(find.byKey(const ValueKey('pin-address')));await tester.pump();
+  await tester.scrollUntilVisible(find.byKey(const ValueKey('pin-address')),150,scrollable:find.byType(Scrollable).last);await tester.pump();
   await tester.enterText(find.byKey(const ValueKey('pin-address')),'KG 10 Street');
   await tester.tap(find.text('Use this delivery location'));await tester.pumpAndSettle();
   expect(result?['addressLine'],'KG 10 Street');expect(result?['latitude'],isA<double>());expect(result?['longitude'],isA<double>());
