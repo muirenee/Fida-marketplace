@@ -5,6 +5,8 @@ import 'package:merchant_mobile/api_client.dart';
 import 'package:merchant_mobile/main.dart';
 
 class SearchApi extends MerchantApiClient {
+  @override
+  Future<Map<String,dynamic>> orderQueues(String tenantId,{String? search}) async=>{'counts':{'ACTIVE':0,'PENDING':0}};
   final calls = <({String? status, String? search})>[];
   Completer<List<Map<String, dynamic>>>? delayed;
   @override

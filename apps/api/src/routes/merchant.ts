@@ -1,3 +1,4 @@
+import {merchantOrderWhere} from '../lib/merchant-order-query.js';
 import { normalizeOptions } from '../lib/product-options.js';
 import { enqueueOrder } from '../lib/notifications.js';
 import { recordCompletion } from '../lib/finance.js';
@@ -402,31 +403,25 @@ export async function merchantRoutes(app: FastifyInstance) {
     return reply.code(201).send(product);
   });
 
+  app.get('/v1/merchant/order-queues',{preHandler:requireTenant()},async req=>{
+    const context=req.tenantContext!;
+    const where=merchantOrderWhere(context.tenantId,context.branchId,(req.query??{}) as Record<string,unknown>,true);
+    const groups=await prisma.order.groupBy({by:['status','fulfillmentType'],where,_count:{id:true}});
+    const counts:Record<string,number>={...Object.fromEntries(Object.values(OrderStatus).map(s=>[s,0])),ACTIVE:0,HISTORY:0,PROCESSING:0,ALL:0};
+    for(const row of groups){const n=row._count.id;counts[row.status]=(counts[row.status]??0)+n;counts.ALL+=n;counts[['COMPLETED','CANCELLED','REJECTED'].includes(row.status)?'HISTORY':'ACTIVE']+=n;if(['ACCEPTED','PREPARING'].includes(row.status))counts.PROCESSING+=n;}
+    return {counts,asOf:new Date().toISOString()};
+  });
   app.get('/v1/merchant/orders', { preHandler: requireTenant() }, async (request, reply) => {
     const query = (request.query ?? {}) as Record<string, unknown>;
-    const requestedStatus = typeof query.status === 'string' ? query.status.toUpperCase() : null;
-    if (requestedStatus && !Object.values(OrderStatus).includes(requestedStatus as OrderStatus)) {
-      return reply.code(400).send({ error: 'invalid_order_status', allowed: Object.values(OrderStatus) });
-    }
-    if(query.q!==undefined&&(typeof query.q!=='string'||query.q.length>100))return reply.code(400).send({error:'invalid_order_search',message:'Search must contain at most 100 characters.'});
-    const search=typeof query.q==='string'?query.q.trim().replace(/\s+/g,' '):'';
-    const literal=(value:string)=>value.replace(/[\\%_]/g,'\\$&');
-    const where:Prisma.OrderWhereInput={
-      tenantId:request.tenantContext!.tenantId,
-      ...(request.tenantContext!.branchId?{branchId:request.tenantContext!.branchId}:{}),
-      ...(requestedStatus?{status:requestedStatus as OrderStatus}:{}),
-      ...(search?{OR:[
-        {orderNumber:{contains:literal(search),mode:'insensitive'}},
-        {customer:{AND:search.split(' ').map(word=>({OR:[{firstName:{contains:literal(word),mode:'insensitive'}},{lastName:{contains:literal(word),mode:'insensitive'}}]}))}},
-      ]}:{}),
-    };
+    const where=merchantOrderWhere(request.tenantContext!.tenantId,request.tenantContext!.branchId,query);
+    const direction=['ACTIVE','PENDING','ACCEPTED','PREPARING','PROCESSING','READY_FOR_PICKUP'].includes(String(query.status).toUpperCase())?'asc' as const:'desc' as const;
 
     if(request.tenantContext!.role==='KITCHEN_CREW')return prisma.order.findMany({
       where,
       select:{id:true,orderNumber:true,status:true,fulfillmentType:true,scheduledFor:true,createdAt:true,cookingInstructions:true,deliveryInstructions:true,
         branch:{select:{id:true,name:true,city:true}},customer:{select:{firstName:true,lastName:true}},
         items:{select:{id:true,productId:true,productName:true,quantity:true}}},
-      orderBy:{createdAt:'desc'},take:200,
+      orderBy:{createdAt:direction},take:200,
     });
     return prisma.order.findMany({
       where,
@@ -436,7 +431,7 @@ export async function merchantRoutes(app: FastifyInstance) {
         items: true,
         delivery: { include: { driver: { include: { user: { select: { firstName: true, lastName: true, phone: true } } } } } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: direction },
       take: 200,
     });
   });

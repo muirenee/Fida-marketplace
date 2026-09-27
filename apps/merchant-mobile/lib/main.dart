@@ -493,7 +493,8 @@ class _OrdersPageState extends State<MerchantOrdersPage> {
   List<Map<String, dynamic>> orders = [];
   bool loading = true;
   String? error;
-  String? filter;
+  String? filter='ACTIVE';
+  Map<String,dynamic> queueCounts={};
   final searchController = TextEditingController();
   Timer? searchTimer;
   String search = '';
@@ -531,7 +532,9 @@ class _OrdersPageState extends State<MerchantOrdersPage> {
       error = null;
     });
     try {
-      final rows = await widget.api.orders(widget.tenantId, status: filter, search: search);
+      final result=await Future.wait([widget.api.orders(widget.tenantId,status:filter,search:search),widget.api.orderQueues(widget.tenantId,search:search).catchError((_) => <String,dynamic>{})]);
+      final rows=result[0] as List<Map<String,dynamic>>;
+      if(mounted&&generation==requestGeneration)setState(()=>queueCounts=Map<String,dynamic>.from((result[1] as Map)['counts']??{}));
       if (mounted && generation == requestGeneration) setState(() => orders = rows);
     } on MerchantApiException catch (e) {
       if (mounted && generation == requestGeneration) setState(() => error = e.message);
@@ -634,17 +637,20 @@ class _OrdersPageState extends State<MerchantOrdersPage> {
                 scrollDirection: Axis.horizontal,
                 children: [
                   for (final value in <String?>[
-                    null,
+                    'ACTIVE',
                     'PENDING',
                     'ACCEPTED',
                     'PREPARING',
                     'READY_FOR_PICKUP',
+                    'HISTORY',
                     'COMPLETED',
                     'CANCELLED',
+                    'REJECTED',
+                    null,
                   ]) ...[
                     ChoiceChip(
                       label: Text(
-                        value?.replaceAll('_', ' ').toLowerCase() ?? 'all',
+                        '${value=='PENDING'?'New':value=='READY_FOR_PICKUP'?'Ready':value?.replaceAll('_',' ').toLowerCase()??'all'}${queueCounts[value??'ALL']==null?'':' (${queueCounts[value??'ALL']})'}',
                       ),
                       selected: filter == value,
                       onSelected: (_) {
@@ -780,7 +786,7 @@ class _OrdersPageState extends State<MerchantOrdersPage> {
                               children: next.where((status) => !widget.kitchen || ['PREPARING', 'READY_FOR_PICKUP'].contains(status)).map((status) {
                                 if (status == 'REJECTED') {
                                   return OutlinedButton(
-                                    onPressed: () => move(order, status),
+                                    onPressed: moving.contains(order['id'])?null:() => move(order, status),
                                     child: const Text('Reject'),
                                   );
                                 }
@@ -788,7 +794,7 @@ class _OrdersPageState extends State<MerchantOrdersPage> {
                                     ? 'Handed to customer'
                                     : status.replaceAll('_', ' ').toLowerCase();
                                 return FilledButton(
-                                  onPressed: () => move(order, status),
+                                  onPressed: moving.contains(order['id'])?null:() => move(order, status),
                                   child: Text(label),
                                 );
                               }).toList(),

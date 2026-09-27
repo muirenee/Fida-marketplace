@@ -1,3 +1,4 @@
+import {reorderRoutes} from './reorder.js';
 import { selectedOptions } from '../lib/product-options.js';
 import { checkoutTotals } from '../lib/checkout.js';
 import { enqueueOrder } from '../lib/notifications.js';
@@ -42,6 +43,7 @@ function validCoordinate(latitude: number, longitude: number) {
 }
 
 export async function orderRoutes(app: FastifyInstance) {
+  await reorderRoutes(app);
   app.post('/v1/customer/checkout-preview', { preHandler: authenticate }, async(request,reply)=>{
     const b=(request.body??{})as Record<string,unknown>;
     const quantities=parseItems(b.items),tenantId=typeof b.tenantId==='string'?b.tenantId:'';
@@ -200,6 +202,7 @@ export async function orderRoutes(app: FastifyInstance) {
         basePrice: product.price,
         productId: product.id,
         productName: configured.name,
+        selectedOptions: configured.selectedOptions,
         quantity,
         unitPrice: configured.price,
         totalPrice: lineTotal,
@@ -302,8 +305,10 @@ export async function orderRoutes(app: FastifyInstance) {
   });
 
   app.get('/v1/customer/orders', { preHandler: authenticate }, async (request) => {
+    const scope=(request.query as {scope?:string}).scope;
+    if(scope!==undefined&&!['ACTIVE','HISTORY'].includes(scope))throw Object.assign(new Error('Invalid order scope.'),{statusCode:400});
     return prisma.order.findMany({
-      where: { customerId: request.authUser!.id },
+      where: { customerId: request.authUser!.id,...(scope?{status:scope==='HISTORY'?{in:[OrderStatus.COMPLETED,OrderStatus.CANCELLED,OrderStatus.REJECTED]}:{notIn:[OrderStatus.COMPLETED,OrderStatus.CANCELLED,OrderStatus.REJECTED]}}:{}) },
       include: {
         tenant: { select: { id: true, name: true, slug: true, currency: true } },
         branch: { select: { id: true, name: true, city: true, addressLine: true, latitude: true, longitude: true } },

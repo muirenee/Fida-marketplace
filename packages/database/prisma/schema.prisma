@@ -312,6 +312,7 @@ model Order {
 }
 
 model OrderItem {
+  selectedOptions Json?
   discount Decimal @default(0) @db.Decimal(12, 2)
   tax Decimal @default(0) @db.Decimal(12, 2)
   id          String   @id @default(cuid())

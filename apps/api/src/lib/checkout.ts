@@ -1,6 +1,6 @@
 import { Prisma, prisma } from '@fida/database/client';
 type DB = Prisma.TransactionClient;
-export type PricedLine = {productId:string;productName:string;quantity:number;unitPrice:Prisma.Decimal;basePrice:Prisma.Decimal};
+export type PricedLine = {productId:string;productName:string;quantity:number;unitPrice:Prisma.Decimal;basePrice:Prisma.Decimal;selectedOptions?:string[]};
 const zero=()=>new Prisma.Decimal(0);
 const invalid=(message:string):never=>{throw Object.assign(new Error(message),{statusCode:409});};
 // Allocate whole cents by largest remainder so no small line becomes negative.
@@ -53,7 +53,7 @@ export async function checkoutTotals(tenantId:string, lines:PricedLine[], delive
    const totalPrice=l.unitPrice.mul(l.quantity);
    const discount=discounts[i].plus(cartParts[i]);
    const tax=totalPrice.minus(discount).mul(tenant.taxPercent).div(100).toDecimalPlaces(2);
-   return {productId:l.productId,productName:l.productName,quantity:l.quantity,unitPrice:l.unitPrice,totalPrice,discount,tax};
+   return {...(l.selectedOptions===undefined?{}:{selectedOptions:l.selectedOptions}),productId:l.productId,productName:l.productName,quantity:l.quantity,unitPrice:l.unitPrice,totalPrice,discount,tax};
  });
  const discount=itemDiscount.plus(cartDiscount),tax=items.reduce((v,l)=>v.plus(l.tax),zero());
  return {subtotal,deliveryFee,itemDiscount,cartDiscount,discount,tax,taxLabel:tenant.taxLabel,taxPercent:tenant.taxPercent,total:subtotal.minus(discount).plus(tax).plus(deliveryFee),items,usedPromotions:used,commissionPercent:tenant.platformCommissionPercent};

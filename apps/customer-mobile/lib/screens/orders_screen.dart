@@ -1,4 +1,5 @@
 import 'order_actions.dart';
+import 'reorder_screen.dart';
 
 import 'package:fida_mobile_common/fida_mobile_common.dart';
 
@@ -21,136 +22,40 @@ class OrdersScreen extends StatefulWidget {
 
 class _OrdersScreenState extends State<OrdersScreen> {
   StreamSubscription<dynamic>? _pushSubscription;
-  List<Map<String, dynamic>> _orders = [];
-  bool _loading = true;
+  List<Map<String,dynamic>> _orders=[];
+  bool _loading=true,_history=false;
   String? _error;
-
+  int _generation=0;
   @override
-  void initState() {
-    super.initState();
-    _load();
-    _pushSubscription = FidaPush.messages.stream.listen((_) {
-      if (mounted && !_loading) _load();
-    });
-  }
-
+  void initState(){super.initState();_load();_pushSubscription=FidaPush.messages.stream.listen((_){if(mounted&&!_loading)_load();});}
   @override
-  void dispose() {
-    _pushSubscription?.cancel();
-    super.dispose();
-  }
-
+  void dispose(){_pushSubscription?.cancel();super.dispose();}
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final rows = await widget.api.orders();
-      if (mounted) setState(() => _orders = rows);
-    } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    } catch (_) {
-      if (mounted) setState(() => _error = 'Unable to load your orders.');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    final version=++_generation;
+    setState((){_loading=true;_error=null;});
+    try{final rows=await widget.api.orders(scope:_history?'HISTORY':'ACTIVE');if(mounted&&version==_generation)setState(()=>_orders=rows);}
+    catch(e){if(mounted&&version==_generation)setState(()=>_error='$e');}
+    finally{if(mounted&&version==_generation)setState(()=>_loading=false);}
   }
-
   @override
-  Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: _error != null
-          ? ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: [
-                const SizedBox(height: 160),
-                const Icon(Icons.receipt_long_outlined, size: 50),
-                const SizedBox(height: 12),
-                Center(child: Text(_error!)),
-              ],
-            )
-          : _orders.isEmpty
-          ? ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: const [
-                SizedBox(height: 160),
-                Icon(Icons.shopping_bag_outlined, size: 52),
-                SizedBox(height: 12),
-                Center(child: Text('Your orders will appear here.')),
-              ],
-            )
-          : ListView.separated(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
-              itemCount: _orders.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final order = _orders[index];
-                final merchant = (order['tenant'] as Map?)
-                    ?.cast<String, dynamic>();
-                final currency = merchant?['currency']?.toString() ?? 'RWF';
-                final items = order['items'] as List? ?? const [];
-                return Card(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => OrderDetailScreen(
-                            api: widget.api,
-                            orderId: order['id'].toString(),
-                          ),
-                        ),
-                      );
-                      _load();
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  merchant?['name']?.toString() ?? 'Merchant',
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w800),
-                                ),
-                              ),
-                              _StatusBadge(status: order['status'].toString()),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '${order['orderNumber']} · ${items.length} item type${items.length == 1 ? '' : 's'}',
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Text(
-                                money(order['total'], currency: currency),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const Spacer(),
-                              const Icon(Icons.chevron_right_rounded),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-    );
-  }
+  Widget build(BuildContext context)=>Column(children:[
+    Padding(padding:const EdgeInsets.all(16),child:SizedBox(width:double.infinity,child:SegmentedButton<bool>(segments:const [ButtonSegment(value:false,label:Text('Active'),icon:Icon(Icons.delivery_dining)),ButtonSegment(value:true,label:Text('History'),icon:Icon(Icons.history))],selected:{_history},onSelectionChanged:(v){setState(()=>_history=v.first);_load();}))),
+    Expanded(child:RefreshIndicator(onRefresh:_load,child:ListView(padding:const EdgeInsets.fromLTRB(16,0,16,120),physics:const AlwaysScrollableScrollPhysics(),children:[
+      if(_loading)const Padding(padding:EdgeInsets.all(60),child:Center(child:CircularProgressIndicator()))
+      else if(_error!=null)Column(children:[Text(_error!),TextButton(onPressed:_load,child:const Text('Retry'))])
+      else if(_orders.isEmpty)Padding(padding:const EdgeInsets.symmetric(vertical:70),child:Column(children:[const Icon(Icons.receipt_long_outlined,size:52),const SizedBox(height:12),Text(_history?'Your past orders will appear here.':'No active orders. Your next meal is a few taps away.',textAlign:TextAlign.center)]))
+      else for(final order in _orders)Card(margin:const EdgeInsets.only(bottom:12),child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Text('${order['tenant']?['name']??'Merchant'}',style:Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight:FontWeight.w800)),const SizedBox(height:8),_StatusBadge(status:'${order['status']}'),
+        const SizedBox(height:8),Text('${order['orderNumber']}'),
+        Text((order['items'] as List? ?? []).map((i)=>"${i['quantity']} × ${i['productName']}").join(' · '),maxLines:2,overflow:TextOverflow.ellipsis),
+        const SizedBox(height:12),Text(money(order['total'],currency:order['tenant']?['currency']?.toString()??'RWF'),style:const TextStyle(fontWeight:FontWeight.w800)),
+        const SizedBox(height:8),Wrap(spacing:8,children:[
+          OutlinedButton.icon(onPressed:()async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>OrderDetailScreen(api:widget.api,orderId:'${order['id']}')));if(mounted)_load();},icon:Icon(_history?Icons.receipt_long:Icons.near_me_outlined),label:Text(_history?'View receipt / details':'Track order')),
+          if(_history)FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>ReorderScreen(api:widget.api,orderId:'${order['id']}'))),icon:const Icon(Icons.replay),label:const Text('Order again')),
+        ]),
+      ]))),
+    ]))),
+  ]);
 }
 
 class OrderDetailScreen extends StatefulWidget {

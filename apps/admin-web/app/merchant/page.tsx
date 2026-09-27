@@ -1,6 +1,6 @@
 'use client';
 import {StoreSettings} from './store-settings';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import './merchant.css';
 import { OptionEditor } from './option-editor';
 import { BusinessSettings } from './business-settings';
@@ -17,6 +17,8 @@ export default function MerchantPortal() {
  const [tab,setTab]=useState('Overview'),[rows,setRows]=useState<Row[]>([]),[categories,setCategories]=useState<Row[]>([]),[branches,setBranches]=useState<Row[]>([]),[allProducts,setAllProducts]=useState<Row[]>([]);
  const [context,setContext]=useState<Row>({}),[error,setError]=useState(''),[busy,setBusy]=useState(false),[ready,setReady]=useState(false),[edit,setEdit]=useState<Row|null>(null);
  const [document,setDocument]=useState<Row|null>(null),[statement,setStatement]=useState<Row>({}),[orderFilter,setOrderFilter]=useState('ACTIVE');
+ const loadVersion=useRef(0);
+ const [queueCounts,setQueueCounts]=useState<Record<string,number>>({});
  const isKitchen=role==='KITCHEN_CREW';
  const canWrite=['OWNER','ADMIN','MANAGER'].includes(role),canAdmin=['OWNER','ADMIN'].includes(role);
  const call=useCallback(async(path:string,method='GET',body?:unknown)=>{
@@ -26,14 +28,17 @@ export default function MerchantPortal() {
  const session=async()=>{try{const r=await fetch('/api/merchant-session/me');if(r.ok){const d=await r.json();setMemberships(d.memberships);setTenant(d.memberships[0]?.tenant.id||'');setRole(d.memberships[0]?.role||'');}}finally{setReady(true);}};
  useEffect(()=>{void session();},[]);
  const load=useCallback(async()=>{
-  if(!tenant||memberships.find(m=>m.tenant.id===tenant)?.tenant.status!=='ACTIVE')return;setBusy(true);setError('');try{
-   const [c,cats,bs]=await Promise.all([call('context'),call('categories'),call('fulfillment')]);setContext(c);setCategories(cats);setBranches(bs);
-   const paths:Record<string,string>={Orders:'orders',Products:'products',Categories:'categories',Drivers:'drivers',Promotions:'promotions',Support:'support',Finance:'finance',Documents:'documents',Refunds:'refunds'};
-   if(tab==='Promotions')setAllProducts(await call('products'));
-   if(tab==='Finance')setStatement(await call('statement'));
-   const result=paths[tab]?await call(paths[tab]):[];setRows(Array.isArray(result)?result:result.entries||[]);
-  }catch(e){setError(String(e).replace('Error: ',''));}finally{setBusy(false);}
- },[tenant,tab,call,memberships]);
+  const version=++loadVersion.current;
+  if(!tenant||memberships.find(m=>m.tenant.id===tenant)?.tenant.status!=='ACTIVE')return;
+  setBusy(true);setError('');
+  try{
+   const paths:Record<string,string>={Orders:`orders${orderFilter==='ALL'?'':`?status=${orderFilter}`}`,Products:'products',Categories:'categories',Drivers:'drivers',Promotions:'promotions',Support:'support',Finance:'finance',Documents:'documents',Refunds:'refunds'};
+   const [c,cats,bs,result,products,financial,queues]=await Promise.all([call('context'),call('categories'),call('fulfillment'),paths[tab]?call(paths[tab]):[],tab==='Promotions'?call('products'):[],tab==='Finance'?call('statement'):{},['Orders','Overview'].includes(tab)?call('order-queues'):{counts:{}}]);
+   if(version!==loadVersion.current)return;
+   setContext(c);setCategories(cats);setBranches(bs);setRows(Array.isArray(result)?result:result.entries||[]);setAllProducts(products);setStatement(financial);setQueueCounts(queues.counts);
+  }catch(e){if(version===loadVersion.current)setError(String(e).replace('Error: ',''));}
+  finally{if(version===loadVersion.current)setBusy(false);}
+ },[tenant,tab,call,memberships,orderFilter]);
  useEffect(()=>{void load();},[load]);
  useEffect(()=>{if(tab!=='Orders'||edit)return;const timer=setInterval(()=>{if(!busy && globalThis.document.visibilityState==='visible')void load();},8000);return()=>clearInterval(timer);},[load,tab,edit,busy]);
  const mutate=async(path:string,method:string,body?:unknown)=>{setBusy(true);setError('');try{await call(path,method,body);setEdit(null);await load();}catch(e){setError(String(e).replace('Error: ',''));}finally{setBusy(false);}};
@@ -47,13 +52,13 @@ export default function MerchantPortal() {
  return <div className="mp"><aside className="mp-sidebar"><a className="mp-brand" href="/merchant">Fida<span>business</span></a><nav>{['Overview','Orders','Products','Categories','Drivers','Business','Promotions','Finance','Documents','Refunds','Support','Staff','Driver payments','Store metadata'].filter(t=>(t!=='Store metadata'||role==='OWNER')&&(t!=='Staff'||['OWNER','MANAGER'].includes(role))&&(t!=='Driver payments'||canAdmin)&&(!isKitchen||['Overview','Orders','Products'].includes(t))).filter(t=>!['Finance','Documents','Refunds'].includes(t)||canAdmin).map(t=><button key={t} className={t===tab?'selected':''} onClick={()=>{setTab(t);setEdit(null);}}>{t}</button>)}</nav><div className="mp-tenant"><select aria-label="Select business" value={tenant} onChange={e=>{setTenant(e.target.value);setRole(memberships.find(m=>m.tenant.id===e.target.value)?.role||'');}}>{memberships.map(m=><option key={m.tenant.id} value={m.tenant.id}>{m.tenant.name}</option>)}</select><small>{label(role)}</small><button onClick={async()=>{await fetch('/api/merchant-session/logout',{method:'POST'});setTenant('');setMemberships([]);}}>Sign out</button></div></aside><main className="mp-main"><header><div><span className="mp-eyebrow">YOUR BUSINESS, AT A GLANCE</span><h1>{tab==='Overview'?`Hello, ${name}`:tab}</h1></div><button className="mp-secondary" disabled={busy} onClick={()=>void load()}>{busy?'Updating…':'Refresh'}</button></header>{error&&<div role="alert" className="mp-error">{error}</div>}
  {tab==='Overview'&&<><section className="mp-hero"><div><span>READY FOR THE NEXT ORDER?</span><h2>Great food.<br/>Happy customers.</h2><p>Keep your menu fresh and your deliveries moving.</p><button onClick={()=>setTab('Orders')}>Open order queue →</button></div><div className="mp-hero-art">✦<span>Fida</span></div></section><section className="mp-stats">{['orders','products','categories','drivers'].map((k,i)=><button className={`mp-stat mp-tint-${i}`} key={k} onClick={()=>setTab(k[0].toUpperCase()+k.slice(1))}><strong>{context.counts?.[k]??0}</strong><span>{label(k)}</span></button>)}</section><section className="mp-panel"><h2>Store availability</h2><p>{context.tenant?.isAcceptingOrders?'Your store is accepting orders.':'Your store is paused.'}</p>{canAdmin&&<button onClick={()=>void mutate('settings','PATCH',{isAcceptingOrders:!context.tenant?.isAcceptingOrders})}>{context.tenant?.isAcceptingOrders?'Pause orders':'Open store'}</button>}</section></>}
  {['Products','Categories','Drivers','Promotions'].includes(tab)&&<div className="mp-toolbar"><p>{rows.length} {tab.toLowerCase()}</p>{(tab==='Drivers'?canAdmin:canWrite)&&<button onClick={()=>setEdit({kind:tab,...(tab==='Drivers'?{mode:'create',maxConcurrentOrders:3}:{}),...(tab==='Promotions'?{percent:10,maxDiscount:2000,maxUses:100,minimumOrder:0}:{})})}>+ Add {tab==='Categories'?'category':tab.slice(0,-1).toLowerCase()}</button>}{tab==='Drivers'&&canAdmin&&<button className="mp-secondary" onClick={()=>setEdit({kind:'Drivers',mode:'enroll'})}>Enroll existing driver</button>}</div>}
- {tab==='Orders'&&<div className="mp-toolbar">{['ACTIVE','PENDING','PREPARING','READY_FOR_PICKUP','ALL'].map(f=><button key={f} className={orderFilter===f?'':'mp-secondary'} onClick={()=>setOrderFilter(f)}>{label(f)}</button>)}<small>Updates every 8 seconds</small></div>}
+ {tab==='Orders'&&<div className="mp-toolbar">{['ACTIVE','PENDING','PROCESSING','READY_FOR_PICKUP','HISTORY','ALL'].map(f=><button key={f} className={orderFilter===f?'':'mp-secondary'} onClick={()=>setOrderFilter(f)}>{f==='PENDING'?'New':f==='READY_FOR_PICKUP'?'Ready':label(f)} ({queueCounts[f]??0})</button>)}<small>Updates every 8 seconds</small></div>}
  {tab==='Finance'&&<section className="mp-stats"><div className="mp-panel"><h3>Commission balance</h3><strong>{money(statement.commissionOutstanding)}</strong></div><div className="mp-panel"><h3>Merchant payout balance</h3><strong>{money(statement.merchantPayoutOutstanding)}</strong></div></section>}
  {tab==='Store metadata'&&<StoreSettings call={call}/>}
  {tab==='Staff'&&['OWNER','MANAGER'].includes(role)&&<StaffSettings owner={role==='OWNER'} call={call} branches={branches}/>}
  {tab==='Driver payments'&&canAdmin&&<DriverSettlements call={call}/>}
  {tab==='Business'&&canAdmin&&<BusinessSettings key={tenant} tenant={context.tenant||{}} branches={branches} call={call} onSaved={load}/>}
- <section className={tab==='Products'?'mp-product-grid':'mp-list'}>{rows.filter(row=>tab!=='Orders'||orderFilter==='ALL'||(orderFilter==='ACTIVE'?!['COMPLETED','CANCELLED','REJECTED'].includes(row.status):row.status===orderFilter)).map(row=><article className="mp-panel" key={row.id||row.reference}>
+ <section className={tab==='Products'?'mp-product-grid':'mp-list'}>{rows.map(row=><article className="mp-panel" key={row.id||row.reference}>
  {tab==='Products'&&<><div className="mp-product-image">{row.imageUrl?<img src={row.imageUrl} alt={row.name}/>:<span>✦</span>}</div><h3>{row.name}</h3><p>{row.category?.name||'Uncategorised'}</p><strong>{money(row.price)}</strong><span className={`mp-badge ${row.isActive&&row.isAvailable?'green':''}`}>{!row.isActive?'Suspended':row.isAvailable?'Available':'Sold out'}</span></>}
  {tab==='Documents'&&<><h3>{row.payload?.title}</h3><p>{row.number} · {new Date(row.issuedAt).toLocaleDateString()}</p><strong>{money(row.payload?.total)}</strong><button className="mp-secondary" onClick={()=>setDocument(row)}>View / download PDF</button></>}
  {tab==='Refunds'&&<><h3>Refund · {money(row.amount)}</h3><p>{row.reason}</p><span className="mp-badge">{label(row.status)}</span><p>{row.resolution||'Awaiting platform review'}</p></>}

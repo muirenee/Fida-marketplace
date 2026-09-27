@@ -1,3 +1,4 @@
+import 'delivery_route_summary.dart';
 import 'earnings_sheet.dart';
 import 'package:fida_mobile_common/fida_mobile_common.dart';
 
@@ -997,10 +998,7 @@ class _OfferCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Text(
-              'Pickup: ${[branch['addressLine'], branch['city']].where((v) => v != null && '$v'.isNotEmpty).join(', ')}',
-            ),
-            Text('Drop-off: ${order['deliveryAddress'] ?? 'Customer address'}'),
+            DeliveryRouteSummary(order:order),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -1033,7 +1031,6 @@ class _CurrentDeliveryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final order = delivery['order'] as Map? ?? {};
-    final tenant = order['tenant'] as Map? ?? {};
     final branch = order['branch'] as Map? ?? {};
     final customer = order['customer'] as Map? ?? {};
     final items = order['items'] as List? ?? const [];
@@ -1073,22 +1070,8 @@ class _CurrentDeliveryCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            const Text(
-              'PICKUP',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-            ),
-            Text(
-              tenant['name']?.toString() ?? 'Merchant',
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
-            ),
-            Text(
-              [
-                branch['name'],
-                branch['addressLine'],
-                branch['city'],
-              ].where((v) => v != null && '$v'.isNotEmpty).join(' · '),
-            ),
-            const SizedBox(height: 8),
+            DeliveryRouteSummary(order:order),
+            const SizedBox(height:8),
             DestinationActions(
               latitude: branch['latitude'],
               longitude: branch['longitude'],
@@ -1099,14 +1082,7 @@ class _CurrentDeliveryCard extends StatelessWidget {
               label: 'pickup',
             ),
             const SizedBox(height: 14),
-            const Text(
-              'DROP-OFF',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-            ),
-            Text(
-              order['deliveryAddress']?.toString() ?? 'Customer address',
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
-            ),
+            const Text('Customer',style:TextStyle(fontWeight:FontWeight.w800)),
             Text(
               [
                 customer['firstName'],

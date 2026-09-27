@@ -79,9 +79,9 @@ PY
   flutter clean
   flutter pub get
   flutter analyze --no-fatal-infos --no-fatal-warnings
-  if [[ "$current" == customer ]]; then flutter test test/experience_test.dart test/runtime_config_test.dart test/promotions_location_test.dart; fi
+  if [[ "$current" == customer ]]; then flutter test test/experience_test.dart test/runtime_config_test.dart test/promotions_location_test.dart test/reorder_test.dart; fi
   if [[ "$current" == merchant ]]; then flutter test test/order_search_test.dart; fi
-  if [[ "$current" == driver ]]; then flutter test test/earnings_test.dart; fi
+  if [[ "$current" == driver ]]; then flutter test test/earnings_test.dart test/delivery_route_test.dart; fi
   flutter build "$kind" --release --build-number="$build_number" --dart-define="FIDA_API_BASE_URL=$api_base" --dart-define-from-file=firebase-defines.json
   if [[ "$kind" == apk ]]; then
     cp build/app/outputs/flutter-apk/app-release.apk "$root/dist/android/fida-$current-$build_number.apk"

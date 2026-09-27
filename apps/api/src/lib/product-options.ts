@@ -37,5 +37,5 @@ export function selectedOptions(product: { price: Prisma.Decimal; options: unkno
   const count = rows.filter(o => names.includes(o.name)).length;
   if (count < (first.minSelect ?? 0) || count > (first.maxSelect ?? rows.length)) throw invalid(`Choose ${first.minSelect ?? 0}–${first.maxSelect ?? rows.length} options for ${group}.`, 409);
  }
- return {price, name: product.name + (names.length ? ` (${names.join(', ')})` : '')};
+ return {price, selectedOptions: [...names] as string[], name: product.name + (names.length ? ` (${names.join(', ')})` : '')};
 }

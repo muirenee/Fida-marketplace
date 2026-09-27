@@ -8,9 +8,13 @@ class ProductScreen extends StatefulWidget {
     super.key,
     required this.product,
     required this.currency,
+    this.initialQuantity=1,
+    this.initialSelectedOptions=const [],
   });
   final Map<String, dynamic> product;
   final String currency;
+  final int initialQuantity;
+  final List<String> initialSelectedOptions;
   @override
   State<ProductScreen> createState() => _ProductScreenState();
 }
@@ -18,6 +22,8 @@ class ProductScreen extends StatefulWidget {
 class _ProductScreenState extends State<ProductScreen> {
   final Set<String> selected = {};
   int quantity = 1;
+  @override
+  void initState(){super.initState();quantity=widget.initialQuantity.clamp(1,50).toInt();selected.addAll(widget.initialSelectedOptions);}
   List<Map> get options =>
       (widget.product['options'] as List? ?? []).cast<Map>();
   Map<String, List<Map>> get groups {

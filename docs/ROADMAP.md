@@ -1,8 +1,10 @@
 # Fida Marketplace Roadmap
 
-Updated: 20 September 2026
+Updated: 27 September 2026
 
 ## Candidate implementation status
+
+0.12 adapts Enatega reorder, order-queue and driver-card workflows while preserving Fida’s architecture. See [adaptation, evidence and remaining gaps](ENATEGA-ADAPTATION-0.12.md).
 
 0.8 adds approval-gated onboarding, kitchen RBAC, taxes/item promotions, cooking notes, direct merchant payment routing, actual driver payment records and layout repairs. See [0.8 source and deployment](RELEASE-0.8.md) and [automated evidence audit](ROADMAP-AUDIT-0.8.json). The prioritized acceptance checklist in 0.8 supersedes the historical next-implementation sequence below.
 

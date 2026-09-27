@@ -48,7 +48,7 @@ export function requireTenant(allowedRoles?: MembershipRole[]) {
     if (membership.role === 'KITCHEN_CREW') {
       const route = request.routeOptions.url;
       const permitted = request.method === 'GET'
-        ? ['/v1/merchant/context', '/v1/merchant/orders', '/v1/merchant/products', '/v1/merchant/categories', '/v1/merchant/fulfillment'].includes(route ?? '')
+        ? ['/v1/merchant/context', '/v1/merchant/orders', '/v1/merchant/order-queues', '/v1/merchant/products', '/v1/merchant/categories', '/v1/merchant/fulfillment'].includes(route ?? '')
         : request.method === 'PATCH' && ['/v1/merchant/products/:id/stock', '/v1/merchant/orders/:orderId/status'].includes(route ?? '');
       if (!permitted) return reply.code(403).send({error:'forbidden',message:'Kitchen access is limited to orders and inventory.'});
     }

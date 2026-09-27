@@ -386,10 +386,11 @@ class ApiClient {
     return (_decode(response) as Map).cast<String, dynamic>();
   }
 
-  Future<List<Map<String, dynamic>>> orders() async {
+  Future<List<Map<String, dynamic>>> orders({String? scope}) async {
     final response = await _send(
       'GET',
       '/v1/customer/orders',
+      query:{if(scope!=null)'scope':scope},
       authenticated: true,
     );
     if (response.statusCode != 200) throw _error(response);

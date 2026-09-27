@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {Prisma} from '../packages/database/src/client.js';
+export async function verify012({prisma,request,customer,outsider,tenant,owner,checkout}:any){
+ await test('reorder preserves choices, reprices current catalog, gates unavailable stores and isolates customers',async()=>{
+  const product=await prisma.product.create({data:{tenantId:tenant.id,name:'Reorder meal',price:1200,options:[{name:'Rice',price:100,group:'Base',minSelect:1,maxSelect:1}]}});
+  const payload={...checkout,items:[{productId:product.id,quantity:2,options:['Rice']}]};
+  const preview=await request('POST','/v1/customer/checkout-preview',customer,payload);
+  const order=await request('POST','/v1/customer/orders',customer,{...payload,confirmedTotal:Number(preview.total)},201);
+  assert.deepEqual(order.items[0].selectedOptions,['Rice']);
+  const path=`/v1/customer/orders/${order.id}/reorder`;
+  await request('GET',path,customer,undefined,409);
+  await request('GET',path,outsider,undefined,404);
+  await prisma.order.update({where:{id:order.id},data:{status:'COMPLETED'}});
+  await prisma.product.update({where:{id:product.id},data:{price:1500}});
+  let draft=await request('GET',path,customer);
+  assert.equal(draft.items[0].status,'AVAILABLE');assert.equal(Number(draft.items[0].unitPrice),1600);assert.equal(draft.items[0].priceChanged,true);assert.deepEqual(draft.items[0].selectedOptions,['Rice']);
+  assert.equal(draft.items[0].quantity,2);assert.equal(draft.promoCode,undefined);
+  await prisma.orderItem.update({where:{id:order.items[0].id},data:{selectedOptions:Prisma.DbNull}});
+  assert.equal((await request('GET',path,customer)).items[0].status,'RECONFIGURE');
+  await prisma.orderItem.update({where:{id:order.items[0].id},data:{selectedOptions:['Rice']}});
+  await prisma.product.update({where:{id:product.id},data:{options:[{name:'Potato',price:0,group:'Base',minSelect:1,maxSelect:1}]}});
+  assert.equal((await request('GET',path,customer)).items[0].status,'RECONFIGURE');
+  await prisma.product.update({where:{id:product.id},data:{isAvailable:false}});
+  assert.equal((await request('GET',path,customer)).items[0].status,'UNAVAILABLE');
+  await prisma.tenant.update({where:{id:tenant.id},data:{isAcceptingOrders:false}});
+  await request('GET',path,customer,undefined,409);
+  await prisma.tenant.update({where:{id:tenant.id},data:{isAcceptingOrders:true}});
+  const history=await request('GET','/v1/customer/orders?scope=HISTORY',customer);
+  assert.ok(history.some((o:any)=>o.id===order.id));assert.ok(history.every((o:any)=>['COMPLETED','CANCELLED','REJECTED'].includes(o.status)));
+  const active=await request('GET','/v1/customer/orders?scope=ACTIVE',customer);
+  assert.ok(active.every((o:any)=>!['COMPLETED','CANCELLED','REJECTED'].includes(o.status)));
+  await request('GET','/v1/customer/orders?scope=BAD',customer,undefined,400);
+ });
+ await test('merchant queue counts cover all records, search and branch scope without financial data',async()=>{
+  const branch=await prisma.branch.create({data:{tenantId:tenant.id,name:'Queue branch'}});
+  const cook=await prisma.user.create({data:{email:'queue012@example.test'}});
+  await prisma.tenantMembership.create({data:{tenantId:tenant.id,userId:cook.id,role:'KITCHEN_CREW',branchId:branch.id}});
+  for(const [i,status] of ['PENDING','PREPARING','READY_FOR_PICKUP','COMPLETED'].entries())await prisma.order.create({data:{tenantId:tenant.id,branchId:branch.id,customerId:customer.id,orderNumber:`QUEUE012-${i}`,status,fulfillmentType:'PICKUP',paymentMethod:'CASH',subtotal:100,total:100,createdAt:new Date(Date.now()-10000+i*1000)}});
+  const queues=await request('GET','/v1/merchant/order-queues',cook);
+  assert.equal(queues.counts.ALL,4);assert.equal(queues.counts.ACTIVE,3);assert.equal(queues.counts.HISTORY,1);assert.equal(queues.counts.PROCESSING,1);
+  assert.ok(!JSON.stringify(queues).includes('commission'));assert.ok(!JSON.stringify(queues).includes('customer'));
+  const rows=await request('GET','/v1/merchant/orders?status=ACTIVE',cook);
+  assert.deepEqual(rows.map((o:any)=>o.orderNumber),['QUEUE012-0','QUEUE012-1','QUEUE012-2']);assert.ok(rows.every((o:any)=>o.total===undefined));
+  assert.equal((await request('GET','/v1/merchant/order-queues?q=QUEUE012-2',cook)).counts.ALL,1);
+  const total=await prisma.order.count({where:{tenantId:tenant.id}});
+  assert.equal((await request('GET','/v1/merchant/order-queues',owner)).counts.ALL,total);
+  await request('GET','/v1/merchant/order-queues',outsider,undefined,403);
+  await request('GET','/v1/merchant/orders?status=BAD',owner,undefined,400);
+ });
+}

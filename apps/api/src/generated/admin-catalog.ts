@@ -1841,6 +1841,16 @@ export const catalog:{models:CatalogModel[];enums:{name:string;values:{name:stri
       "primaryKey": null,
       "fields": [
         {
+          "name": "selectedOptions",
+          "type": "Json",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": false,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
           "name": "discount",
           "type": "Decimal",
           "kind": "scalar",

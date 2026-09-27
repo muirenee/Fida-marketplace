@@ -325,6 +325,8 @@ class MerchantApiClient {
     return (_json(response) as Map).cast<String, dynamic>();
   }
 
+  Future<Map<String,dynamic>> orderQueues(String tenantId,{String? search}) async => Map<String,dynamic>.from(await request('GET','/v1/merchant/order-queues${search==null||search.isEmpty?'':'?q=${Uri.encodeQueryComponent(search)}'}',tenantId:tenantId));
+
   Future<List<Map<String, dynamic>>> orders(
     String tenantId, {
     String? status,
