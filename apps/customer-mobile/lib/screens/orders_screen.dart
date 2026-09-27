@@ -593,12 +593,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           label: 'Subtotal',
           value: money(order['subtotal'], currency: currency),
         ),
-        _PriceRow(
-          label: isPickup ? 'Pickup' : 'Delivery',
-          value: isPickup
-              ? 'Free'
-              : money(order['deliveryFee'], currency: currency),
-        ),
+        if (hasNonZeroAmount(order['deliveryFee']))
+          _PriceRow(label: 'Delivery', value: money(order['deliveryFee'], currency: currency)),
         if (asDouble(order['serviceFee']) > 0)
           _PriceRow(
             label: 'Service fee',

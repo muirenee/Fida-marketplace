@@ -410,7 +410,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                '${promotionDescription(promo, currency)}\nMin ${money(promo['minimumOrder'], currency: currency)} · Max ${money(promo['maxDiscount'], currency: currency)}',
+                                '${promotionDescription(promo, currency)}${promo['productName']==null?'':' · ${promo['productName']}'}\nMin ${money(promo['minimumOrder'], currency: currency)} · Max ${money(promo['maxDiscount'], currency: currency)}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                 ),
