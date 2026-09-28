@@ -36,3 +36,5 @@ bash build-apks.sh customer
 Uses the installed Flutter/Android SDK, original release keystore and matching Firebase files, `flutter clean`, dependency resolution, analysis/tests and release APK compilation. `FIDA_API_BASE_URL` overrides the bootstrap endpoint; `FIDA_BUILD_NUMBER` can set a higher Android version code. Output: `dist/android/`. The existing GitHub workflows build all three signed apps automatically.
 
 There is no EAS profile or Expo application in this repository. `eas build --platform android` cannot compile these Flutter apps. Enatega is the workflow reference, not the application runtime; source comparison and remaining gaps are in `ENATEGA-ADAPTATION-0.12.md` and `WORK-STATE-0.13.md`.
+
+All four CI workflows passed for source 4dce7c3. Signed APK identities and checksums: `APK-VERIFICATION-0.13.json`. Local checks covered 46 isolated origin/business/migration tests. Deployment to the live server was not executed.
