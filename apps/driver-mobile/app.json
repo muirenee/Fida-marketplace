@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Fida Driver",
+    "slug": "fida-driver",
+    "version": "0.14.0",
+    "ios": {
+      "bundleIdentifier": "com.fidalix.marketplace.driver",
+      "supportsTablet": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    }
+  }
+}

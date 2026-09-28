@@ -6,6 +6,8 @@ export 'document_screen.dart';
 export 'delivery_map.dart';
 export 'food_ui.dart';
 import 'dart:async';
+import 'apple_push.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -257,14 +259,17 @@ const _apiKey = String.fromEnvironment('FIDA_FIREBASE_API_KEY');
 const _appId = String.fromEnvironment('FIDA_FIREBASE_APP_ID');
 const _senderId = String.fromEnvironment('FIDA_FIREBASE_SENDER_ID');
 const _projectId = String.fromEnvironment('FIDA_FIREBASE_PROJECT_ID');
+const _iosBundleId = String.fromEnvironment('FIDA_FIREBASE_IOS_BUNDLE_ID');
+const _pushEnabled = bool.fromEnvironment('FIDA_PUSH_ENABLED', defaultValue: true);
 FirebaseOptions? _options() =>
-    [_apiKey, _appId, _senderId, _projectId].any((s) => s.isEmpty)
+    !_pushEnabled || [_apiKey, _appId, _senderId, _projectId].any((s) => s.isEmpty)
     ? null
     : const FirebaseOptions(
         apiKey: _apiKey,
         appId: _appId,
         messagingSenderId: _senderId,
         projectId: _projectId,
+        iosBundleId: _iosBundleId == '' ? null : _iosBundleId,
       );
 @pragma('vm:entry-point')
 Future<void> _backgroundMessage(RemoteMessage message) async {
@@ -273,59 +278,108 @@ Future<void> _backgroundMessage(RemoteMessage message) async {
     await Firebase.initializeApp(options: options);
 }
 
-class FidaPush {
+class FidaPush with WidgetsBindingObserver {
   static final messages = StreamController<RemoteMessage>.broadcast();
   StreamSubscription<String>? _refresh;
   StreamSubscription<RemoteMessage>? _foreground, _opened;
   String? _token;
   Future<void> Function(String, String)? _register;
+  int _generation = 0;
+  bool _starting = false;
+  String? _app;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
+    final register = _register;
+    if (lifecycle == AppLifecycleState.resumed && !_starting &&
+        state != 'Enabled' && register != null && _app != null) {
+      unawaited(start(_app!, register));
+    }
+  }
   String state = 'Not configured';
   Future<void> start(
     String app,
     Future<void> Function(String, String) register,
   ) async {
-    if (_register != null) return;
-    _register = register;
+    if (_starting || state == 'Enabled') return;
     final options = _options();
     if (options == null) {
       state = 'Not configured';
       return;
     }
+    _register = register;
+    _app = app;
+    WidgetsBinding.instance.removeObserver(this);
+    WidgetsBinding.instance.addObserver(this);
+    _starting = true;
+    final generation = ++_generation;
+    bool active() => generation == _generation && _register != null;
     try {
       if (Firebase.apps.isEmpty) await Firebase.initializeApp(options: options);
       FirebaseMessaging.onBackgroundMessage(_backgroundMessage);
       final permission = await FirebaseMessaging.instance.requestPermission();
+      if (!active()) return;
       if (permission.authorizationStatus == AuthorizationStatus.denied) {
         state = 'Permission denied';
-        _register = null;
         return;
       }
-      _token = await FirebaseMessaging.instance.getToken();
-      if (_token != null) await register('POST', _token!);
+      if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS)) {
+        final ready = await waitForApplePushToken(
+          readToken: FirebaseMessaging.instance.getAPNSToken,
+          isActive: active,
+        );
+        if (!active()) return;
+        if (!ready) {
+          state = 'Waiting for Apple push registration';
+          return;
+        }
+      }
+      final token = await FirebaseMessaging.instance.getToken();
+      if (!active()) return;
+      if (token == null) {
+        state = 'Registration needs retry';
+        return;
+      }
+      _token = token;
+      await register('POST', token);
+      if (!active()) {
+        await register('DELETE', token);
+        return;
+      }
+      await _refresh?.cancel();
+      await _foreground?.cancel();
+      await _opened?.cancel();
       _refresh = FirebaseMessaging.instance.onTokenRefresh.listen((
         token,
       ) async {
+        if (!active()) return;
         try {
           if (_token != null && _token != token)
             await register('DELETE', _token!);
+          if (!active()) return;
           _token = token;
           await register('POST', token);
+          if (!active()) await register('DELETE', token);
         } catch (_) {
-          state = 'Registration needs retry';
+          if (active()) state = 'Registration needs retry';
         }
       });
       _foreground = FirebaseMessaging.onMessage.listen(messages.add);
       _opened = FirebaseMessaging.onMessageOpenedApp.listen(messages.add);
       final initial = await FirebaseMessaging.instance.getInitialMessage();
+      if (!active()) return;
       if (initial != null) messages.add(initial);
       state = 'Enabled';
     } catch (_) {
-      state = 'Registration needs retry';
-      _register = null;
+      if (active()) state = 'Registration needs retry';
+    } finally {
+      _starting = false;
     }
   }
 
   Future<void> stop() async {
+    ++_generation;
+    WidgetsBinding.instance.removeObserver(this);
     await _refresh?.cancel();
     await _foreground?.cancel();
     await _opened?.cancel();

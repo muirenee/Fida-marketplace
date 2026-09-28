@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 checks = {
+    'ios_cloud_native': [('apps/customer-mobile/eas.json','development-simulator'), ('scripts/eas/prepare-ios.sh','EAS_BUILD_PLATFORM'), ('apps/driver-mobile/lib/location_settings.dart','AppleSettings'), ('tests/eas-configuration.cjs','resolveTargetsAsync')],
     'merchant_order_search': [('apps/api/src/routes/merchant.ts','invalid_order_search'), ('apps/merchant-mobile/lib/main.dart','merchant-order-search'), ('apps/merchant-mobile/test/order_search_test.dart','stale results')],
     'binary_onboarding_and_slug': [('apps/api/src/routes/branding.ts', 'limitInputPixels'), ('apps/api/src/lib/merchant-application.ts', 'storeSlug'), ('apps/merchant-mobile/lib/main.dart', "Uri.parse('https://fidalix.com')")],
     'native_store_and_staff': [('apps/merchant-mobile/lib/store_page.dart', 'uploadBranding'), ('apps/merchant-mobile/lib/staff_page.dart', 'Delete staff membership?')],
@@ -44,5 +45,5 @@ gaps = [
     {'priority':'P2','feature':'Self-service staff password recovery','status':'not_implemented','evidence':['apps/api/src/routes/auth.ts','apps/merchant-mobile/lib/staff_page.dart']},
     {'priority':'P3','feature':'SMS/social login, subscriptions and conversion analytics','status':'not_implemented','evidence':['apps/api/src/routes/auth.ts','apps/api/src/routes/marketplace.ts']},
 ]
-print(json.dumps({'scope': 'Source evidence only; RELEASE-0.10.md records tested behavior and remaining acceptance. No full marketplace parity claim.', 'source_file_count':len(source_paths), 'features':report, 'remaining':gaps}, indent=2))
+print(json.dumps({'scope': 'Source evidence only; ENATEGA-GAPS-0.14.md and IOS-CLOUD-0.14.md record remaining acceptance. No full marketplace parity claim.', 'source_file_count':len(source_paths), 'features':report, 'remaining':gaps}, indent=2))
 raise SystemExit(0 if all(r['implementation_evidence_present'] for r in report) else 1)

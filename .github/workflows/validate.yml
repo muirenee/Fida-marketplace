@@ -6,6 +6,29 @@ on:
   pull_request:
 
 jobs:
+  ios-cloud-configuration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check native permissions and Firebase isolation
+        run: python3 tests/ios-configuration.py
+      - name: Validate pinned EAS profiles, workflows and native target parsing
+        run: npm exec --yes --package eas-cli@24.8.0 -- sh -c 'node tests/eas-configuration.cjs "$(command -v eas)"'
+      - name: Verify cloud-only shell scripts
+        run: bash -n scripts/build-ios-cloud.sh scripts/eas/prepare-ios.sh
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.7'
+          channel: stable
+          cache: true
+      - name: Validate dependencies against the pinned EAS Flutter SDK
+        run: |
+          for app in customer merchant driver; do
+            (cd "apps/$app-mobile" && flutter pub get && flutter analyze --no-fatal-infos --no-fatal-warnings)
+          done
   api-and-schema:
     runs-on: ubuntu-latest
     env:

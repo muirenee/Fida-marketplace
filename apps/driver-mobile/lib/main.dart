@@ -1,5 +1,7 @@
 import 'delivery_route_summary.dart';
 import 'earnings_sheet.dart';
+import 'location_settings.dart';
+import 'package:flutter/foundation.dart';
 import 'package:fida_mobile_common/fida_mobile_common.dart';
 
 import 'dart:async';
@@ -389,8 +391,9 @@ class _DriverHomeState extends State<_DriverHome> with WidgetsBindingObserver {
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('Location during deliveries'),
-          content: const Text(
-            'Fida uses your location while you are online, including when the screen is locked or you use navigation. Customers can see it only during their active delivery. Choose Location → Allow all the time in app settings.',
+          content: Text(
+            'Fida uses your location while you are online, including when the screen is locked or you use navigation. Customers can see it only during their active delivery. '
+            '${defaultTargetPlatform == TargetPlatform.iOS ? 'Choose Location → Always in app settings.' : 'Choose Location → Allow all the time in app settings.'}',
           ),
           actions: [
             TextButton(
@@ -414,16 +417,7 @@ class _DriverHomeState extends State<_DriverHome> with WidgetsBindingObserver {
     if (!await _ensureLocationPermission()) return;
     await positionSubscription?.cancel();
 
-    final settings = AndroidSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 10,
-      intervalDuration: const Duration(seconds: 10),
-      foregroundNotificationConfig: const ForegroundNotificationConfig(
-        notificationTitle: 'Fida delivery is active',
-        notificationText: 'Sharing your location while you are online.',
-        enableWakeLock: true,
-      ),
-    );
+    final settings = deliveryLocationSettings(defaultTargetPlatform);
     positionSubscription =
         Geolocator.getPositionStream(locationSettings: settings).listen(
           (position) {

@@ -71,7 +71,7 @@ jobs:
 
       - name: Test driver earnings history
         working-directory: apps/driver-mobile
-        run: flutter test test/earnings_test.dart test/delivery_route_test.dart
+        run: flutter test test/earnings_test.dart test/delivery_route_test.dart test/location_settings_test.dart
 
       - name: Detect release signing
         id: signing

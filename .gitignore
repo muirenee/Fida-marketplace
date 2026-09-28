@@ -8,6 +8,8 @@ dist/
 .flutter-plugins
 .flutter-plugins-dependencies
 build/
+!apps/*/.eas/build/
+!apps/*/.eas/build/*.yml
 coverage/
 .DS_Store
 *.iml
@@ -18,6 +20,11 @@ uploads/
 firebase-defines.json
 android/key.properties
 *.jks
+*.p12
+*.p8
+*.mobileprovision
+GoogleService-Info.plist
+credentials.json
 packages/database/generated/
 
 *.tsbuildinfo

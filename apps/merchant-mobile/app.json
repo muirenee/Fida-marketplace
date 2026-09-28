@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Fida Merchant",
+    "slug": "fida-merchant",
+    "version": "0.14.0",
+    "ios": {
+      "bundleIdentifier": "com.fidalix.marketplace.merchant",
+      "supportsTablet": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+build:
+  name: Fida Flutter iOS Simulator
+  steps:
+    - eas/checkout
+    - run:
+        name: Prepare and build Flutter simulator app on EAS
+        command: bash ../../scripts/eas/prepare-ios.sh
+    - eas/upload_artifact:
+        inputs:
+          type: application-archive
+          path: build/eas/Fida-Simulator.tar.gz

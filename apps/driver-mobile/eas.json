@@ -1,0 +1,49 @@
+{
+  "cli": {
+    "version": "24.8.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development-simulator": {
+      "developmentClient": false,
+      "distribution": "internal",
+      "environment": "preview",
+      "env": {
+        "FIDA_IOS_SIMULATOR": "1"
+      },
+      "ios": {
+        "simulator": true,
+        "withoutCredentials": true,
+        "scheme": "Runner",
+        "buildConfiguration": "Debug",
+        "image": "macos-sequoia-15.6-xcode-16.4",
+        "config": "ios-simulator.yml"
+      }
+    },
+    "preview": {
+      "developmentClient": false,
+      "distribution": "internal",
+      "environment": "preview",
+      "credentialsSource": "remote",
+      "env": {
+        "FIDA_IOS_SIMULATOR": "0"
+      },
+      "ios": {
+        "simulator": false,
+        "withoutCredentials": false,
+        "scheme": "Runner",
+        "buildConfiguration": "Release",
+        "image": "macos-sequoia-15.6-xcode-16.4",
+        "config": "ios-device.yml"
+      }
+    },
+    "production": {
+      "extends": "preview",
+      "distribution": "store",
+      "environment": "production",
+      "ios": {
+        "image": "latest"
+      }
+    }
+  }
+}

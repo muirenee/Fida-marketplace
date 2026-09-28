@@ -1,0 +1,18 @@
+build:
+  name: Fida Flutter signed iOS
+  steps:
+    - eas/checkout
+    - run:
+        name: Prepare Flutter iOS assets and native dependencies
+        command: bash ../../scripts/eas/prepare-ios.sh
+    - eas/configure_ios_credentials
+    - eas/generate_gymfile_from_template:
+        inputs:
+          credentials: ${ eas.job.secrets.buildCredentials }
+          scheme: Runner
+          build_configuration: Release
+    - eas/run_fastlane
+    - eas/upload_artifact:
+        inputs:
+          type: application-archive
+          path: ios/build/*.ipa
