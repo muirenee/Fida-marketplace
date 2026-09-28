@@ -361,9 +361,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                       maxLines:2,overflow:TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w800,
-                                        fontSize: 15,
+                                        fontSize: 17,
                                       ),
-                                    )),
+                                    ),
                                   ),
                                   const Icon(Icons.keyboard_arrow_down),
                                 ],
