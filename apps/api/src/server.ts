@@ -1,3 +1,4 @@
+import {storeCategoryRoutes} from './routes/store-categories.js';
 import {publicConfiguration,relativeMediaFields} from './lib/public-config.js';
 import {commissionPeriodRoutes} from './routes/commission-periods.js';
 import {adminSystemRoutes} from './routes/admin-system.js';
@@ -115,6 +116,7 @@ await app.register(adminSupportRoutes);
 await app.register(adminReportRoutes);
 await app.register(adminInsightRoutes);
 await app.register(adminAuditRoutes);
+await app.register(storeCategoryRoutes);
 
 app.get('/health', async () => ({
   service: 'fida-marketplace-api',

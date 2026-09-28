@@ -28,13 +28,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   int _request = 0, _addressRequest=0;
   double? _latitude,_longitude;
   String? _addressLabel;
-  static const _types = [
-    ('All', '✨', null),
-    ('Restaurants', '🍔', 'RESTAURANT'),
-    ('Grocery', '🥬', 'SUPERMARKET'),
-    ('Pharmacy', '💊', 'PHARMACY'),
-    ('Shops', '🛍️', 'RETAIL'),
-  ];
+  List<(String,String,String?)> _types=[('All','✨',null)];
   @override
   void initState() {
     super.initState();
@@ -86,13 +80,14 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       _error = null;
     });
     try {
+      final categories=await widget.api.request('GET','/v1/marketplace/store-categories') as List;
       final rows = await widget.api.merchants(
         type: _type,
         city: _latitude==null?_city:null,
         latitude:_latitude,longitude:_longitude,
         search: _search.text,
       );
-      if (mounted && version == _request) setState(() => _merchants = rows);
+      if (mounted && version == _request) setState(() { _merchants=rows; _types=[('All','✨',null),...categories.map((c)=>(c['name'].toString(),c['icon'].toString(),c['code'].toString()))]; });
     } catch (e) {
       if (mounted && version == _request) setState(() => _error = e.toString());
     } finally {

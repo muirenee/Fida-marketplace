@@ -24,12 +24,15 @@ enum MembershipRole {
   KITCHEN_CREW
 }
 
-enum MerchantType {
-  RESTAURANT
-  SUPERMARKET
-  PHARMACY
-  RETAIL
-  OTHER
+model StoreCategory {
+ code String @id
+ name String
+ icon String @default("🛍️")
+ isActive Boolean @default(true)
+ sortOrder Int @default(0)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ stores Tenant[]
 }
 
 enum OrderStatus {
@@ -45,6 +48,7 @@ enum OrderStatus {
 }
 
 enum FulfillmentType {
+  DINE_OUT
   PICKUP
   DELIVERY
 }
@@ -99,7 +103,9 @@ model Tenant {
   name                      String
   slug                      String       @unique
   status                    TenantStatus @default(PENDING_APPROVAL)
-  merchantType              MerchantType
+  merchantType              String?
+  storeCategory StoreCategory? @relation(fields:[merchantType],references:[code],onDelete:SetNull)
+  deliveryMarkup Decimal @default(0) @db.Decimal(12,2)
   currency                  String       @default("RWF")
   timezone                  String       @default("Africa/Kigali")
   isAcceptingOrders         Boolean      @default(true)
@@ -171,6 +177,7 @@ model TenantMembership {
 }
 
 model Branch {
+  dineOutEnabled Boolean @default(false)
   id                String        @id @default(cuid())
   tenantId          String
   name              String
@@ -479,6 +486,7 @@ model SupportCase {
 }
 
 model Promotion {
+  rewardProductId String?
   updatedAt DateTime @default(now()) @updatedAt
   productId String?
   discountType String @default("PERCENT")

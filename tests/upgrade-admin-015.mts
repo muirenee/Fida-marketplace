@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+export async function verifyAdmin015({prisma,request,app,admin,password,customer,owner,other}:any){
+ await test('dynamic store categories are root-only and deletion preserves stores and menus',async()=>{
+  const data={code:'BAKERY015',name:'Bakeries',icon:'🥐',sortOrder:5,isActive:true};
+  await request('POST','/v1/admin/store-categories',owner,data,403);
+  await request('POST','/v1/admin/store-categories',admin,data,201);
+  await request('POST','/v1/admin/store-categories',admin,data,409);
+  await prisma.tenant.update({where:{id:other.id},data:{merchantType:data.code}});
+  let rows=(await app.inject({method:'GET',url:'/v1/marketplace/store-categories'})).json();assert.ok(rows.some((c:any)=>c.code===data.code));assert.ok(!rows.some((c:any)=>c.code==='PHARMACY'));
+  await request('PATCH',`/v1/admin/store-categories/${data.code}`,admin,{...data,isActive:false});
+  rows=(await app.inject({method:'GET',url:'/v1/marketplace/store-categories'})).json();assert.ok(!rows.some((c:any)=>c.code===data.code));
+  const before=await prisma.product.count({where:{tenantId:other.id}});
+  await request('DELETE',`/v1/admin/store-categories/${data.code}`,admin);
+  assert.equal((await prisma.tenant.findUniqueOrThrow({where:{id:other.id}})).merchantType,null);assert.equal(await prisma.product.count({where:{tenantId:other.id}}),before);
+ });
+ await test('store order reset is scoped, paused, terminal-only, reauthenticated, freshness checked and single-use',async()=>{
+  const store=await prisma.tenant.create({data:{name:'Reset Test',slug:'reset-015',status:'ACTIVE'}});
+  const branch=await prisma.branch.create({data:{tenantId:store.id,name:'Reset branch'}});
+  const category=await prisma.category.create({data:{tenantId:store.id,name:'Kept category',slug:'kept'}});
+  const menu=await prisma.product.create({data:{tenantId:store.id,categoryId:category.id,name:'Kept menu',price:100}});
+  await prisma.tenantMembership.create({data:{tenantId:store.id,userId:owner.id,role:'OWNER'}});
+  const order=await prisma.order.create({data:{tenantId:store.id,branchId:branch.id,customerId:customer.id,orderNumber:'RESET-015',fulfillmentType:'DELIVERY',paymentMethod:'CASH',subtotal:100,total:100,status:'PENDING',items:{create:{productId:menu.id,productName:menu.name,quantity:1,unitPrice:100,totalPrice:100}},delivery:{create:{status:'DELIVERED'}}}});
+  const body={password,reason:'Remove isolated test transactions',kind:'STORE_ORDERS_RESET',key:{id:store.id}};
+  await request('POST','/v1/admin/system/actions/preview',owner,body,403);
+  await request('POST','/v1/admin/system/actions/preview',admin,{...body,password:'wrong'},403);
+  await request('POST','/v1/admin/system/actions/preview',admin,body,409);
+  await prisma.tenant.update({where:{id:store.id},data:{isAcceptingOrders:false}});
+  await request('POST','/v1/admin/system/actions/preview',admin,body,409);
+  await prisma.order.update({where:{id:order.id},data:{status:'COMPLETED'}});
+  await prisma.notificationEvent.create({data:{eventKey:'reset015',orderId:order.id,status:'COMPLETED'}});
+  await prisma.paymentAttempt.create({data:{orderId:order.id,customerId:customer.id,reference:'reset015-payment',provider:'TEST'}});
+  await prisma.review.create({data:{orderId:order.id,customerId:customer.id,tenantId:store.id,rating:5}});
+  await prisma.supportCase.create({data:{orderId:order.id,tenantId:store.id,userId:customer.id,subject:'Test',description:'Test'}});
+  await prisma.refundRequest.create({data:{orderId:order.id,tenantId:store.id,customerId:customer.id,amount:100,reason:'Test'}});
+  await prisma.businessDocument.create({data:{number:'RESET-015-DOC',kind:'CUSTOMER_RECEIPT',orderId:order.id,tenantId:store.id,customerId:customer.id,payload:{total:100}}});
+  await prisma.financeEntry.create({data:{tenantId:store.id,orderId:order.id,kind:'COMMISSION',amount:10,reference:'RESET-015-FIN'}});
+  const kept=()=>prisma.tenant.findUnique({where:{id:store.id},include:{products:true,categories:true,branches:true,memberships:true}});
+  const snapshot=JSON.stringify(await kept()),otherOrders=await prisma.order.count({where:{tenantId:{not:store.id}}});
+  const stale=await request('POST','/v1/admin/system/actions/preview',admin,body);
+  await prisma.review.update({where:{orderId:order.id},data:{rating:4}});
+  await request('POST','/v1/admin/system/actions/execute',admin,{password,token:stale.token,confirmation:stale.confirmation},409);
+  const ready=await request('POST','/v1/admin/system/actions/preview',admin,body);assert.equal(ready.counts.Order,1);assert.equal(ready.counts.Product,undefined);
+  await request('POST','/v1/admin/system/actions/execute',admin,{password,token:ready.token,confirmation:'RESET ALL'},400);
+  await request('POST','/v1/admin/system/actions/execute',admin,{password,token:ready.token,confirmation:ready.confirmation});
+  await request('POST','/v1/admin/system/actions/execute',admin,{password,token:ready.token,confirmation:ready.confirmation},409);
+  for(const name of ['orderItem','delivery','notificationEvent','paymentAttempt','review','supportCase','refundRequest','businessDocument','financeEntry'])assert.equal(await prisma[name].count({where:{orderId:order.id}}),0,name);
+  assert.equal(await prisma.order.count({where:{tenantId:store.id}}),0);assert.equal(await prisma.order.count({where:{tenantId:{not:store.id}}}),otherOrders);
+  assert.equal(JSON.stringify(await kept()),snapshot);assert.ok(await prisma.adminAuditEvent.count({where:{action:'STORE_ORDERS_RESET'}}));
+ });
+}

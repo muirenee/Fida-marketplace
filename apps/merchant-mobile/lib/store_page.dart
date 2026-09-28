@@ -16,6 +16,7 @@ class _StorePageState extends State<StorePage> {
     for (final key in ['name', 'legalName', 'taxId', 'timezone', 'cuisineTags'])
       key: TextEditingController(),
   };
+  List<Map<String,dynamic>> storeCategories=[];
   Map<String, dynamic>? store;
   bool busy = true;
   String? error;
@@ -28,6 +29,7 @@ class _StorePageState extends State<StorePage> {
   void dispose() { for (final c in fields.values) { c.dispose(); } super.dispose(); }
   Future<void> load() async {
     try {
+      final categories=(await widget.api.request('GET','/v1/merchant/store-categories',tenantId:widget.tenantId) as List).map((v)=>Map<String,dynamic>.from(v)).toList();
       final data = Map<String, dynamic>.from(await call(''));
       if (!mounted) return;
       for (final entry in fields.entries) {
@@ -35,7 +37,7 @@ class _StorePageState extends State<StorePage> {
             ? (data[entry.key] as List? ?? []).join(', ')
             : '${data[entry.key] ?? ''}';
       }
-      setState(() { store = data; error = null; });
+      setState(() { store = data; storeCategories=categories; error = null; });
     } catch (e) { if (mounted) setState(() => error = '$e'); }
     finally { if (mounted) setState(() => busy = false); }
   }
@@ -126,9 +128,9 @@ class _StorePageState extends State<StorePage> {
         for (final e in fields.entries) Padding(padding: const EdgeInsets.only(bottom: 16), child: TextField(
           enabled: !busy, controller: e.value, decoration: InputDecoration(labelText: {'name':'Store name','legalName':'Legal entity','taxId':'Tax ID','timezone':'Time zone','cuisineTags':'Cuisine / category tags (comma separated)'}[e.key]),
         )),
-        DropdownButtonFormField<String>(initialValue: store!['merchantType'] as String,
+        DropdownButtonFormField<String>(initialValue: storeCategories.any((c)=>c['code']==store!['merchantType'])?(store!['merchantType'] as String?):null,
           decoration: const InputDecoration(labelText: 'Business type'),
-          items: [for (final type in ['RESTAURANT','SUPERMARKET','PHARMACY','RETAIL','OTHER']) DropdownMenuItem(value: type, child: Text(type))],
+          items: [for (final type in storeCategories) DropdownMenuItem(value:type['code'].toString(),child:Text(type['name'].toString()))],
           onChanged: busy ? null : (v) => setState(() => store!['merchantType'] = v)),
         const SizedBox(height: 16),
         for (final key in ['logoUrl','coverUrl']) ...[

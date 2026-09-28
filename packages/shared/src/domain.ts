@@ -9,12 +9,8 @@ export type AppRole =
   | 'customer'
   | 'driver';
 
-export type MerchantVertical =
-  | 'restaurant'
-  | 'supermarket'
-  | 'pharmacy'
-  | 'retail'
-  | 'other';
+// Codes are managed by the platform StoreCategory collection.
+export type MerchantVertical = string;
 
 export const ORDER_FLOW = [
   'PENDING',

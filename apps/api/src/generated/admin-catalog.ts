@@ -4,6 +4,93 @@ export type CatalogModel={name:string;dbName:string|null;primaryKey:{fields:stri
 export const catalog:{models:CatalogModel[];enums:{name:string;values:{name:string}[]}[]}={
   "models": [
     {
+      "name": "StoreCategory",
+      "dbName": null,
+      "primaryKey": null,
+      "fields": [
+        {
+          "name": "code",
+          "type": "String",
+          "kind": "scalar",
+          "isId": true,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "icon",
+          "type": "String",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "isActive",
+          "type": "Boolean",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "sortOrder",
+          "type": "Int",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "stores",
+          "type": "Tenant",
+          "kind": "object",
+          "isId": false,
+          "isRequired": true,
+          "isList": true,
+          "relationFromFields": [],
+          "relationToFields": []
+        }
+      ]
+    },
+    {
       "name": "Tenant",
       "dbName": null,
       "primaryKey": null,
@@ -120,8 +207,32 @@ export const catalog:{models:CatalogModel[];enums:{name:string;values:{name:stri
         },
         {
           "name": "merchantType",
-          "type": "MerchantType",
-          "kind": "enum",
+          "type": "String",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": false,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
+          "name": "storeCategory",
+          "type": "StoreCategory",
+          "kind": "object",
+          "isId": false,
+          "isRequired": false,
+          "isList": false,
+          "relationFromFields": [
+            "merchantType"
+          ],
+          "relationToFields": [
+            "code"
+          ]
+        },
+        {
+          "name": "deliveryMarkup",
+          "type": "Decimal",
+          "kind": "scalar",
           "isId": false,
           "isRequired": true,
           "isList": false,
@@ -702,6 +813,16 @@ export const catalog:{models:CatalogModel[];enums:{name:string;values:{name:stri
       "dbName": null,
       "primaryKey": null,
       "fields": [
+        {
+          "name": "dineOutEnabled",
+          "type": "Boolean",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": true,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
         {
           "name": "id",
           "type": "String",
@@ -3102,6 +3223,16 @@ export const catalog:{models:CatalogModel[];enums:{name:string;values:{name:stri
       "primaryKey": null,
       "fields": [
         {
+          "name": "rewardProductId",
+          "type": "String",
+          "kind": "scalar",
+          "isId": false,
+          "isRequired": false,
+          "isList": false,
+          "relationFromFields": [],
+          "relationToFields": []
+        },
+        {
           "name": "updatedAt",
           "type": "DateTime",
           "kind": "scalar",
@@ -4221,26 +4352,6 @@ export const catalog:{models:CatalogModel[];enums:{name:string;values:{name:stri
       ]
     },
     {
-      "name": "MerchantType",
-      "values": [
-        {
-          "name": "RESTAURANT"
-        },
-        {
-          "name": "SUPERMARKET"
-        },
-        {
-          "name": "PHARMACY"
-        },
-        {
-          "name": "RETAIL"
-        },
-        {
-          "name": "OTHER"
-        }
-      ]
-    },
-    {
       "name": "OrderStatus",
       "values": [
         {
@@ -4275,6 +4386,9 @@ export const catalog:{models:CatalogModel[];enums:{name:string;values:{name:stri
     {
       "name": "FulfillmentType",
       "values": [
+        {
+          "name": "DINE_OUT"
+        },
         {
           "name": "PICKUP"
         },

@@ -1,4 +1,5 @@
-import { MerchantType, Prisma } from '@fida/database/client';
+import {requireStoreCategory} from './store-categories.js';
+import { Prisma } from '@fida/database/client';
 import { validateHours } from './business-hours.js';
 const fail = (message: string): never => { throw Object.assign(new Error(message), {statusCode:400}); };
 function text(value: unknown, label: string, min = 2, max = 160) {
@@ -25,7 +26,7 @@ export function applicationStage(stage: number, raw: unknown): Record<string, an
   }
   if (stage === 1) {
     const merchantType = text(b.merchantType,'Business type');
-    if (!Object.values(MerchantType).includes(merchantType as MerchantType)) return fail('Invalid business type.');
+    if (!/^[A-Z][A-Z0-9_]{1,49}$/.test(merchantType)) return fail('Invalid business type.');
     const timezone = text(b.timezone,'Time zone');
     try { new Intl.DateTimeFormat('en', {timeZone:timezone}).format(); } catch { return fail('Invalid time zone.'); }
     if (!Array.isArray(b.cuisineTags) || !b.cuisineTags.length || b.cuisineTags.length > 12) return fail('Choose 1–12 cuisine or category tags.');
@@ -48,6 +49,7 @@ export function fullApplication(raw: unknown) {
   return Object.assign({}, ...[0,1,2,3].map(stage => applicationStage(stage,raw))) as Record<string, any>;
 }
 export async function createPendingTenant(tx: Prisma.TransactionClient, ownerId: string, b: Record<string, any>, tenantId?: string) {
+  await requireStoreCategory(b.merchantType,tx);
   const data = {name:b.name,slug:b.slug,merchantType:b.merchantType,status:'PENDING_APPROVAL',isAcceptingOrders:false,legalName:b.legalName,taxId:b.taxId,logoUrl:b.logoUrl,coverUrl:b.coverUrl,cuisineTags:b.cuisineTags,timezone:b.timezone} as const;
   if (tenantId) {
     const tenant = await tx.tenant.update({where:{id:tenantId},data});

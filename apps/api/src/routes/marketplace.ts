@@ -4,7 +4,7 @@ import {featuredStoreIds} from '../lib/featured-stores.js';
 import {authenticate} from '../lib/auth.js';
 import { branchIsOpen } from '../lib/business-hours.js';
 import type { FastifyInstance } from 'fastify';
-import { MerchantType, Prisma, TenantStatus, prisma } from '@fida/database/client';
+import { Prisma, TenantStatus, prisma } from '@fida/database/client';
 
 const branchSelect = {
   id: true,
@@ -49,8 +49,8 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       },
     };
 
-    if (Object.values(MerchantType).includes(requestedType as MerchantType)) {
-      where.merchantType = requestedType as MerchantType;
+    if (requestedType) {
+      where.merchantType = requestedType;
     }
 
     const merchants = await prisma.tenant.findMany({

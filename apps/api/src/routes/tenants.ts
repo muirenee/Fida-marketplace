@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { MerchantType, MembershipRole, prisma } from '@fida/database/client';
+import { MembershipRole, prisma } from '@fida/database/client';
 import { authenticate } from '../lib/auth.js';
 
 function slugify(value: string) {

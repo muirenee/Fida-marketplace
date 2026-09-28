@@ -1,3 +1,4 @@
+import {storeOrderResetPlan,executeStoreOrderReset} from '../lib/store-order-reset.js';
 import {storePurgePlan,executeStorePurge} from '../lib/store-purge.js';
 import {saveRuntimeSettings} from '../lib/public-config.js';
 import {catalog} from '../generated/admin-catalog.js';
@@ -52,15 +53,15 @@ export async function adminSystemRoutes(app:FastifyInstance){
  });
  app.post('/v1/admin/system/actions/preview',{preHandler:requirePlatformAdmin},async req=>{
   await confirmPassword(req);const b=req.body as any;if(typeof b.reason!=='string'||b.reason.trim().length<5)return fail(400,'An audit reason is required.');
-  if(!['RESET','DELETE'].includes(b.kind))return fail(400,'Invalid action.');
-  if(b.kind==='DELETE'&&['AdminAction','RuntimeSettings'].includes(b.model))return fail(400,'Use the dedicated system controls.');
-  const key=b.kind==='DELETE'?checkKey(b.model,b.key):null;
-  const plan=b.kind==='DELETE'?(b.model==='Tenant'?await storePurgePlan(prisma,key!.id):await cascadePlan(prisma,b.model,key)):await resetCounts(prisma);
+  if(!['RESET','DELETE','STORE_ORDERS_RESET'].includes(b.kind))return fail(400,'Invalid action.');
+  if(b.kind==='DELETE'&&['AdminAction','RuntimeSettings','StoreCategory'].includes(b.model))return fail(400,'Use the dedicated system controls.');
+  const key=b.kind==='STORE_ORDERS_RESET'?checkKey('Tenant',b.key):b.kind==='DELETE'?checkKey(b.model,b.key):null;
+  const plan=b.kind==='STORE_ORDERS_RESET'?await storeOrderResetPlan(prisma,key!.id):b.kind==='DELETE'?(b.model==='Tenant'?await storePurgePlan(prisma,key!.id):await cascadePlan(prisma,b.model,key)):await resetCounts(prisma);
   if(Array.isArray(plan)){if(!plan.length)return fail(404,'Record not found.');await protectAdmins(prisma,plan,req.authUser!.id);}
   const token=randomBytes(32).toString('base64url'),payload={kind:b.kind,model:b.kind==='DELETE'?b.model:null,key,hash:planHash(plan),reason:b.reason};
   await prisma.adminAction.create({data:{actorId:req.authUser!.id,tokenHash:createHash('sha256').update(token).digest('hex'),payload,expiresAt:new Date(Date.now()+300000)}});
-  const counts='kind' in plan&&plan.kind==='STORE_PURGE'?Object.fromEntries((plan as any).rows.map((r:any)=>[r.model==='User'?'Credentials revoked':r.model,r.count])):Array.isArray(plan)?plan.reduce((v:Record<string,number>,n)=>({...v,[n.model]:(v[n.model]??0)+1}),{}):plan;
-  return {token,counts,confirmation:b.kind==='RESET'?'RESET OPERATIONAL DATA':`DELETE ${b.model}`,expiresInSeconds:300,preserved:b.kind==='RESET'?['Platform administrators','Admin sessions','Runtime settings','Audit history','Media files on disk']:[]};
+  const counts='kind' in plan&&['STORE_PURGE','STORE_ORDERS_RESET'].includes(String(plan.kind))?Object.fromEntries((plan as any).rows.map((r:any)=>[r.model==='User'?'Credentials revoked':r.model,r.count])):Array.isArray(plan)?plan.reduce((v:Record<string,number>,n)=>({...v,[n.model]:(v[n.model]??0)+1}),{}):plan;
+  return {token,counts,confirmation:b.kind==='STORE_ORDERS_RESET'?`RESET STORE ORDERS ${key!.id}`:b.kind==='RESET'?'RESET OPERATIONAL DATA':`DELETE ${b.model}`,expiresInSeconds:300,preserved:b.kind==='STORE_ORDERS_RESET'?['Store and branch settings','Products and menu categories','Staff and drivers','Promotions and runtime settings','Audit history']:b.kind==='RESET'?['Platform administrators','Admin sessions','Runtime settings','Audit history','Media files on disk']:[]};
  });
  app.post('/v1/admin/system/actions/execute',{preHandler:requirePlatformAdmin},async req=>{
   await confirmPassword(req);const b=req.body as any;if(typeof b.token!=='string')return fail(400,'Preview token required.');
@@ -68,18 +69,19 @@ export async function adminSystemRoutes(app:FastifyInstance){
    await lockData(tx);
    const action=await tx.adminAction.findUnique({where:{tokenHash:createHash('sha256').update(b.token).digest('hex')}});
    if(!action||action.actorId!==req.authUser!.id||action.usedAt||action.expiresAt<new Date())return fail(409,'Preview expired or already used.');
-   const p=action.payload as any,confirmation=p.kind==='RESET'?'RESET OPERATIONAL DATA':`DELETE ${p.model}`;
+   const p=action.payload as any,confirmation=p.kind==='STORE_ORDERS_RESET'?`RESET STORE ORDERS ${p.key.id}`:p.kind==='RESET'?'RESET OPERATIONAL DATA':`DELETE ${p.model}`;
    if(b.confirmation!==confirmation)return fail(400,'Confirmation text does not match.');
-   const plan=p.kind==='RESET'?await resetCounts(tx):p.model==='Tenant'?await storePurgePlan(tx,p.key.id):await cascadePlan(tx,p.model,p.key);
+   const plan=p.kind==='STORE_ORDERS_RESET'?await storeOrderResetPlan(tx,p.key.id):p.kind==='RESET'?await resetCounts(tx):p.model==='Tenant'?await storePurgePlan(tx,p.key.id):await cascadePlan(tx,p.model,p.key);
    if(planHash(plan)!==p.hash)return fail(409,'Data changed after preview; generate another preview.');
-   if(p.kind==='RESET'){
+   if(p.kind==='STORE_ORDERS_RESET'){await executeStoreOrderReset(tx,p.key.id);
+   }else if(p.kind==='RESET'){
     const tables=models.filter(m=>!preserved.includes(m.name)).map(m=>`"${m.dbName??m.name}"`).join(',');
     await tx.$executeRawUnsafe(`TRUNCATE TABLE ${tables}`);
     await tx.user.deleteMany({where:{isPlatformAdmin:false}});
    }else if(p.model==='Tenant'){await executeStorePurge(tx,p.key.id);
    }else{await protectAdmins(tx,plan as any[],req.authUser!.id);for(const node of plan as any[])await delegate(tx,node.model).deleteMany({where:node.key});}
    await tx.adminAction.update({where:{id:action.id},data:{usedAt:new Date()}});
-   await tx.adminAuditEvent.create({data:{actorUserId:req.authUser!.id,actorEmail:req.authUser!.email,action:p.kind==='RESET'?'OPERATIONAL_RESET':'CASCADE_DELETE',method:'POST',route:'/v1/admin/system/actions/execute',path:req.url,statusCode:200,success:true,changes:{reason:p.reason,plan} as Prisma.InputJsonValue}});
+   await tx.adminAuditEvent.create({data:{actorUserId:req.authUser!.id,actorEmail:req.authUser!.email,action:p.kind==='STORE_ORDERS_RESET'?'STORE_ORDERS_RESET':p.kind==='RESET'?'OPERATIONAL_RESET':'CASCADE_DELETE',method:'POST',route:'/v1/admin/system/actions/execute',path:req.url,statusCode:200,success:true,changes:{reason:p.reason,plan} as Prisma.InputJsonValue}});
    return {success:true};
   },{timeout:60000});
  });

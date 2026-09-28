@@ -23,6 +23,7 @@ async function main() {
     throw new Error('SEED_ADMIN_PASSWORD must be changed from the example and contain at least 12 characters');
   }
 
+  if(await prisma.storeCategory.count()===0)await prisma.storeCategory.createMany({data:(await import('../../../../apps/api/src/lib/store-categories.js')).initialStoreCategories});
   const passwordHash = await hashPassword(password);
   const admin = await prisma.user.upsert({
     where: { email },

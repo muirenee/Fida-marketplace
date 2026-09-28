@@ -1,3 +1,4 @@
+import {requireStoreCategory} from '../lib/store-categories.js';
 import type {FastifyInstance} from 'fastify';
 import {prisma} from '@fida/database/client';
 import {requireTenant} from '../lib/tenant.js';
@@ -9,6 +10,7 @@ export async function storeMetadataRoutes(app:FastifyInstance){
   const old=await prisma.tenant.findUniqueOrThrow({where:{id}}),merged={...old,...b};
   if(Object.keys(b).some(k=>!['name','legalName','taxId','merchantType','cuisineTags','logoUrl','coverUrl','timezone'].includes(k)))return reply.code(400).send({error:'invalid_store_field'});
   const legal=applicationStage(0,merged),store=applicationStage(1,merged);
+  await requireStoreCategory(store.merchantType);
   for(const key of ['logoUrl','coverUrl'])if(b[key]&&b[key]!==old[key as 'logoUrl'|'coverUrl']&&!await prisma.mediaAsset.findFirst({where:{url:b[key],ownerId:req.authUser!.id}}))return reply.code(400).send({error:'upload_your_image_first'});
   // Public URLs remain stable after approval; only initial registration generates the slug.
   const {slug,...fields}=store;

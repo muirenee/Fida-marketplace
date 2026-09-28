@@ -23,6 +23,7 @@ const { prisma } = await import('../packages/database/src/client.js');
 const { buildServer } = await import('../apps/api/src/server.js');
 const app = await buildServer();
 await app.ready();
+await prisma.storeCategory.createMany({data:(await import('../apps/api/src/lib/store-categories.js')).initialStoreCategories});
 const owner=await prisma.user.create({data:{email:'owner@example.test',phone:'+250788000001'}});
 const customer=await prisma.user.create({data:{email:'customer@example.test',phone:'+250788000002'}});
 const outsider=await prisma.user.create({data:{email:'outsider@example.test',phone:'+250788000003'}});
@@ -363,6 +364,7 @@ try {
  await (await import('./upgrade-features-011.mjs')).verify011({prisma,request,customer,outsider,tenant,other,owner,checkout});
  await (await import('./upgrade-features-012.mjs')).verify012({prisma,request,customer,outsider,tenant,owner,checkout});
  await (await import('./upgrade-features-013.mjs')).verify013({prisma,request,customer,tenant,owner,checkout});
+ await (await import('./upgrade-admin-015.mjs')).verifyAdmin015({prisma,request,app,admin,password,customer,owner,other});
  await test('protected reset clears only isolated operational data while preserving admin, settings, audit and schemas',async()=>{
   const preview=await request('POST','/v1/admin/system/actions/preview',admin,{password,reason:'Isolated PGlite reset verification',kind:'RESET'});
   assert.ok(preview.counts.Order>0);

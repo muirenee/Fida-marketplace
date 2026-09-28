@@ -1,3 +1,4 @@
+import {requireStoreCategory} from '../lib/store-categories.js';
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@fida/database/client';
 import { authenticate, requirePlatformAdmin } from '../lib/auth.js';
@@ -18,6 +19,7 @@ export async function merchantLifecycleRoutes(app: FastifyInstance) {
   app.patch('/v1/merchant/applications/:id',{preHandler:authenticate},async(req)=>{
     const {id}=req.params as {id:string};const body=req.body as {stage:number;data:unknown};
     const fields=applicationStage(body?.stage,body?.data);
+    if(body.stage===1)await requireStoreCategory(fields.merchantType);
     return prisma.$transaction(async tx=>{
       await tx.$queryRaw`SELECT id FROM "MerchantApplication" WHERE id=${id} FOR UPDATE`;
       const row=await tx.merchantApplication.findFirst({where:{id,ownerId:req.authUser!.id,status:'DRAFT'}});

@@ -18,7 +18,7 @@ SQL
 if [[ "${FIDA_NO_CACHE:-0}" == 1 ]]; then dc build --no-cache api admin; else dc build api admin; fi
 umask 077
 mkdir -p ../fida-backups
-backup="../fida-backups/before-0.13-$(date -u +%Y%m%dT%H%M%SZ).dump"
+backup="../fida-backups/before-0.15-$(date -u +%Y%m%dT%H%M%SZ).dump"
 dc exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$backup"
 test -s "$backup"
 # Verify the archive can be read before changing the schema.
@@ -37,6 +37,10 @@ dc exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERRO
 dc exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 --single-transaction -f -' < packages/database/prisma/upgrades/20260922-011-schema.sql
 dc exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 --single-transaction -f -' < packages/database/prisma/upgrades/20260927-012-schema.sql
 dc exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 --single-transaction -f -' < packages/database/prisma/upgrades/20260927-013-schema.sql
+# Stop writers for the category enum cutover; images and verified backup already exist.
+dc stop api admin
+trap 'echo "Upgrade interrupted. Inspect the error and backup before restarting API/admin." >&2' ERR
+dc exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 --single-transaction -f -' < packages/database/prisma/upgrades/20260928-015-schema.sql
 # Run URL normalization in the new image before exposing it to requests.
 dc run --rm --no-deps api pnpm --filter @fida/api exec tsx src/maintenance/normalize-urls.ts
 values=$(sql <<'SQL'
