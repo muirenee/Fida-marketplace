@@ -364,6 +364,7 @@ try {
  await (await import('./upgrade-features-011.mjs')).verify011({prisma,request,customer,outsider,tenant,other,owner,checkout});
  await (await import('./upgrade-features-012.mjs')).verify012({prisma,request,customer,outsider,tenant,owner,checkout});
  await (await import('./upgrade-features-013.mjs')).verify013({prisma,request,customer,tenant,owner,checkout});
+ await (await import('./upgrade-pricing-015.mjs')).verifyPricing015({prisma,request,app,customer,tenant,other,owner,checkout});
  await (await import('./upgrade-admin-015.mjs')).verifyAdmin015({prisma,request,app,admin,password,customer,owner,other});
  await test('protected reset clears only isolated operational data while preserving admin, settings, audit and schemas',async()=>{
   const preview=await request('POST','/v1/admin/system/actions/preview',admin,{password,reason:'Isolated PGlite reset verification',kind:'RESET'});

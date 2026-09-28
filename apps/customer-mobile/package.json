@@ -1,6 +1,6 @@
 {
   "name": "@fida/customer-mobile-cloud",
   "private": true,
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "EAS custom build metadata for the Flutter app; no Expo runtime."
 }

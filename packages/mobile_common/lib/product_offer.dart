@@ -6,8 +6,9 @@ class ProductOfferBadge extends StatelessWidget {
  @override Widget build(BuildContext context){
   final offers=(product['promotions'] as List? ?? []).where((p)=>p['discountType']=='BOGO').toList()..sort((a,b)=>(a['buyQuantity'] as num? ?? 1).compareTo(b['buyQuantity'] as num? ?? 1));
   if(offers.isEmpty)return const SizedBox.shrink();
-  final text='Buy ${offers.first['buyQuantity']??1}, get 1 free';
-  return Semantics(label:text,child:Container(padding:const EdgeInsets.symmetric(horizontal:7,vertical:6),decoration:BoxDecoration(color:const Color(0xFFC82216),borderRadius:BorderRadius.circular(5)),child:Text(text,style:const TextStyle(color:Colors.white,fontWeight:FontWeight.w800,fontSize:11),softWrap:true)));
+  final offer=offers.first;
+  final text=offer['rewardProductId']!=null&&offer['rewardProductId']!=offer['productId']?'Buy ${offer['buyQuantity']??1}, get ${offer['rewardProductName']??'reward'} free':'Buy ${offer['buyQuantity']??1}, get 1 free';
+  return Semantics(label:text,child:Container(padding:const EdgeInsets.symmetric(horizontal:7,vertical:6),decoration:BoxDecoration(color:const Color(0xFFC82216),borderRadius:BorderRadius.circular(5)),child:Text(text,maxLines:3,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Colors.white,fontWeight:FontWeight.w800,fontSize:11),softWrap:true)));
  }
 }
 

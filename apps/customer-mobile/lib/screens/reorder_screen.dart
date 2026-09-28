@@ -1,3 +1,4 @@
+import '../ui/fulfillment.dart';
 import 'package:flutter/material.dart';
 import '../core/api_client.dart';
 import '../ui/format.dart';
@@ -36,10 +37,10 @@ class _ReorderScreenState extends State<ReorderScreen> {
     }catch(e){if(mounted)setState(()=>error='$e');}
     finally{if(mounted)setState(()=>loading=false);}
   }
-  void normalizeMode(){if(branch[fulfillment=='PICKUP'?'pickupEnabled':'deliveryEnabled']!=true)fulfillment=branch['pickupEnabled']==true?'PICKUP':'DELIVERY';}
+  void normalizeMode(){fulfillment=availableFulfillment(branch,fulfillment);}
   Future<void> configure(Map<String,dynamic> item) async {
     final product=Map<String,dynamic>.from(item['product']);
-    final result=await Navigator.push<Map<String,dynamic>>(context,MaterialPageRoute(builder:(_)=>ProductScreen(product:product,currency:currency,initialQuantity:(item['quantity'] as num).toInt(),initialSelectedOptions:(item['selectedOptions'] as List? ?? []))));
+    final result=await Navigator.push<Map<String,dynamic>>(context,MaterialPageRoute(builder:(_)=>ProductScreen(product:product,currency:currency,deliveryMarkup:deliveryMarkup(data?['merchant'] as Map?,fulfillment),initialQuantity:(item['quantity'] as num).toInt(),initialSelectedOptions:(item['selectedOptions'] as List? ?? []))));
     if(result==null||!mounted)return;
     final configured=result['product'] as Map;
     setState((){item.addAll({'status':'AVAILABLE','message':null,'quantity':result['quantity'],'unitPrice':configured['price'],'priceChanged':asDouble(configured['price'])!=asDouble(item['previousUnitPrice']),'displayName':configured['name'],'selectedOptions':configured['selectedOptions'],'modifierLines':configured['modifierLines'],'baseUnitPrice':configured['baseUnitPrice']});selected.add(item['id'].toString());});
@@ -62,10 +63,10 @@ class _ReorderScreenState extends State<ReorderScreen> {
       const SizedBox(height:8),const Text('Review current prices and choices. Promotions, tax and delivery are recalculated at checkout.'),
       const SizedBox(height:16),
       DropdownButtonFormField<String>(initialValue:branchId,isExpanded:true,decoration:const InputDecoration(labelText:'Branch'),items:branches.map((b)=>DropdownMenuItem<String>(value:b['id'],child:Text('${b['name']}',overflow:TextOverflow.ellipsis))).toList(),onChanged:(id)=>setState((){branchId=id;normalizeMode();})),
-      const SizedBox(height:12),Wrap(spacing:8,children:[for(final mode in ['DELIVERY','PICKUP'])if(branch[mode=='PICKUP'?'pickupEnabled':'deliveryEnabled']==true)ChoiceChip(label:Text(mode=='PICKUP'?'Pickup':'Delivery'),selected:fulfillment==mode,onSelected:(_)=>setState(()=>fulfillment=mode))]),
+      const SizedBox(height:12),Wrap(spacing:8,children:[for(final mode in fulfillmentModes)if(branch[fulfillmentFlag(mode)]==true)ChoiceChip(label:Text(fulfillmentLabel(mode)),selected:fulfillment==mode,onSelected:(_)=>setState(()=>fulfillment=mode))]),
       const SizedBox(height:16),
       for(final item in items)Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-        CheckboxListTile(key:ValueKey('reorder-${item['id']}'),contentPadding:EdgeInsets.zero,controlAffinity:ListTileControlAffinity.leading,value:selected.contains(item['id']),onChanged:item['status']=='AVAILABLE'?(v)=>setState((){if(v==true)selected.add(item['id']);else selected.remove(item['id']);}):null,title:Text('${item['displayName']??item['product']?['name']??item['previousName']}'),subtitle:Text(item['status']=='AVAILABLE'?'${item['quantity']} × ${money(item['unitPrice'],currency:currency)}':'${item['message']}')),
+        CheckboxListTile(key:ValueKey('reorder-${item['id']}'),contentPadding:EdgeInsets.zero,controlAffinity:ListTileControlAffinity.leading,value:selected.contains(item['id']),onChanged:item['status']=='AVAILABLE'?(v)=>setState((){if(v==true)selected.add(item['id']);else selected.remove(item['id']);}):null,title:Text('${item['displayName']??item['product']?['name']??item['previousName']}'),subtitle:Text(item['status']=='AVAILABLE'?'${item['quantity']} × ${money(menuPrice(item['unitPrice'],data?['merchant'] as Map?,fulfillment),currency:currency)}':'${item['message']}')),
         if(item['priceChanged']==true)Text('Previous unit price: ${money(item['previousUnitPrice'],currency:currency)}',style:const TextStyle(color:Colors.deepOrange)),
         if(item['product']!=null)TextButton.icon(onPressed:()=>configure(item),icon:const Icon(Icons.tune),label:Text(item['status']=='RECONFIGURE'?'Choose options':'Edit quantity / options')),
       ]))),

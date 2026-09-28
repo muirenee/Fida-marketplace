@@ -1,3 +1,4 @@
+import '../ui/fulfillment.dart';
 import 'package:flutter/material.dart';
 import 'package:fida_mobile_common/fida_mobile_common.dart';
 import '../core/api_client.dart';
@@ -33,7 +34,7 @@ class _CartScreenState extends State<CartScreen> {
 
   double get subtotal => widget.cart.entries.fold(
     0,
-    (sum, e) => sum + asDouble(widget.products[e.key]?['price']) * e.value,
+    (sum, e) => sum + menuPrice(menuPrice(widget.products[e.key]?['price'],widget.merchant,widget.fulfillment),widget.merchant,widget.fulfillment) * e.value,
   );
   void change(String key, int delta) => setState(() {
     final next = (widget.cart[key] ?? 0) + delta;
@@ -97,7 +98,7 @@ class _CartScreenState extends State<CartScreen> {
                             const SizedBox(height: 6),
                             Text(
                               money(
-                                widget.products[e.key]?['price'],
+                                menuPrice(widget.products[e.key]?['price'],widget.merchant,widget.fulfillment),
                                 currency: currency,
                               ),
                             ),

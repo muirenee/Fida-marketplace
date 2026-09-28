@@ -2,7 +2,7 @@
   "expo": {
     "name": "Fida Marketplace",
     "slug": "fida-customer",
-    "version": "0.14.0",
+    "version": "0.15.0",
     "ios": {
       "bundleIdentifier": "com.fidalix.marketplace.customer",
       "supportsTablet": true,

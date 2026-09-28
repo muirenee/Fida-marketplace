@@ -2,7 +2,7 @@
 # Usage: bash scripts/build-apks.sh [all|customer|merchant|driver]
 set -euo pipefail
 cd "$(dirname "$0")/.."
-# This repository contains Flutter apps; Expo/EAS profiles are not present.
+# Android builds use Flutter; iOS uses the separate custom EAS cloud profiles.
 for app in customer merchant driver; do
   [[ -f "apps/$app-mobile/pubspec.yaml" ]] || { echo "Missing Flutter application: $app" >&2; exit 1; }
 done

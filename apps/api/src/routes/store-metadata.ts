@@ -18,10 +18,10 @@ export async function storeMetadataRoutes(app:FastifyInstance){
  });
  app.patch('/v1/merchant/store/branches/:id',{preHandler:requireTenant(['OWNER'])},async(req,reply)=>{
   const {id}=req.params as {id:string},b=(req.body??{}) as Record<string,any>;
-  if(Object.keys(b).some(k=>!['name','addressLine','city','latitude','longitude','isActive','pickupEnabled','deliveryEnabled','isAcceptingOrders'].includes(k)))return reply.code(400).send({error:'invalid_branch_field'});
+  if(Object.keys(b).some(k=>!['name','addressLine','city','latitude','longitude','isActive','pickupEnabled','dineOutEnabled','deliveryEnabled','isAcceptingOrders'].includes(k)))return reply.code(400).send({error:'invalid_branch_field'});
   for(const key of ['latitude','longitude'])if(b[key]!==undefined&&(typeof b[key]!=='number'||!Number.isFinite(b[key])||Math.abs(b[key])>(key==='latitude'?90:180)))return reply.code(400).send({error:'invalid_coordinates'});
   for(const key of ['name','addressLine','city'])if(b[key]!==undefined&&(typeof b[key]!=='string'||!b[key].trim()||b[key].length>300))return reply.code(400).send({error:'invalid_branch_text'});
-  for(const key of ['isActive','pickupEnabled','deliveryEnabled','isAcceptingOrders'])if(b[key]!==undefined&&typeof b[key]!=='boolean')return reply.code(400).send({error:'invalid_branch_flag'});
+  for(const key of ['isActive','pickupEnabled','dineOutEnabled','deliveryEnabled','isAcceptingOrders'])if(b[key]!==undefined&&typeof b[key]!=='boolean')return reply.code(400).send({error:'invalid_branch_flag'});
   const changed=await prisma.$transaction(async tx=>{
    await tx.$queryRaw`SELECT id FROM "Branch" WHERE id=${id} FOR UPDATE`;
    if(b.isActive===false&&await tx.order.count({where:{branchId:id,tenantId:req.tenantContext!.tenantId,status:{notIn:['COMPLETED','CANCELLED','REJECTED']}}}))throw Object.assign(new Error('Complete active orders before suspending this branch.'),{statusCode:409});

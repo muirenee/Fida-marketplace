@@ -1,3 +1,4 @@
+import '../ui/fulfillment.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fida_mobile_common/fida_mobile_common.dart';
@@ -100,7 +101,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       final branches = m['branches'] as List? ?? [];
       return branches.any(
             (b) =>
-                b[_mode == 'DELIVERY' ? 'deliveryEnabled' : 'pickupEnabled'] ==
+                b[fulfillmentFlag(_mode)] ==
                     true &&
                 (_mode!='DELIVERY'||b['deliversToLocation']!=false) &&
                 (!_openOnly || b['isOpen'] == true),
@@ -152,7 +153,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   Future<void> _open(Map<String, dynamic> m) async {
     final id=m['id'].toString();setState((){_recent.remove(id);_recent.insert(0,id);});
     unawaited(widget.api.request('POST','/v1/customer/recent-stores/$id',body:<String,dynamic>{}).catchError((_)=><String,dynamic>{}));
-    await Navigator.push(context,MaterialPageRoute(builder:(_)=>MerchantScreen(api:widget.api,slug:m['slug'].toString(),initialFulfillment:_mode,initialBranchId:(m['branches'] as List? ?? []).where((b)=>b[_mode=='DELIVERY'?'deliveryEnabled':'pickupEnabled']==true&&(_mode!='DELIVERY'||b['deliversToLocation']!=false)).firstOrNull?['id']?.toString())));
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>MerchantScreen(api:widget.api,slug:m['slug'].toString(),initialFulfillment:_mode,initialBranchId:(m['branches'] as List? ?? []).where((b)=>b[fulfillmentFlag(_mode)]==true&&(_mode!='DELIVERY'||b['deliversToLocation']!=false)).firstOrNull?['id']?.toString())));
     if(mounted)await _loadFavorites();
   }
   Widget _card(Map<String, dynamic> m, {bool compact = false}) {
@@ -162,9 +163,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         branches
                 .where(
                   (b) =>
-                      b[_mode == 'DELIVERY'
-                          ? 'deliveryEnabled'
-                          : 'pickupEnabled'] ==
+                      b[fulfillmentFlag(_mode)] ==
                       true && (_mode!='DELIVERY'||b['deliversToLocation']!=false),
                 )
                 .firstOrNull
@@ -256,7 +255,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            _mode == 'PICKUP'
+            _mode == 'DINE_OUT' ? 'Dine Out · ${branch?['city']??'Local store'}' : _mode == 'PICKUP'
                 ? 'Pickup · ${branch?['city'] ?? branch?['name'] ?? 'Local store'}'
                 : fees.isEmpty
                 ? 'Delivery fee at checkout'
@@ -301,7 +300,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         final m=products[i]['merchant'] as Map<String,dynamic>,p=products[i]['product'] as Map;
         return SizedBox(width:220,child:InkWell(onTap:()=>_open(m),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
           Stack(children:[FoodCover(url:p['imageUrl']?.toString(),baseUrl:ApiClient.baseUrl,height:140,label:p['name'].toString()),Positioned(left:8,right:8,top:8,child:Align(alignment:Alignment.topLeft,child:ProductOfferBadge(product:p)))]),
-          const SizedBox(height:10),Text(p['name'].toString(),maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.w800)),Text(money(p['price'],currency:m['currency']?.toString()??'RWF')),Text(m['name'].toString(),maxLines:2,overflow:TextOverflow.ellipsis),
+          const SizedBox(height:10),Text(p['name'].toString(),maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.w800)),Text(money(menuPrice(p['price'],m,_mode),currency:m['currency']?.toString()??'RWF')),Text(m['name'].toString(),maxLines:2,overflow:TextOverflow.ellipsis),
         ])));
       })),
     ]));
@@ -321,7 +320,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       _section('Best Overall',rated),
       _section('Most popular local restaurants',popular.where((m)=>m['merchantType']=='RESTAURANT').toList()),
       SliverToBoxAdapter(child:Padding(padding:const EdgeInsets.fromLTRB(16,24,16,12),child:const Text('Discover a new favorite dish',style:TextStyle(fontSize:22,fontWeight:FontWeight.w800,letterSpacing:-.5)))),
-      if(dishes.isNotEmpty) SliverToBoxAdapter(child:SizedBox(height:235+MediaQuery.textScalerOf(context).scale(16)*2,child:ListView.separated(padding:const EdgeInsets.symmetric(horizontal:16),scrollDirection:Axis.horizontal,itemCount:dishes.length.clamp(0,20),separatorBuilder:(_,__)=>const SizedBox(width:14),itemBuilder:(_,i){final m=dishes[i]['merchant'] as Map<String,dynamic>,p=dishes[i]['product'] as Map;return SizedBox(width:220,child:InkWell(onTap:()=>_open(m),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Stack(children:[FoodCover(url:p['imageUrl']?.toString(),baseUrl:ApiClient.baseUrl,height:140,label:p['name'].toString()),Positioned(left:8,right:8,top:8,child:Align(alignment:Alignment.topLeft,child:ProductOfferBadge(product:p)))]),const SizedBox(height:10),Text(p['name'].toString(),maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700)),Text(money(p['price'],currency:m['currency']?.toString()??'RWF')),Text(m['name'].toString(),maxLines:1,overflow:TextOverflow.ellipsis)])));})))
+      if(dishes.isNotEmpty) SliverToBoxAdapter(child:SizedBox(height:235+MediaQuery.textScalerOf(context).scale(16)*2,child:ListView.separated(padding:const EdgeInsets.symmetric(horizontal:16),scrollDirection:Axis.horizontal,itemCount:dishes.length.clamp(0,20),separatorBuilder:(_,__)=>const SizedBox(width:14),itemBuilder:(_,i){final m=dishes[i]['merchant'] as Map<String,dynamic>,p=dishes[i]['product'] as Map;return SizedBox(width:220,child:InkWell(onTap:()=>_open(m),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Stack(children:[FoodCover(url:p['imageUrl']?.toString(),baseUrl:ApiClient.baseUrl,height:140,label:p['name'].toString()),Positioned(left:8,right:8,top:8,child:Align(alignment:Alignment.topLeft,child:ProductOfferBadge(product:p)))]),const SizedBox(height:10),Text(p['name'].toString(),maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700)),Text(money(menuPrice(p['price'],m,_mode),currency:m['currency']?.toString()??'RWF')),Text(m['name'].toString(),maxLines:1,overflow:TextOverflow.ellipsis)])));})))
       else const SliverToBoxAdapter(child:Padding(padding:EdgeInsets.symmetric(horizontal:16),child:Text('Available dishes will appear here.'))),
     ];
   }
@@ -362,9 +361,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                       maxLines:2,overflow:TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w800,
-                                        fontSize: 17,
+                                        fontSize: 15,
                                       ),
-                                    ),
+                                    )),
                                   ),
                                   const Icon(Icons.keyboard_arrow_down),
                                 ],
@@ -384,6 +383,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                         for (final mode in [
                           ('DELIVERY', 'Delivery', Icons.delivery_dining),
                           ('PICKUP', 'Pickup', Icons.shopping_bag_outlined),
+                          ('DINE_OUT','Dine Out',Icons.restaurant),
                         ])
                           Expanded(
                             child: InkWell(
@@ -407,15 +407,15 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                   children: [
                                     Icon(mode.$3),
                                     const SizedBox(width: 8),
-                                    Text(
+                                    Flexible(child:Text(
                                       mode.$2,
                                       style: TextStyle(
                                         fontWeight: _mode == mode.$1
                                             ? FontWeight.w800
                                             : FontWeight.w400,
-                                        fontSize: 17,
+                                        fontSize: 15,
                                       ),
-                                    ),
+                                    )),
                                   ],
                                 ),
                               ),

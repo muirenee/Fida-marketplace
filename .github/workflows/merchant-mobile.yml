@@ -70,7 +70,7 @@ jobs:
 
       - name: Test merchant order search
         working-directory: apps/merchant-mobile
-        run: flutter test test/order_search_test.dart
+        run: flutter test test/order_search_test.dart test/promotions_test.dart
 
       - name: Detect release signing
         id: signing

@@ -38,7 +38,7 @@ export function startNotificationWorker(app: FastifyInstance) {
           }
           const tokens = await prisma.deviceToken.findMany({ where: { OR: recipients }, take: 500 });
           if (tokens.length) {
-            const result = await messaging().sendEachForMulticast({ tokens: tokens.map(t => t.token), notification: { title: `Fida · ${order.orderNumber}`, body: event.status === 'PENDING' ? 'A new order has been placed.' : `Order ${event.status.toLowerCase().replaceAll('_',' ')}.` }, data: { orderId: order.id, status: event.status }, android: { priority: 'high', notification: { channelId: 'fida_orders', tag: order.id } } });
+            const result = await messaging().sendEachForMulticast({ tokens: tokens.map(t => t.token), notification: { title: `Fida · ${order.orderNumber}`, body: event.status === 'PENDING' ? `New ${order.fulfillmentType.toLowerCase().replaceAll('_',' ')} order.` : `${order.fulfillmentType==='DINE_OUT'&&event.status==='READY_FOR_PICKUP'?'Ready to serve':`Order ${event.status.toLowerCase().replaceAll('_',' ')}`}.` }, data: { orderId: order.id, status: event.status, fulfillmentType:order.fulfillmentType }, android: { priority: 'high', notification: { channelId: 'fida_orders', tag: order.id } } });
             let retry = false;
             for (let i = 0; i < result.responses.length; i++) {
               const response = result.responses[i]!;

@@ -1,3 +1,4 @@
+import '../ui/fulfillment.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:fida_mobile_common/fida_mobile_common.dart';
@@ -49,13 +50,9 @@ class _MerchantScreenState extends State<MerchantScreen> {
         if(firstLoad&&widget.initialBranchId!=null){final i=bs.indexWhere((b)=>b['id']==widget.initialBranchId);if(i>=0)branchIndex=i;}
         if (branchIndex >= bs.length) branchIndex = 0;
         if (bs.isNotEmpty &&
-            bs[branchIndex][mode == 'DELIVERY'
-                    ? 'deliveryEnabled'
-                    : 'pickupEnabled'] !=
+            bs[branchIndex][fulfillmentFlag(mode)] !=
                 true)
-          mode = bs[branchIndex]['pickupEnabled'] == true
-              ? 'PICKUP'
-              : 'DELIVERY';
+          mode = availableFulfillment(bs[branchIndex],mode);
       });
       try {
         final saved =
@@ -78,6 +75,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
       MaterialPageRoute(
         builder: (_) => ProductScreen(
           product: p,
+          deliveryMarkup: deliveryMarkup(merchant,mode),
           currency: merchant?['currency']?.toString() ?? 'RWF',
         ),
       ),
@@ -159,7 +157,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
     final count = cart.values.fold<int>(0, (a, b) => a + b),
         subtotal = cart.entries.fold<double>(
           0,
-          (sum, e) => sum + asDouble(products[e.key]?['price']) * e.value,
+          (sum, e) => sum + menuPrice(products[e.key]?['price'],merchant,mode) * e.value,
         );
     final promos = (m['promotions'] as List? ?? []).where((p)=>p['discountType']!='BOGO').toList();
     return Scaffold(
@@ -299,42 +297,16 @@ class _MerchantScreenState extends State<MerchantScreen> {
                           if (v != null)
                             setState(() {
                               branchIndex = v;
-                              if (branches[v][mode == 'DELIVERY'
-                                      ? 'deliveryEnabled'
-                                      : 'pickupEnabled'] !=
+                              if (branches[v][fulfillmentFlag(mode)] !=
                                   true)
-                                mode = branches[v]['pickupEnabled'] == true
-                                    ? 'PICKUP'
-                                    : 'DELIVERY';
+                                mode = availableFulfillment(branches[v],mode);
                             });
                         },
                       ),
                     const SizedBox(height: 18),
-                    SegmentedButton<String>(
-                      segments: [
-                        if (branch['deliveryEnabled'] == true)
-                          const ButtonSegment(
-                            value: 'DELIVERY',
-                            label: Text('Delivery'),
-                            icon: Icon(Icons.delivery_dining),
-                          ),
-                        if (branch['pickupEnabled'] == true)
-                          const ButtonSegment(
-                            value: 'PICKUP',
-                            label: Text('Pickup'),
-                            icon: Icon(Icons.shopping_bag_outlined),
-                          ),
-                        if (branch['pickupEnabled'] != true &&
-                            branch['deliveryEnabled'] != true)
-                          const ButtonSegment(
-                            value: 'DELIVERY',
-                            label: Text('Unavailable'),
-                            enabled: false,
-                          ),
-                      ],
-                      selected: {mode},
-                      onSelectionChanged: (s) => setState(() => mode = s.first),
-                    ),
+                    Wrap(spacing:8,runSpacing:8,children:[
+                      for(final value in fulfillmentModes)if(branch[fulfillmentFlag(value)]==true)ChoiceChip(label:Text(fulfillmentLabel(value)),selected:mode==value,onSelected:(_)=>setState(()=>mode=value)),
+                    ]),
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(15),
@@ -348,7 +320,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
                             child: Column(
                               children: [
                                 Text(
-                                  mode == 'PICKUP'
+                                  mode == 'DINE_OUT' ? 'Dine at the store' : mode == 'PICKUP'
                                       ? 'Free pickup'
                                       : 'Delivery by distance',
                                   style: const TextStyle(
@@ -517,7 +489,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
                                         ),
                                         Text(
                                           money(
-                                            raw['price'],
+                                            menuPrice(raw['price'],merchant,mode),
                                             currency: currency,
                                           ),
                                         ),
@@ -580,7 +552,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
                                         ),
                                         const SizedBox(height: 5),
                                         Text(
-                                          money(p['price'], currency: currency),
+                                          money(menuPrice(p['price'],merchant,mode), currency: currency),
                                         ),
                                         const SizedBox(height: 6),
                                         Text(

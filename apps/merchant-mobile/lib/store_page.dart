@@ -75,7 +75,7 @@ class _StorePageState extends State<StorePage> {
       for (final key in ['name', 'addressLine', 'city', 'latitude', 'longitude'])
         key: TextEditingController(text: '${branch[key] ?? ''}'),
     };
-    final flags = {for (final key in ['isActive', 'isAcceptingOrders', 'pickupEnabled', 'deliveryEnabled']) key: branch[key] == true};
+    final flags = {for (final key in ['isActive', 'isAcceptingOrders', 'pickupEnabled', 'deliveryEnabled','dineOutEnabled']) key: branch[key] == true};
     String? message;
     bool saving = false;
     await showDialog<void>(context: context, builder: (c) => StatefulBuilder(builder: (c, update) => AlertDialog(
@@ -86,7 +86,7 @@ class _StorePageState extends State<StorePage> {
           keyboardType: ['latitude','longitude'].contains(e.key) ? const TextInputType.numberWithOptions(decimal: true, signed: true) : TextInputType.text,
         )),
         for (final key in flags.keys) SwitchListTile(contentPadding: EdgeInsets.zero,
-          title: Text({'isActive':'Active branch','isAcceptingOrders':'Accept orders','pickupEnabled':'Pickup','deliveryEnabled':'Delivery'}[key]!),
+          title: Text({'isActive':'Active branch','isAcceptingOrders':'Accept orders','pickupEnabled':'Pickup','deliveryEnabled':'Delivery','dineOutEnabled':'Dine Out'}[key]!),
           value: flags[key]!, onChanged: saving ? null : (v) => update(() => flags[key] = v)),
         if (message != null) Text(message!, style: TextStyle(color: Theme.of(c).colorScheme.error)),
       ])),

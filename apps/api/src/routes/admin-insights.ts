@@ -35,6 +35,7 @@ export async function adminInsightRoutes(app: FastifyInstance) {
             isActive: true,
             isAcceptingOrders: true,
             pickupEnabled: true,
+            dineOutEnabled: true,
             deliveryEnabled: true,
             logisticsMode: true,
             deliveryZones: {

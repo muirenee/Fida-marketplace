@@ -1,3 +1,4 @@
+import '../ui/fulfillment.dart';
 import 'delivery_pin_screen.dart';
 import 'dart:async';
 import 'dart:math';
@@ -70,6 +71,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return (rows.first as Map).cast<String, dynamic>();
   }
 
+  bool get _dineOutEnabled => _branch?['dineOutEnabled']==true;
   bool get _pickupEnabled => _branch?['pickupEnabled'] == true;
   bool get _deliveryEnabled => _branch?['deliveryEnabled'] == true;
   bool get _isDelivery => _fulfillment == 'DELIVERY';
@@ -78,7 +80,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   void initState() {
     super.initState();
     _fulfillment = widget.initialFulfillment;
-    if (!_deliveryEnabled && _pickupEnabled) _fulfillment = 'PICKUP';
+    _fulfillment=availableFulfillment(_branch??{},_fulfillment);
     _promo.addListener(() {
       _promoTimer?.cancel();
       _totalsRequest++;
@@ -102,7 +104,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double get _subtotal {
     var value = 0.0;
     for (final entry in widget.cart.entries) {
-      value += asDouble(widget.products[entry.key]?['price']) * entry.value;
+      value += menuPrice(widget.products[entry.key]?['price'],widget.merchant,_fulfillment) * entry.value;
     }
     return value;
   }
@@ -197,6 +199,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   int _quoteRequest=0;
   Future<void> _setFulfillment(String value) async {
+    if (value == 'DINE_OUT' && !_dineOutEnabled) return;
     if (value == 'PICKUP' && !_pickupEnabled) return;
     if (value == 'DELIVERY' && !_deliveryEnabled) return;
     setState(() {
@@ -204,7 +207,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _quoteLoading=false;
       _fulfillment = value;
       _error = null;
-      if (value == 'PICKUP') {
+      if (value != 'DELIVERY') {
         _deliveryPrice = 0;
         _distanceKm = null;
       }
@@ -562,6 +565,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     ),
                   ],
                 ),
+                if(_dineOutEnabled)Padding(padding:const EdgeInsets.only(top:10),child:_FulfillmentCard(icon:Icons.restaurant,title:'Dine Out',subtitle:'Enjoy your order at the branch',selected:_fulfillment=='DINE_OUT',enabled:true,onTap:()=>_setFulfillment('DINE_OUT'))),
                 const SizedBox(height: 24),
                 if (_isDelivery) ...[
                   OutlinedButton.icon(onPressed:_choosePin,icon:const Icon(Icons.pin_drop_outlined),label:const Text('Choose or edit map pin')),
@@ -699,7 +703,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     child: ListTile(
                       leading: const Icon(Icons.storefront_rounded),
                       title: Text(
-                        branch?['name']?.toString() ?? 'Pickup at merchant',
+                        branch?['name']?.toString() ?? 'At the merchant',
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                       subtitle: Text(
@@ -731,7 +735,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             m == 'CASH'
                                 ? (_isDelivery
                                       ? 'Cash on delivery'
-                                      : 'Cash at pickup')
+                                      : _fulfillment=='DINE_OUT'?'Cash at the restaurant':'Cash at pickup')
                                 : m == 'CARD'
                                 ? 'Card'
                                 : 'Mobile Money',
@@ -777,11 +781,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 10),
-                for(final entry in widget.cart.entries)Padding(padding:const EdgeInsets.symmetric(vertical:10),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-                  Text(widget.products[entry.key]?['name']?.toString()??'Product',style:const TextStyle(fontWeight:FontWeight.w700)),
-                  Text('${entry.value} × ${money(widget.products[entry.key]?['price'],currency:currency)} = ${money(asDouble(widget.products[entry.key]?['price'])*entry.value,currency:currency)}'),
-                  ModifierBreakdown(lines:widget.products[entry.key]?['modifierLines'] as List? ?? [],currency:currency,multiplier:entry.value),
+                for(final item in (_totals?['items'] as List? ?? [for(final entry in widget.cart.entries){'productName':widget.products[entry.key]?['name'],'quantity':entry.value,'unitPrice':menuPrice(widget.products[entry.key]?['price'],widget.merchant,_fulfillment),'modifierLines':widget.products[entry.key]?['modifierLines']??[]}]).where((i)=>i['isFreeReward']!=true))Padding(padding:const EdgeInsets.symmetric(vertical:10),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                  Text(item['productName']?.toString()??'Product',style:const TextStyle(fontWeight:FontWeight.w700)),
+                  Text('${item['quantity']} × ${money(item['unitPrice'],currency:currency)}'),
+                  ModifierBreakdown(lines:item['modifierLines'] as List? ?? [],currency:currency,multiplier:_totals==null?(item['quantity'] as num).toInt():1),
                 ])),
+                for(final hint in (_totals?['rewardHints'] as List? ?? []))Card(child:ListTile(leading:const Icon(Icons.redeem),title:Text(hint['message'].toString()),subtitle:const Text('Return to the menu to choose your reward options.'))),
                 for(final bonus in (_totals?['items'] as List? ?? []).where((i)=>i['isFreeReward']==true))ListTile(contentPadding:EdgeInsets.zero,leading:const Icon(Icons.redeem,color:Color(0xFFC82216)),title:Text('${bonus['quantity']} × ${bonus['productName']}'),subtitle:const Text('Free reward · selected extras included'),trailing:const Text('FREE')),
                 const Divider(),
                 _PriceLine(label: 'Subtotal', value: money(_totals?['subtotal'] ?? _subtotal, currency: currency)),
@@ -795,7 +800,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   if(hasNonZeroAmount(_totals!['serviceFee'])) _PriceLine(label:'Service fee',value:money(_totals!['serviceFee'],currency:currency)),
                   const Divider(),
                   _PriceLine(label: 'Total', value: money(_totals!['total'], currency: currency), strong: true),
-                ] else if (!_totalsLoading) const Text('Choose a delivery location or pickup to calculate discounts and tax.'),
+                ] else if (!_totalsLoading) const Text('Choose a delivery location, Pickup or Dine Out to calculate your total.'),
                 if (_isDelivery && _deliveryPrice != null) ...[
                   const SizedBox(height: 5),
                   Text(

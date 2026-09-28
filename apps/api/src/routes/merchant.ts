@@ -74,6 +74,7 @@ export async function merchantRoutes(app: FastifyInstance) {
           timezone: true,
           taxPercent: true,
           taxLabel: true,
+          deliveryMarkup: true,
         },
       }),
       prisma.branch.count({ where: { tenantId, isActive: true } }),
@@ -88,7 +89,8 @@ export async function merchantRoutes(app: FastifyInstance) {
 
   app.patch('/v1/merchant/settings', { preHandler: requireTenant(merchantAdminRoles) }, async (request, reply) => {
     const body = (request.body ?? {}) as Record<string, unknown>;
-    const data: { isAcceptingOrders?: boolean; minimumOrder?: string; name?:string; timezone?:string; taxPercent?:number; taxLabel?:string } = {};
+    const data: { isAcceptingOrders?: boolean; minimumOrder?: string; name?:string; timezone?:string; taxPercent?:number; taxLabel?:string; deliveryMarkup?:number } = {};
+    if(body.deliveryMarkup!==undefined){const v=Number(body.deliveryMarkup);if(typeof body.deliveryMarkup!=='number'||!Number.isFinite(v)||v<0||v>1000000||Math.abs(v*100-Math.round(v*100))>0.000001)return reply.code(400).send({error:'invalid_delivery_markup'});data.deliveryMarkup=v;}
     if(body.taxPercent!==undefined){const rate=Number(body.taxPercent);if(!Number.isFinite(rate)||rate<0||rate>100)return reply.code(400).send({error:'invalid_tax_rate'});data.taxPercent=rate;}
     if(body.taxLabel!==undefined){if(typeof body.taxLabel!=='string'||!body.taxLabel.trim()||body.taxLabel.length>40)return reply.code(400).send({error:'invalid_tax_label'});data.taxLabel=body.taxLabel.trim();}
     if(typeof body.name==='string'){if(!body.name.trim()||body.name.length>160)return reply.code(400).send({error:'invalid_name'});data.name=body.name.trim();}
@@ -126,6 +128,7 @@ export async function merchantRoutes(app: FastifyInstance) {
         isActive: true,
         isAcceptingOrders: true,
         pickupEnabled: true,
+        dineOutEnabled: true,
         deliveryEnabled: true,
         logisticsMode: true,
         openingHours: true,
@@ -149,6 +152,7 @@ export async function merchantRoutes(app: FastifyInstance) {
       addressLine?:string;
       city?:string;
       pickupEnabled?: boolean;
+      dineOutEnabled?: boolean;
       deliveryEnabled?: boolean;
       logisticsMode?: LogisticsMode;
       latitude?: number | null;
@@ -157,6 +161,7 @@ export async function merchantRoutes(app: FastifyInstance) {
 
     if(typeof body.addressLine==='string')data.addressLine=body.addressLine.trim().slice(0,500);
     if(typeof body.city==='string')data.city=body.city.trim().slice(0,160);
+    if(typeof body.dineOutEnabled==='boolean')data.dineOutEnabled=body.dineOutEnabled;
     if (typeof body.pickupEnabled === 'boolean') data.pickupEnabled = body.pickupEnabled;
     if (typeof body.deliveryEnabled === 'boolean') data.deliveryEnabled = body.deliveryEnabled;
 
@@ -365,7 +370,7 @@ export async function merchantRoutes(app: FastifyInstance) {
   app.get('/v1/merchant/products', { preHandler: requireTenant() }, async (request) => {
     return prisma.product.findMany({
       where: { tenantId: request.tenantContext!.tenantId, deletedAt: null },
-      include: { category: { select: { id: true, name: true, slug: true } } },
+      include: { category: { select: { id: true, name: true, slug: true, isActive: true } } },
       orderBy: { createdAt: 'desc' },
     });
   });
@@ -455,7 +460,7 @@ export async function merchantRoutes(app: FastifyInstance) {
     if (request.tenantContext!.role === 'KITCHEN_CREW' && !['PREPARING','READY_FOR_PICKUP'].includes(requestedStatus)) return reply.code(403).send({error:'kitchen_transition_forbidden'});
     const nextStatus = requestedStatus as OrderStatus;
     const allowed = [...(orderTransitions[order.status] ?? [])];
-    if (order.status === OrderStatus.READY_FOR_PICKUP && order.fulfillmentType === FulfillmentType.PICKUP) allowed.push(OrderStatus.COMPLETED);
+    if (order.status === OrderStatus.READY_FOR_PICKUP && order.fulfillmentType !== FulfillmentType.DELIVERY) allowed.push(OrderStatus.COMPLETED);
     if (!allowed.includes(nextStatus)) {
       return reply.code(409).send({ error: 'invalid_order_transition', currentStatus: order.status, allowed });
     }
@@ -470,7 +475,7 @@ export async function merchantRoutes(app: FastifyInstance) {
       }
       if (
         nextStatus === OrderStatus.COMPLETED &&
-        order.fulfillmentType === FulfillmentType.PICKUP &&
+        order.fulfillmentType !== FulfillmentType.DELIVERY &&
         order.paymentMethod === PaymentMethod.CASH &&
         order.paymentStatus === PaymentStatus.PENDING
       ) {

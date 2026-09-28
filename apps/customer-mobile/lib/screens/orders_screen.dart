@@ -226,7 +226,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final driverUser = (driver?['user'] as Map?)?.cast<String, dynamic>();
     final items = order['items'] as List? ?? const [];
     final currency = merchant['currency']?.toString() ?? 'RWF';
-    final isPickup = order['fulfillmentType']?.toString() == 'PICKUP';
+    final isDineOut=order['fulfillmentType']=='DINE_OUT';
+    final isPickup = order['fulfillmentType']?.toString() != 'DELIVERY';
     final status = order['status']?.toString() ?? '';
     final canCancel = status == 'PENDING' || status == 'ACCEPTED';
     final driverDistanceKm = _distanceToCustomerKm(order, driver);
@@ -242,7 +243,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             'ACCEPTED' => 'Your order is accepted',
             'PREPARING' => 'Freshly preparing your order',
             'READY_FOR_PICKUP' =>
-              isPickup ? 'Ready for pickup' : 'Ready for your courier',
+              isDineOut ? 'Ready to serve' : isPickup ? 'Ready for pickup' : 'Ready for your courier',
             'OUT_FOR_DELIVERY' => 'Heading your way…',
             'COMPLETED' => 'Enjoy your order!',
             'CANCELLED' => 'Order cancelled',
@@ -518,7 +519,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         ),
         const SizedBox(height: 22),
         Text(
-          isPickup ? 'Pickup from' : 'Deliver to',
+          isDineOut ? 'Dine at' : isPickup ? 'Pickup from' : 'Deliver to',
           style: Theme.of(
             context,
           ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),

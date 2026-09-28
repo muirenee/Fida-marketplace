@@ -559,7 +559,7 @@ class _OrdersPageState extends State<MerchantOrdersPage> {
       'PENDING' => ['ACCEPTED', 'REJECTED'],
       'ACCEPTED' => ['PREPARING'],
       'PREPARING' => ['READY_FOR_PICKUP'],
-      'READY_FOR_PICKUP' when order['fulfillmentType'] == 'PICKUP' => [
+      'READY_FOR_PICKUP' when order['fulfillmentType'] != 'DELIVERY' => [
         'COMPLETED',
       ],
       _ => const [],
@@ -724,12 +724,12 @@ class _OrdersPageState extends State<MerchantOrdersPage> {
                             children: [
                               Chip(
                                 avatar: Icon(
-                                  fulfillment == 'PICKUP'
+                                  fulfillment == 'DINE_OUT' ? Icons.restaurant : fulfillment == 'PICKUP'
                                       ? Icons.shopping_bag_outlined
                                       : Icons.delivery_dining_rounded,
                                   size: 16,
                                 ),
-                                label: Text(fulfillment.toLowerCase()),
+                                label: Text(fulfillment.replaceAll('_',' ').toLowerCase()),
                               ),
                               if (order['deliveryDistanceKm'] != null)
                                 Chip(
@@ -775,6 +775,7 @@ class _OrdersPageState extends State<MerchantOrdersPage> {
                             Text(
                               'Deliver to: ${order['deliveryAddress'] ?? 'Address unavailable'}',
                             ),
+                          if(fulfillment=='DINE_OUT')const Text('Serve this order at the branch. No driver is required.'),
                           if (fulfillment == 'PICKUP')
                             const Text(
                               'Customer will collect this order at the branch.',

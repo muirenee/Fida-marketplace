@@ -53,14 +53,17 @@ export async function orderRoutes(app: FastifyInstance) {
     const pricedLines=quantities.lines.map(line=>{const product=products.find(p=>p.id===line.productId)!;const configured=selectedOptions(product,line.options);return {productId:product.id,productName:configured.name,quantity:line.quantity,unitPrice:configured.price,basePrice:product.price,selectedOptions:configured.selectedOptions,modifierLines:configured.modifierLines};});
     const branch=await prisma.branch.findFirst({where:{id:String(b.branchId??''),tenantId,isActive:true}});
     if(!branch)return reply.code(404).send({error:'branch_not_found'});
+    const fulfillment=String(b.fulfillmentType??'DELIVERY');
+    if(!Object.values(FulfillmentType).includes(fulfillment as FulfillmentType))return reply.code(400).send({error:'invalid_fulfillment'});
+    if(!branch.isAcceptingOrders||!(fulfillment==='DELIVERY'?branch.deliveryEnabled:fulfillment==='PICKUP'?branch.pickupEnabled:branch.dineOutEnabled))return reply.code(409).send({error:'fulfillment_unavailable'});
     let fee=new Prisma.Decimal(0);
-    if(b.fulfillmentType==='DELIVERY'){
+    if(fulfillment==='DELIVERY'){
       const address=await prisma.customerAddress.findFirst({where:{id:String(b.addressId??''),userId:request.authUser!.id}});
       const lat=address?.latitude??b.latitude??b.deliveryLatitude,lon=address?.longitude??b.longitude??b.deliveryLongitude;
       if(lat===null||lat===undefined||lon===null||lon===undefined||!validCoordinate(Number(lat),Number(lon)))return reply.code(400).send({error:'location_required'});
       const quote=await quoteBranchDelivery(branch.id,Number(lat),Number(lon));if(!quote)return reply.code(409).send({error:'outside_delivery_area'});fee=quote.fee;
     }
-    const {usedPromotions,commissionPercent,...totals}=await checkoutTotals(tenantId,pricedLines,fee,typeof b.promoCode==='string'?b.promoCode.trim():null);
+    const {usedPromotions,commissionPercent,...totals}=await checkoutTotals(tenantId,pricedLines,fee,typeof b.promoCode==='string'?b.promoCode.trim():null,prisma,fulfillment as FulfillmentType);
     return totals;
   });
 
@@ -161,6 +164,7 @@ export async function orderRoutes(app: FastifyInstance) {
       select: {
         id: true,
         pickupEnabled: true,
+        dineOutEnabled: true,
         deliveryEnabled: true,
         isAcceptingOrders: true,
         openingHours: true,
@@ -171,6 +175,7 @@ export async function orderRoutes(app: FastifyInstance) {
     if (!branch) {
       return reply.code(409).send({ error: 'branch_unavailable', message: 'Branch is not currently accepting orders.' });
     }
+    if(fulfillmentType===FulfillmentType.DINE_OUT&&!branch.dineOutEnabled)return reply.code(409).send({error:'dine_out_unavailable'});
     if (fulfillmentType === FulfillmentType.PICKUP && !branch.pickupEnabled) {
       return reply.code(409).send({ error: 'pickup_unavailable' });
     }
@@ -191,28 +196,7 @@ export async function orderRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: 'product_unavailable', message: 'One or more products are unavailable.' });
     }
 
-    let subtotal = new Prisma.Decimal(0);
-    const itemData = quantities.lines.map((line) => {
-      const product = products.find(p => p.id === line.productId)!;
-      const quantity = line.quantity;
-      const configured = selectedOptions(product, line.options);
-      const lineTotal = configured.price.mul(quantity);
-      subtotal = subtotal.plus(lineTotal);
-      return {
-        basePrice: product.price,
-        productId: product.id,
-        productName: configured.name,
-        selectedOptions: configured.selectedOptions,
-        modifierLines: configured.modifierLines,
-        quantity,
-        unitPrice: configured.price,
-        totalPrice: lineTotal,
-      };
-    });
-
-    if (subtotal.lessThan(tenant.minimumOrder)) {
-      return reply.code(409).send({ error: 'minimum_order_not_met', minimumOrder: tenant.minimumOrder, subtotal });
-    }
+    for(const line of quantities.lines)selectedOptions(products.find(p=>p.id===line.productId)!,line.options);
 
     let deliveryAddress: string | null = null;
     let deliveryLatitude: number | null = null;
@@ -256,7 +240,15 @@ export async function orderRoutes(app: FastifyInstance) {
     const serviceFee = new Prisma.Decimal(0);
     const promoCode = typeof body.promoCode === 'string' ? body.promoCode.trim().toUpperCase() : null;
     const order = await prisma.$transaction(async (tx) => {
-      const totals=await checkoutTotals(tenantId,itemData,deliveryFee,promoCode,tx);
+      await tx.$queryRaw`SELECT id FROM "Tenant" WHERE id=${tenantId} FOR SHARE`;
+      await tx.$queryRaw`SELECT id FROM "Branch" WHERE id=${branchId} FOR SHARE`;
+      const currentBranch=await tx.branch.findFirst({where:{id:branchId,tenantId,isActive:true,isAcceptingOrders:true}});
+      if(!currentBranch||!(fulfillmentType==='DELIVERY'?currentBranch.deliveryEnabled:fulfillmentType==='PICKUP'?currentBranch.pickupEnabled:currentBranch.dineOutEnabled)||!branchIsOpen(currentBranch,tenant.timezone,scheduledFor??new Date()))throw Object.assign(new Error('Branch fulfillment changed. Refresh checkout.'),{statusCode:409});
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Product" WHERE id IN (${Prisma.join(productIds)}) ORDER BY id FOR SHARE`);
+      const freshProducts=await tx.product.findMany({where:{id:{in:productIds},tenantId,isActive:true,isAvailable:true,deletedAt:null,OR:[{categoryId:null},{category:{isActive:true,deletedAt:null}}]}});
+      if(freshProducts.length!==productIds.length)throw Object.assign(new Error('Products changed. Refresh checkout.'),{statusCode:409});
+      const freshLines=quantities.lines.map(line=>{const product=freshProducts.find(p=>p.id===line.productId)!;const configured=selectedOptions(product,line.options);return {productId:product.id,productName:configured.name,quantity:line.quantity,unitPrice:configured.price,basePrice:product.price,selectedOptions:configured.selectedOptions,modifierLines:configured.modifierLines};});
+      const totals=await checkoutTotals(tenantId,freshLines,deliveryFee,promoCode,tx,fulfillmentType);
       const {discount,tax,total,taxLabel,commissionPercent}=totals;
       if(body.confirmedTotal!==undefined&&(typeof body.confirmedTotal!=='number'||!Number.isFinite(body.confirmedTotal)||!total.equals(body.confirmedTotal)))throw Object.assign(new Error('The total changed. Review the updated checkout before ordering.'),{statusCode:409});
       if(body.confirmedQuote!==undefined&&body.confirmedQuote!==totals.quoteHash)throw Object.assign(new Error('Items or offers changed. Review checkout again.'),{statusCode:409});

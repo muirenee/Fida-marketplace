@@ -4,9 +4,10 @@ import '../core/api_client.dart';
 import '../ui/format.dart';
 
 class ProductScreen extends StatefulWidget {
- const ProductScreen({super.key,required this.product,required this.currency,this.initialQuantity=1,this.initialSelectedOptions=const []});
+ const ProductScreen({super.key,required this.product,required this.currency,this.deliveryMarkup=0,this.initialQuantity=1,this.initialSelectedOptions=const []});
  final Map<String,dynamic> product;
  final String currency;
+ final double deliveryMarkup;
  final int initialQuantity;
  final List initialSelectedOptions;
  @override State<ProductScreen> createState()=>_ProductScreenState();
@@ -50,9 +51,9 @@ class _ProductScreenState extends State<ProductScreen>{
     Positioned(left:16,bottom:20,right:100,child:Align(alignment:Alignment.centerLeft,child:ProductOfferBadge(product:widget.product))),
    ]))),
    SliverToBoxAdapter(child:Padding(padding:const EdgeInsets.all(20),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-    Text(widget.product['name'].toString(),style:const TextStyle(fontSize:29,fontWeight:FontWeight.w800)),const SizedBox(height:10),Text(money(widget.product['price'],currency:widget.currency),style:const TextStyle(fontSize:22,fontWeight:FontWeight.w700)),
+    Text(widget.product['name'].toString(),style:const TextStyle(fontSize:29,fontWeight:FontWeight.w800)),const SizedBox(height:10),Text(money(asDouble(widget.product['price'])+widget.deliveryMarkup,currency:widget.currency),style:const TextStyle(fontSize:22,fontWeight:FontWeight.w700)),
     const Text('Price includes applicable tax.'),
-    if((widget.product['promotions'] as List? ?? []).any((p)=>p['discountType']=='BOGO'))const Padding(padding:EdgeInsets.only(top:12),child:Text('Qualifying paid quantities add free items at checkout. The free item includes its selected extras. Offer caps and minimum spend apply.')),
+    if((widget.product['promotions'] as List? ?? []).any((p)=>p['discountType']=='BOGO'))const Padding(padding:EdgeInsets.only(top:12),child:Text('Checkout applies your reward to eligible items or adds it automatically. Rewards requiring choices must be added from the menu. Offer caps and minimum spend apply.')),
     if((widget.product['description']??'').toString().isNotEmpty)Padding(padding:const EdgeInsets.only(top:12),child:Text(widget.product['description'].toString())),
    ]))),
    for(final group in groups.entries)SliverToBoxAdapter(child:Container(padding:const EdgeInsets.all(20),decoration:const BoxDecoration(border:Border(top:BorderSide(color:Color(0xFFF3F3F3),width:8))),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
@@ -74,6 +75,6 @@ class _ProductScreenState extends State<ProductScreen>{
    final names=selected.keys.toList()..sort();final choices=[for(final name in names){'name':name,'quantity':selected[name]}];
    final labels=names.map((n)=>selected[n]==1?n:'${selected[n]} × $n').join(', ');
    Navigator.pop(context,{'product':{...widget.product,'productId':widget.product['id'],'selectedOptions':choices,'baseUnitPrice':widget.product['price'],'modifierLines':modifierLines,'price':price,'name':'${widget.product['name']}${labels.isEmpty?'':' ($labels)'}'},'quantity':quantity});
-  }:null,child:Padding(padding:const EdgeInsets.symmetric(vertical:15),child:Text(valid?'Add $quantity to cart · ${money(price*quantity,currency:widget.currency)}':'Select required choices',style:const TextStyle(fontSize:17,fontWeight:FontWeight.w700))))),
+  }:null,child:Padding(padding:const EdgeInsets.symmetric(vertical:15),child:Text(valid?'Add $quantity to cart · ${money((price+widget.deliveryMarkup)*quantity,currency:widget.currency)}':'Select required choices',style:const TextStyle(fontSize:17,fontWeight:FontWeight.w700))))),
  );
 }

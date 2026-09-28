@@ -14,7 +14,7 @@ const branchSelect = {
   latitude: true,
   longitude: true,
   isAcceptingOrders: true,
-  pickupEnabled: true,
+  pickupEnabled: true, dineOutEnabled: true,
   deliveryEnabled: true,
   logisticsMode: true,
   openingHours: true,
@@ -35,6 +35,8 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     const city = typeof query.city === 'string' ? query.city.trim() : '';
     const requestedType = typeof query.type === 'string' ? query.type.toUpperCase() : '';
 
+    const fulfillment=typeof query.fulfillment==='string'?query.fulfillment.toUpperCase():'';
+    if(fulfillment&&!['DELIVERY','PICKUP','DINE_OUT'].includes(fulfillment))throw Object.assign(new Error('Invalid fulfillment filter.'),{statusCode:400});
     const search = typeof query.q === 'string' ? query.q.trim().slice(0,100) : '';
     const where: Prisma.TenantWhereInput = {
       ...(search ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { products: { some: { name: { contains: search, mode: 'insensitive' }, isActive: true, isAvailable: true, deletedAt: null } } }] } : {}),
@@ -42,6 +44,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       isAcceptingOrders: true,
       branches: {
         some: {
+          ...(fulfillment?{[fulfillment==='DELIVERY'?'deliveryEnabled':fulfillment==='PICKUP'?'pickupEnabled':'dineOutEnabled']:true}:{}),
           isActive: true,
           isAcceptingOrders: true,
           ...(city ? { city: { equals: city, mode: 'insensitive' } } : {}),
@@ -61,7 +64,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         slug: true,
         merchantType: true,
         currency: true,
-        minimumOrder: true,
+        minimumOrder: true, deliveryMarkup: true,
         timezone: true,
         logoUrl: true, coverUrl: true, cuisineTags: true,
         products: { where: { isActive: true, isAvailable: true, deletedAt: null, imageUrl: { not: null }, OR: [{ categoryId: null }, { category: { isActive: true, deletedAt: null } }] }, select: {id:true,name:true,price:true,imageUrl: true}, orderBy: {name: 'asc'}, take: 3 },
@@ -75,7 +78,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     const ids = merchants.map(m => m.id);
     const [ratings, promos, popularity, favorites, settings] = await Promise.all([
       prisma.review.groupBy({by:['tenantId'],where:{tenantId:{in:ids}},_avg:{rating:true},_count:{rating:true}}),
-      prisma.promotion.findMany({where:{tenantId:{in:ids},isActive:true,expiresAt:{gt:new Date()}},select:{tenantId:true,code:true,percent:true,productId:true,discountType:true,buyQuantity:true,getQuantity:true,flatAmount:true,stackable:true,minimumOrder:true,maxDiscount:true,usedCount:true,maxUses:true}}),
+      prisma.promotion.findMany({where:{tenantId:{in:ids},isActive:true,expiresAt:{gt:new Date()}},select:{tenantId:true,code:true,percent:true,productId:true,discountType:true,buyQuantity:true,getQuantity:true,rewardProductId:true,flatAmount:true,stackable:true,minimumOrder:true,maxDiscount:true,usedCount:true,maxUses:true}}),
       prisma.order.groupBy({by:['tenantId'],where:{tenantId:{in:ids},status:'COMPLETED',createdAt:{gte:new Date(Date.now()-30*86400000)}},_count:{id:true}}),
       prisma.favorite.groupBy({by:['tenantId'],where:{tenantId:{in:ids}},_count:{userId:true}}),
       featuredStoreIds(),
@@ -110,7 +113,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
         slug: true,
         merchantType: true,
         currency: true,
-        minimumOrder: true,
+        minimumOrder: true, deliveryMarkup: true,
         timezone: true,
         logoUrl: true, coverUrl: true, cuisineTags: true,
         products: { where: { isActive: true, isAvailable: true, deletedAt: null, imageUrl: { not: null }, OR: [{ categoryId: null }, { category: { isActive: true, deletedAt: null } }] }, select: {imageUrl: true}, orderBy: {name: 'asc'}, take: 1 },
@@ -140,7 +143,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     const uncategorised = await prisma.product.findMany({ where: { tenantId: merchant.id, categoryId: null, isActive: true, isAvailable: true, deletedAt: null }, select: { id: true, name: true, description: true, price: true, imageUrl: true, options: true } });
     const [reviews,promotions] = await Promise.all([
       prisma.review.aggregate({where:{tenantId:merchant.id},_avg:{rating:true},_count:{rating:true}}),
-      prisma.promotion.findMany({where:{tenantId:merchant.id,isActive:true,expiresAt:{gt:new Date()}},select:{tenantId:true,code:true,percent:true,productId:true,discountType:true,buyQuantity:true,getQuantity:true,flatAmount:true,stackable:true,minimumOrder:true,maxDiscount:true,maxUses:true,usedCount:true}}),
+      prisma.promotion.findMany({where:{tenantId:merchant.id,isActive:true,expiresAt:{gt:new Date()}},select:{tenantId:true,code:true,percent:true,productId:true,discountType:true,buyQuantity:true,getQuantity:true,rewardProductId:true,flatAmount:true,stackable:true,minimumOrder:true,maxDiscount:true,maxUses:true,usedCount:true}}),
     ]);
     const visiblePromotions=await publicPromotions(promotions);
     const {products,...publicMerchant}=merchant;

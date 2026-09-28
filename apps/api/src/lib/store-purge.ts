@@ -14,7 +14,7 @@ function steps(id:string){
  return [
   ['NotificationEvent',order],['PaymentAttempt',order],
   ...['Review','SupportCase','RefundRequest','BusinessDocument','FinanceEntry'].map(model=>[model,Prisma.sql`(${tenant} OR ${order})`] as const),
-  ['CommissionPeriod',tenant],['Promotion',Prisma.sql`(${tenant} OR t."productId" IN (${s.products}))`],
+  ['CommissionPeriod',tenant],['Promotion',Prisma.sql`(${tenant} OR t."productId" IN (${s.products}) OR t."rewardProductId" IN (${s.products}))`],
   ['StoreVisit',tenant],['Favorite',tenant],
   ['MediaAsset',Prisma.sql`(t.url LIKE ${`/v1/media/${id}/%`} OR t.url IN (SELECT "logoUrl" FROM "Tenant" WHERE id=${id} UNION SELECT "coverUrl" FROM "Tenant" WHERE id=${id} UNION SELECT "imageUrl" FROM "Product" WHERE "tenantId"=${id})) AND NOT EXISTS(SELECT 1 FROM "Tenant" x WHERE x.id<>${id} AND (x."logoUrl"=t.url OR x."coverUrl"=t.url)) AND NOT EXISTS(SELECT 1 FROM "Product" x WHERE x."tenantId"<>${id} AND x."imageUrl"=t.url) AND NOT EXISTS(SELECT 1 FROM "MerchantApplication" x WHERE (x."tenantId" IS NULL OR x."tenantId"<>${id}) AND (x.payload->>'logoUrl'=t.url OR x.payload->>'coverUrl'=t.url))`],
   ['MerchantApplication',tenant],
