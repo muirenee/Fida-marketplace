@@ -21,3 +21,13 @@ Upstream reference: `389481597ff253c5178e38c316bf646746e91695`.
 - `docs/ENATEGA-GAPS-0.14.md` lists remaining upstream/roadmap gaps; full architectural parity is not implemented.
 
 Resume by reading this file, current Git status, CI and `IOS-CLOUD-0.14.md`. Do not overwrite existing Android signing identities. No production migrations or payment operations were run. No unattended future wake-up has been scheduled.
+
+## Compatibility correction
+
+Flutter 3.35.7 failed dependency resolution: geolocation/secure-storage transitive packages require Dart >=3.10. EAS and its CI gate now pin Flutter 3.41.6 (upstream tag db50e20168db8fee486b9abf32fc912de3bc5b6a). Native templates retain their 3.35.7 origin/license.
+
+0.14 Android Customer, Merchant, Driver builds passed on source 381efab.
+
+## Newly authorized next package
+
+0.15: isolated store-order reset and dynamic store categories first; cross-product buy-X-get-Y rewards and catalog selectors; DINE_OUT fulfillment end-to-end; delivery-only per-unit merchant markup. Preserve store/menu/configuration data during order resets, direct payments, and inclusive tax.
