@@ -156,9 +156,10 @@ void main() {
     (tester) async {
       final client = api(), key = GlobalKey();
       await mount(tester, Scaffold(body: MarketplaceScreen(api: client)), key);
-      expect(find.text('Kigali Kitchen'), findsWidgets);
-      expect(tester.takeException(), isNull);
       await capture(tester, key, 'customer-home');
+      expect(find.text('Kigali Kitchen'), findsWidgets,
+        reason: tester.widgetList<Text>(find.byType(Text)).map((w)=>w.data).join('\n'));
+      expect(tester.takeException(), isNull);
       await tester.tap(find.text('Pickup'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Pickup ·'), findsWidgets);
