@@ -723,6 +723,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: _payment,
                   decoration: const InputDecoration(
                     labelText: 'Payment method',
@@ -739,6 +740,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 : m == 'CARD'
                                 ? 'Card'
                                 : 'Mobile Money',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       )
