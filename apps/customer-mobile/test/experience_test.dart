@@ -96,6 +96,7 @@ ApiClient api() => ApiClient(
             : merchant,
       ),
       200,
+      headers: {'content-type': 'application/json; charset=utf-8'},
     ),
   ),
 );
