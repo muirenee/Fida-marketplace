@@ -1,0 +1,41 @@
+[
+  {
+    "file": "fida-customer-0.15.apk",
+    "package": "com.fidalix.marketplace.customer_mobile",
+    "version": "0.15.0",
+    "versionCode": 212819576,
+    "certificateSha256": "00e09ec17527803e8972f4f8e28fb4324eaaa12956e0558486b1184bde10d623",
+    "sha256": "7297ef813bba27eb9dfc258c9a5061dd5d84cf65032541a708db774ec9ac92e3",
+    "bytes": 60192547,
+    "sameSigningCertificateAsPreviousRelease": true,
+    "sourceCommit": "24fa9bd073ac0f12c7ef0893247ddeb23127dead",
+    "workflowRun": 36522040832,
+    "artifactId": 11012853410
+  },
+  {
+    "file": "fida-merchant-0.15.apk",
+    "package": "com.fidalix.marketplace.merchant_mobile",
+    "version": "0.15.0",
+    "versionCode": 212773673,
+    "certificateSha256": "00e09ec17527803e8972f4f8e28fb4324eaaa12956e0558486b1184bde10d623",
+    "sha256": "4f1360eee0d2520480556e932b85e42f2cc3755a37a42e23b1a0ca83be80b6f2",
+    "bytes": 55616985,
+    "sameSigningCertificateAsPreviousRelease": true,
+    "sourceCommit": "565df091a575716ec87ef67489cb871dd8856c0a",
+    "workflowRun": 36446192061,
+    "artifactId": 10980713543
+  },
+  {
+    "file": "fida-driver-0.15.apk",
+    "package": "com.fidalix.marketplace.driver_mobile",
+    "version": "0.15.0",
+    "versionCode": 212773666,
+    "certificateSha256": "00e09ec17527803e8972f4f8e28fb4324eaaa12956e0558486b1184bde10d623",
+    "sha256": "938b706c278a21016ee2288f157696bcb76206ffdf8bf5a4acb3f4a40a33d69d",
+    "bytes": 54422387,
+    "sameSigningCertificateAsPreviousRelease": true,
+    "sourceCommit": "565df091a575716ec87ef67489cb871dd8856c0a",
+    "workflowRun": 36446192128,
+    "artifactId": 10981087659
+  }
+]
